@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import MainLayout from '@/components/layout/main-layout';
 import WebhookSimulator from '@/components/ia/webhook-simulator';
+import MinutaDocumentoForm from '@/components/ia/minuta-documento-form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -28,7 +29,6 @@ import {
   Brain,
   FileText,
   Package,
-  PenTool,
   Upload,
   Download,
   Eye,
@@ -61,14 +61,14 @@ const AnaliseIA = () => {
     {
       id: '3',
       tipo: 'minuta_documento',
-      nomeArquivo: 'contrato_compra_venda.docx',
+      nomeArquivo: 'minuta_compra_venda_1705123456.pdf',
       processadoEm: '2024-01-15T08:45:00',
-      status: 'processando',
+      status: 'concluido',
       usuario: 'Ana Costa'
     }
   ]);
 
-  const tiposAnalise = [
+  const tiposAnaliseSimples = [
     {
       id: 'resumo_matricula',
       titulo: 'Resumir Matrícula',
@@ -82,13 +82,6 @@ const AnaliseIA = () => {
       descricao: 'Processa e organiza documentos em lote',
       icon: Package,
       color: 'bg-green-500'
-    },
-    {
-      id: 'minuta_documento',
-      titulo: 'Gerar Minuta de Documento',
-      descricao: 'Cria minutas baseadas em modelos e dados fornecidos',
-      icon: PenTool,
-      color: 'bg-purple-500'
     }
   ];
 
@@ -145,7 +138,8 @@ const AnaliseIA = () => {
 
         {/* Cards de Tipos de Análise */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {tiposAnalise.map((tipo) => {
+          {/* Análises Simples */}
+          {tiposAnaliseSimples.map((tipo) => {
             const Icon = tipo.icon;
             const isUploading = uploadingFile === tipo.id;
             
@@ -218,6 +212,9 @@ const AnaliseIA = () => {
               </Card>
             );
           })}
+
+          {/* Minuta de Documento - Componente Especial */}
+          <MinutaDocumentoForm onProcessComplete={handleProcessComplete} />
         </div>
 
         {/* Histórico de Análises */}
