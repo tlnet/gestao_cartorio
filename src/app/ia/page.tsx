@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import MainLayout from '@/components/layout/main-layout';
+import WebhookSimulator from '@/components/ia/webhook-simulator';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -32,14 +33,15 @@ import {
   Download,
   Eye,
   Clock,
-  CheckCircle
+  CheckCircle,
+  Webhook,
+  BarChart3
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 const AnaliseIA = () => {
   const [uploadingFile, setUploadingFile] = useState<string | null>(null);
-
-  // Dados mockados de relatórios processados
-  const relatorios = [
+  const [relatorios, setRelatorios] = useState([
     {
       id: '1',
       tipo: 'resumo_matricula',
@@ -64,7 +66,7 @@ const AnaliseIA = () => {
       status: 'processando',
       usuario: 'Ana Costa'
     }
-  ];
+  ]);
 
   const tiposAnalise = [
     {
@@ -122,8 +124,14 @@ const AnaliseIA = () => {
     // Simular upload e processamento
     setTimeout(() => {
       setUploadingFile(null);
-      console.log(`Arquivo ${file.name} enviado para análise: ${tipoAnalise}`);
+      toast.success(`Arquivo ${file.name} enviado para análise: ${getTipoLabel(tipoAnalise)}`);
     }, 2000);
+  };
+
+  const handleProcessComplete = (result: any) => {
+    // Adicionar novo relatório à lista
+    setRelatorios(prev => [result, ...prev]);
+    toast.success('Novo relatório adicionado ao histórico!');
   };
 
   return (
@@ -132,6 +140,9 @@ const AnaliseIA = () => {
       subtitle="Processamento automatizado com inteligência artificial"
     >
       <div className="space-y-6">
+        {/* Integração N8N */}
+        <WebhookSimulator onProcessComplete={handleProcessComplete} />
+
         {/* Cards de Tipos de Análise */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {tiposAnalise.map((tipo) => {
@@ -276,7 +287,7 @@ const AnaliseIA = () => {
         </Card>
 
         {/* Estatísticas de Uso */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Análises Hoje</CardTitle>
@@ -312,6 +323,19 @@ const AnaliseIA = () => {
               <div className="text-2xl font-bold">98.5%</div>
               <p className="text-xs text-muted-foreground">
                 Análises bem-sucedidas
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Webhooks Ativos</CardTitle>
+              <Webhook className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">3</div>
+              <p className="text-xs text-muted-foreground">
+                Integrações N8N
               </p>
             </CardContent>
           </Card>
