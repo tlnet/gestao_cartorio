@@ -5,6 +5,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Brain } from 'lucide-react';
 
 export default function Home() {
+  const goToLogin = () => {
+    window.location.href = '/login';
+  };
+
+  const goToDashboard = () => {
+    window.location.href = '/dashboard';
+  };
+
+  const goToTest = () => {
+    window.location.href = '/test';
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
@@ -20,23 +32,20 @@ export default function Home() {
           <p className="text-center text-gray-600">
             Sistema de Gestão Inteligente para Cartórios
           </p>
-          <div className="flex gap-2">
-            <Button 
-              onClick={() => window.location.href = '/login'} 
-              variant="outline" 
-              className="flex-1"
-            >
-              Login
+          <div className="grid grid-cols-1 gap-2">
+            <Button onClick={goToTest} variant="outline">
+              🧪 Página de Teste
             </Button>
-            <Button 
-              onClick={() => window.location.href = '/dashboard'} 
-              className="flex-1"
-            >
-              Dashboard
+            <Button onClick={goToLogin} variant="outline">
+              🔐 Login
+            </Button>
+            <Button onClick={goToDashboard}>
+              📊 Dashboard
             </Button>
           </div>
           <div className="text-center text-sm text-gray-500">
             <p>✅ Sistema funcionando!</p>
+            <p className="mt-1">Versão: 1.0.0</p>
           </div>
         </CardContent>
       </Card>
