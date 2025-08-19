@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import MainLayout from '@/components/layout/main-layout';
+import { useCartorios } from '@/hooks/use-supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +33,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Building2,
   Plus,
@@ -45,72 +47,45 @@ import {
   Eye,
   MapPin,
   Phone,
-  Mail
+  Mail,
+  Loader2
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+
+const cartorioSchema = z.object({
+  nome: z.string().min(1, 'Nome é obrigatório'),
+  cnpj: z.string().min(1, 'CNPJ é obrigatório'),
+  endereco: z.string().min(1, 'Endereço é obrigatório'),
+  telefone: z.string().min(1, 'Telefone é obrigatório'),
+  email: z.string().email('Email inválido'),
+  ativo: z.boolean().default(true),
+  dias_alerta_vencimento: z.number().min(1).max(30).default(3),
+  notificacao_whatsapp: z.boolean().default(false),
+  webhook_n8n: z.string().optional()
+});
+
+type CartorioFormData = z.infer<typeof cartorioSchema>;
 
 const GestaoCartorios = () => {
+  const { cartorios, loading, createCartorio, updateCartorio, deleteCartorio } = useCartorios();
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('todos');
   const [showCartorioDialog, setShowCartorioDialog] = useState(false);
   const [editingCartorio, setEditingCartorio] = useState<any>(null);
   const [selectedCartorio, setSelectedCartorio] = useState<any>(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Dados mockados
-  const [cartorios, setCartorios] = useState([
-    {
-      id: '1',
-      nome: 'Cartório do 1º Ofício de Notas',
-      cnpj: '12.345.678/0001-90',
-      endereco: 'Rua das Flores, 123 - Centro - São Paulo/SP',
-      telefone: '(11) 3333-4444',
-      email: 'contato@cartorio1oficio.com.br',
+  const form = useForm<CartorioFormData>({
+    resolver: zodResolver(cartorioSchema),
+    defaultValues: {
       ativo: true,
-      criadoEm: '2024-01-01',
-      totalUsuarios: 5,
-      totalProtocolos: 1247,
-      configuracoes: {
-        diasAlertaVencimento: 3,
-        notificacaoWhatsApp: true,
-        webhookN8N: 'https://webhook.n8n.io/cartorio-123'
-      }
-    },
-    {
-      id: '2',
-      nome: 'Cartório do 2º Ofício de Registro Civil',
-      cnpj: '98.765.432/0001-10',
-      endereco: 'Av. Principal, 456 - Centro - São Paulo/SP',
-      telefone: '(11) 4444-5555',
-      email: 'contato@cartorio2oficio.com.br',
-      ativo: true,
-      criadoEm: '2024-01-05',
-      totalUsuarios: 3,
-      totalProtocolos: 892,
-      configuracoes: {
-        diasAlertaVencimento: 5,
-        notificacaoWhatsApp: false,
-        webhookN8N: 'https://webhook.n8n.io/cartorio-456'
-      }
-    },
-    {
-      id: '3',
-      nome: 'Cartório de Registro de Imóveis',
-      cnpj: '11.222.333/0001-44',
-      endereco: 'Rua dos Imóveis, 789 - Vila Nova - São Paulo/SP',
-      telefone: '(11) 5555-6666',
-      email: 'contato@cartorioimoveis.com.br',
-      ativo: false,
-      criadoEm: '2023-12-15',
-      totalUsuarios: 2,
-      totalProtocolos: 234,
-      configuracoes: {
-        diasAlertaVencimento: 7,
-        notificacaoWhatsApp: true,
-        webhookN8N: ''
-      }
+      dias_alerta_vencimento: 3,
+      notificacao_whatsapp: false
     }
-  ]);
+  });
 
   const statusOptions = [
     { value: 'todos', label: 'Todos os Status' },
@@ -130,38 +105,39 @@ const GestaoCartorios = () => {
     return matchBusca && matchStatus;
   });
 
-  const handleSubmitCartorio = (data: any) => {
-    if (editingCartorio) {
-      // Atualizar cartório existente
-      setCartorios(prev => prev.map(c => 
-        c.id === editingCartorio.id 
-          ? { ...c, ...data }
-          : c
-      ));
-      toast.success('Cartório atualizado com sucesso!');
-      setEditingCartorio(null);
-    } else {
-      // Criar novo cartório
-      const novoCartorio = {
-        ...data,
-        id: Date.now().toString(),
-        criadoEm: new Date().toISOString().split('T')[0],
-        totalUsuarios: 0,
-        totalProtocolos: 0,
-        configuracoes: {
-          diasAlertaVencimento: 3,
-          notificacaoWhatsApp: false,
-          webhookN8N: ''
-        }
-      };
-      setCartorios(prev => [novoCartorio, ...prev]);
-      toast.success('Cartório cadastrado com sucesso!');
+  const handleSubmitCartorio = async (data: CartorioFormData) => {
+    try {
+      setSubmitting(true);
+      
+      if (editingCartorio) {
+        await updateCartorio(editingCartorio.id, data);
+        setEditingCartorio(null);
+      } else {
+        await createCartorio(data);
+      }
+      
+      setShowCartorioDialog(false);
+      form.reset();
+    } catch (error) {
+      // Erro já tratado no hook
+    } finally {
+      setSubmitting(false);
     }
-    setShowCartorioDialog(false);
   };
 
   const handleEditCartorio = (cartorio: any) => {
     setEditingCartorio(cartorio);
+    form.reset({
+      nome: cartorio.nome,
+      cnpj: cartorio.cnpj,
+      endereco: cartorio.endereco,
+      telefone: cartorio.telefone,
+      email: cartorio.email,
+      ativo: cartorio.ativo,
+      dias_alerta_vencimento: cartorio.dias_alerta_vencimento,
+      notificacao_whatsapp: cartorio.notificacao_whatsapp,
+      webhook_n8n: cartorio.webhook_n8n || ''
+    });
     setShowCartorioDialog(true);
   };
 
@@ -170,19 +146,63 @@ const GestaoCartorios = () => {
     setShowDetailsDialog(true);
   };
 
-  const handleToggleStatus = (cartorioId: string) => {
-    setCartorios(prev => prev.map(c => 
-      c.id === cartorioId 
-        ? { ...c, ativo: !c.ativo }
-        : c
-    ));
-    toast.success('Status do cartório alterado com sucesso!');
+  const handleToggleStatus = async (cartorio: any) => {
+    await updateCartorio(cartorio.id, { ativo: !cartorio.ativo });
   };
 
-  const handleDeleteCartorio = (cartorioId: string) => {
-    setCartorios(prev => prev.filter(c => c.id !== cartorioId));
-    toast.success('Cartório removido com sucesso!');
+  const handleDeleteCartorio = async (cartorioId: string) => {
+    if (confirm('Tem certeza que deseja remover este cartório?')) {
+      await deleteCartorio(cartorioId);
+    }
   };
+
+  const handleNewCartorio = () => {
+    setEditingCartorio(null);
+    form.reset({
+      ativo: true,
+      dias_alerta_vencimento: 3,
+      notificacao_whatsapp: false
+    });
+    setShowCartorioDialog(true);
+  };
+
+  if (loading) {
+    return (
+      <MainLayout 
+        title="Gestão de Cartórios" 
+        subtitle="Administração de todos os cartórios do sistema"
+        userType="admin"
+      >
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {[...Array(4)].map((_, i) => (
+              <Card key={i}>
+                <CardHeader>
+                  <Skeleton className="h-4 w-24" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-8 w-16 mb-2" />
+                  <Skeleton className="h-3 w-32" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-6 w-48" />
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout 
@@ -222,107 +242,10 @@ const GestaoCartorios = () => {
           </div>
 
           {/* Botão Novo Cartório */}
-          <Dialog open={showCartorioDialog} onOpenChange={setShowCartorioDialog}>
-            <DialogTrigger asChild>
-              <Button onClick={() => setEditingCartorio(null)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Novo Cartório
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingCartorio ? 'Editar Cartório' : 'Cadastrar Novo Cartório'}
-                </DialogTitle>
-                <DialogDescription>
-                  {editingCartorio 
-                    ? 'Atualize as informações do cartório'
-                    : 'Preencha as informações do novo cartório'
-                  }
-                </DialogDescription>
-              </DialogHeader>
-              
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="nome">Nome do Cartório</Label>
-                  <Input 
-                    id="nome" 
-                    placeholder="Ex: Cartório do 1º Ofício de Notas"
-                    defaultValue={editingCartorio?.nome}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="cnpj">CNPJ</Label>
-                    <Input 
-                      id="cnpj" 
-                      placeholder="00.000.000/0000-00"
-                      defaultValue={editingCartorio?.cnpj}
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="telefone">Telefone</Label>
-                    <Input 
-                      id="telefone" 
-                      placeholder="(11) 3333-4444"
-                      defaultValue={editingCartorio?.telefone}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="email">E-mail</Label>
-                  <Input 
-                    id="email" 
-                    type="email"
-                    placeholder="contato@cartorio.com.br"
-                    defaultValue={editingCartorio?.email}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="endereco">Endereço Completo</Label>
-                  <Textarea 
-                    id="endereco" 
-                    placeholder="Rua, número, bairro, cidade, estado"
-                    defaultValue={editingCartorio?.endereco}
-                  />
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Switch 
-                    id="ativo" 
-                    defaultChecked={editingCartorio?.ativo !== false}
-                  />
-                  <Label htmlFor="ativo">Cartório ativo</Label>
-                </div>
-
-                <div className="flex justify-end space-x-4 pt-4">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => setShowCartorioDialog(false)}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button 
-                    onClick={() => handleSubmitCartorio({
-                      nome: 'Novo Cartório',
-                      cnpj: '00.000.000/0000-00',
-                      telefone: '(11) 0000-0000',
-                      email: 'novo@cartorio.com.br',
-                      endereco: 'Endereço do cartório',
-                      ativo: true
-                    })}
-                  >
-                    {editingCartorio ? 'Atualizar' : 'Cadastrar'}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={handleNewCartorio}>
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Cartório
+          </Button>
         </div>
 
         {/* Estatísticas */}
@@ -357,30 +280,32 @@ const GestaoCartorios = () => {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Usuários</CardTitle>
+              <CardTitle className="text-sm font-medium">Média Alertas</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {cartorios.reduce((acc, c) => acc + c.totalUsuarios, 0)}
+                {cartorios.length > 0 ? 
+                  Math.round(cartorios.reduce((acc, c) => acc + c.dias_alerta_vencimento, 0) / cartorios.length) : 0
+                } dias
               </div>
               <p className="text-xs text-muted-foreground">
-                Todos os cartórios
+                Dias para alerta
               </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Protocolos</CardTitle>
+              <CardTitle className="text-sm font-medium">WhatsApp Ativo</CardTitle>
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {cartorios.reduce((acc, c) => acc + c.totalProtocolos, 0).toLocaleString()}
+                {cartorios.filter(c => c.notificacao_whatsapp).length}
               </div>
               <p className="text-xs text-muted-foreground">
-                Todos os cartórios
+                Com notificação ativa
               </p>
             </CardContent>
           </Card>
@@ -400,8 +325,7 @@ const GestaoCartorios = () => {
                 <TableRow>
                   <TableHead>Cartório</TableHead>
                   <TableHead>Contato</TableHead>
-                  <TableHead>Usuários</TableHead>
-                  <TableHead>Protocolos</TableHead>
+                  <TableHead>Configurações</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Ações</TableHead>
                 </TableRow>
@@ -432,15 +356,14 @@ const GestaoCartorios = () => {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="text-center">
-                        <div className="text-lg font-semibold">{cartorio.totalUsuarios}</div>
-                        <div className="text-xs text-gray-500">usuários</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-center">
-                        <div className="text-lg font-semibold">{cartorio.totalProtocolos.toLocaleString()}</div>
-                        <div className="text-xs text-gray-500">protocolos</div>
+                      <div className="space-y-1 text-sm">
+                        <div>Alerta: {cartorio.dias_alerta_vencimento} dias</div>
+                        <div className="flex items-center gap-2">
+                          <span>WhatsApp:</span>
+                          <Badge variant={cartorio.notificacao_whatsapp ? "default" : "secondary"} className="text-xs">
+                            {cartorio.notificacao_whatsapp ? 'Ativo' : 'Inativo'}
+                          </Badge>
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -467,7 +390,7 @@ const GestaoCartorios = () => {
                         <Button 
                           variant="ghost" 
                           size="sm"
-                          onClick={() => handleToggleStatus(cartorio.id)}
+                          onClick={() => handleToggleStatus(cartorio)}
                         >
                           <Settings className="h-4 w-4" />
                         </Button>
@@ -486,6 +409,148 @@ const GestaoCartorios = () => {
             </Table>
           </CardContent>
         </Card>
+
+        {/* Modal de Formulário */}
+        <Dialog open={showCartorioDialog} onOpenChange={setShowCartorioDialog}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {editingCartorio ? 'Editar Cartório' : 'Cadastrar Novo Cartório'}
+              </DialogTitle>
+              <DialogDescription>
+                {editingCartorio 
+                  ? 'Atualize as informações do cartório'
+                  : 'Preencha as informações do novo cartório'
+                }
+              </DialogDescription>
+            </DialogHeader>
+            
+            <form onSubmit={form.handleSubmit(handleSubmitCartorio)} className="space-y-4">
+              <div>
+                <Label htmlFor="nome">Nome do Cartório</Label>
+                <Input 
+                  id="nome" 
+                  placeholder="Ex: Cartório do 1º Ofício de Notas"
+                  {...form.register('nome')}
+                />
+                {form.formState.errors.nome && (
+                  <p className="text-sm text-red-500">{form.formState.errors.nome.message}</p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="cnpj">CNPJ</Label>
+                  <Input 
+                    id="cnpj" 
+                    placeholder="00.000.000/0000-00"
+                    {...form.register('cnpj')}
+                  />
+                  {form.formState.errors.cnpj && (
+                    <p className="text-sm text-red-500">{form.formState.errors.cnpj.message}</p>
+                  )}
+                </div>
+                
+                <div>
+                  <Label htmlFor="telefone">Telefone</Label>
+                  <Input 
+                    id="telefone" 
+                    placeholder="(11) 3333-4444"
+                    {...form.register('telefone')}
+                  />
+                  {form.formState.errors.telefone && (
+                    <p className="text-sm text-red-500">{form.formState.errors.telefone.message}</p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="email">E-mail</Label>
+                <Input 
+                  id="email" 
+                  type="email"
+                  placeholder="contato@cartorio.com.br"
+                  {...form.register('email')}
+                />
+                {form.formState.errors.email && (
+                  <p className="text-sm text-red-500">{form.formState.errors.email.message}</p>
+                )}
+              </div>
+
+              <div>
+                <Label htmlFor="endereco">Endereço Completo</Label>
+                <Textarea 
+                  id="endereco" 
+                  placeholder="Rua, número, bairro, cidade, estado"
+                  {...form.register('endereco')}
+                />
+                {form.formState.errors.endereco && (
+                  <p className="text-sm text-red-500">{form.formState.errors.endereco.message}</p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="dias_alerta_vencimento">Dias para Alerta</Label>
+                  <Input 
+                    id="dias_alerta_vencimento" 
+                    type="number"
+                    min="1"
+                    max="30"
+                    {...form.register('dias_alerta_vencimento', { valueAsNumber: true })}
+                  />
+                  {form.formState.errors.dias_alerta_vencimento && (
+                    <p className="text-sm text-red-500">{form.formState.errors.dias_alerta_vencimento.message}</p>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="webhook_n8n">Webhook N8N</Label>
+                  <Input 
+                    id="webhook_n8n" 
+                    placeholder="https://webhook.n8n.io/..."
+                    {...form.register('webhook_n8n')}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <Switch 
+                    id="ativo" 
+                    checked={form.watch('ativo')}
+                    onCheckedChange={(checked) => form.setValue('ativo', checked)}
+                  />
+                  <Label htmlFor="ativo">Cartório ativo</Label>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Switch 
+                    id="notificacao_whatsapp" 
+                    checked={form.watch('notificacao_whatsapp')}
+                    onCheckedChange={(checked) => form.setValue('notificacao_whatsapp', checked)}
+                  />
+                  <Label htmlFor="notificacao_whatsapp">Notificações WhatsApp</Label>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-4 pt-4">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setShowCartorioDialog(false)}
+                  disabled={submitting}
+                >
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={submitting}>
+                  {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {editingCartorio ? 'Atualizar' : 'Cadastrar'}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         {/* Modal de Detalhes */}
         <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
@@ -535,51 +600,31 @@ const GestaoCartorios = () => {
                     <CardContent className="space-y-3">
                       <div>
                         <Label className="text-sm font-medium text-gray-500">Dias para Alerta</Label>
-                        <p className="text-sm">{selectedCartorio.configuracoes.diasAlertaVencimento} dias</p>
+                        <p className="text-sm">{selectedCartorio.dias_alerta_vencimento} dias</p>
                       </div>
                       <div>
                         <Label className="text-sm font-medium text-gray-500">WhatsApp</Label>
-                        <Badge variant={selectedCartorio.configuracoes.notificacaoWhatsApp ? "default" : "secondary"}>
-                          {selectedCartorio.configuracoes.notificacaoWhatsApp ? 'Ativo' : 'Inativo'}
+                        <Badge variant={selectedCartorio.notificacao_whatsapp ? "default" : "secondary"}>
+                          {selectedCartorio.notificacao_whatsapp ? 'Ativo' : 'Inativo'}
                         </Badge>
                       </div>
                       <div>
                         <Label className="text-sm font-medium text-gray-500">Webhook N8N</Label>
                         <p className="text-sm truncate">
-                          {selectedCartorio.configuracoes.webhookN8N || 'Não configurado'}
+                          {selectedCartorio.webhook_n8n || 'Não configurado'}
                         </p>
                       </div>
                       <div>
                         <Label className="text-sm font-medium text-gray-500">Criado em</Label>
                         <p className="text-sm">
-                          {new Date(selectedCartorio.criadoEm).toLocaleDateString('pt-BR')}
+                          {new Date(selectedCartorio.created_at).toLocaleDateString('pt-BR')}
                         </p>
                       </div>
                     </CardContent>
                   </Card>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="text-center">
-                        <Users className="h-8 w-8 mx-auto text-blue-600 mb-2" />
-                        <div className="text-2xl font-bold">{selectedCartorio.totalUsuarios}</div>
-                        <div className="text-sm text-gray-500">Usuários</div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="text-center">
-                        <FileText className="h-8 w-8 mx-auto text-green-600 mb-2" />
-                        <div className="text-2xl font-bold">{selectedCartorio.totalProtocolos.toLocaleString()}</div>
-                        <div className="text-sm text-gray-500">Protocolos</div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Card>
                     <CardContent className="pt-6">
                       <div className="text-center">
@@ -588,6 +633,16 @@ const GestaoCartorios = () => {
                           {selectedCartorio.ativo ? 'Ativo' : 'Inativo'}
                         </Badge>
                         <div className="text-sm text-gray-500 mt-2">Status</div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="text-center">
+                        <Settings className="h-8 w-8 mx-auto text-blue-600 mb-2" />
+                        <div className="text-2xl font-bold">{selectedCartorio.dias_alerta_vencimento}</div>
+                        <div className="text-sm text-gray-500">Dias de Alerta</div>
                       </div>
                     </CardContent>
                   </Card>
