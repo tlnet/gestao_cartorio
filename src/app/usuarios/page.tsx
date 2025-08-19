@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import MainLayout from '@/components/layout/main-layout';
+import { useUsuarios, useCartorios } from '@/hooks/use-supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,6 +32,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Users,
   Plus,
@@ -42,80 +44,41 @@ import {
   UserX,
   Shield,
   User,
-  Crown
+  Crown,
+  Loader2
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * z from 'zod';
+
+const usuarioSchema = z.object({
+  nome: z.string().min(1, 'Nome é obrigatório'),
+  email: z.string().email('Email inválido'),
+  telefone: z.string().min(1, 'Telefone é obrigatório'),
+  tipo: z.enum(['admin', 'supervisor', 'atendente']),
+  cartorio_id: z.string().optional(),
+  ativo: z.boolean().default(true)
+});
+
+type UsuarioFormData = z.infer<typeof usuarioSchema>;
 
 const GestaoUsuarios = () => {
+  const { usuarios, loading, createUsuario, updateUsuario, deleteUsuario } = useUsuarios();
+  const { cartorios } = useCartorios();
   const [busca, setBusca] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('todos');
   const [filtroStatus, setFiltroStatus] = useState('todos');
   const [showUserDialog, setShowUserDialog] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Dados mockados
-  const [usuarios, setUsuarios] = useState([
-    {
-      id: '1',
-      nome: 'João Silva',
-      email: 'joao.silva@cartorio.com.br',
-      telefone: '(11) 99999-9999',
-      tipo: 'admin',
-      cartorioId: '1',
-      cartorioNome: 'Cartório do 1º Ofício',
+  const form = useForm<UsuarioFormData>({
+    resolver: zodResolver(usuarioSchema),
+    defaultValues: {
       ativo: true,
-      criadoEm: '2024-01-10',
-      ultimoAcesso: '2024-01-16T09:30:00'
-    },
-    {
-      id: '2',
-      nome: 'Maria Santos',
-      email: 'maria.santos@cartorio.com.br',
-      telefone: '(11) 88888-8888',
-      tipo: 'supervisor',
-      cartorioId: '1',
-      cartorioNome: 'Cartório do 1º Ofício',
-      ativo: true,
-      criadoEm: '2024-01-12',
-      ultimoAcesso: '2024-01-16T14:15:00'
-    },
-    {
-      id: '3',
-      nome: 'Ana Costa',
-      email: 'ana.costa@cartorio.com.br',
-      telefone: '(11) 77777-7777',
-      tipo: 'atendente',
-      cartorioId: '1',
-      cartorioNome: 'Cartório do 1º Ofício',
-      ativo: true,
-      criadoEm: '2024-01-15',
-      ultimoAcesso: '2024-01-16T11:45:00'
-    },
-    {
-      id: '4',
-      nome: 'Carlos Lima',
-      email: 'carlos.lima@cartorio2.com.br',
-      telefone: '(11) 66666-6666',
-      tipo: 'supervisor',
-      cartorioId: '2',
-      cartorioNome: 'Cartório do 2º Ofício',
-      ativo: false,
-      criadoEm: '2024-01-08',
-      ultimoAcesso: '2024-01-14T16:20:00'
-    },
-    {
-      id: '5',
-      nome: 'Pedro Oliveira',
-      email: 'pedro.oliveira@cartorio.com.br',
-      telefone: '(11) 55555-5555',
-      tipo: 'atendente',
-      cartorioId: '1',
-      cartorioNome: 'Cartório do 1º Ofício',
-      ativo: true,
-      criadoEm: '2024-01-14',
-      ultimoAcesso: '2024-01-16T08:30:00'
+      tipo: 'atendente'
     }
-  ]);
+  });
 
   const tipoOptions = [
     { value: 'todos', label: 'Todos os Tipos' },
@@ -169,48 +132,94 @@ const GestaoUsuarios = () => {
     return matchBusca && matchTipo && matchStatus;
   });
 
-  const handleSubmitUser = (data: any) => {
-    if (editingUser) {
-      // Atualizar usuário existente
-      setUsuarios(prev => prev.map(u => 
-        u.id === editingUser.id 
-          ? { ...u, ...data }
-          : u
-      ));
-      toast.success('Usuário atualizado com sucesso!');
-      setEditingUser(null);
-    } else {
-      // Criar novo usuário
-      const novoUsuario = {
-        ...data,
-        id: Date.now().toString(),
-        criadoEm: new Date().toISOString().split('T')[0],
-        ultimoAcesso: null
-      };
-      setUsuarios(prev => [novoUsuario, ...prev]);
-      toast.success('Usuário cadastrado com sucesso!');
+  const handleSubmitUser = async (data: UsuarioFormData) => {
+    try {
+      setSubmitting(true);
+      
+      if (editingUser) {
+        await updateUsuario(editingUser.id, data);
+        setEditingUser(null);
+      } else {
+        await createUsuario(data);
+      }
+      
+      setShowUserDialog(false);
+      form.reset();
+    } catch (error) {
+      // Erro já tratado no hook
+    } finally {
+      setSubmitting(false);
     }
-    setShowUserDialog(false);
   };
 
   const handleEditUser = (usuario: any) => {
     setEditingUser(usuario);
+    form.reset({
+      nome: usuario.nome,
+      email: usuario.email,
+      telefone: usuario.telefone,
+      tipo: usuario.tipo,
+      cartorio_id: usuario.cartorio_id || '',
+      ativo: usuario.ativo
+    });
     setShowUserDialog(true);
   };
 
-  const handleToggleStatus = (userId: string) => {
-    setUsuarios(prev => prev.map(u => 
-      u.id === userId 
-        ? { ...u, ativo: !u.ativo }
-        : u
-    ));
-    toast.success('Status do usuário alterado com sucesso!');
+  const handleToggleStatus = async (userId: string, currentStatus: boolean) => {
+    await updateUsuario(userId, { ativo: !currentStatus });
   };
 
-  const handleDeleteUser = (userId: string) => {
-    setUsuarios(prev => prev.filter(u => u.id !== userId));
-    toast.success('Usuário removido com sucesso!');
+  const handleDeleteUser = async (userId: string) => {
+    if (confirm('Tem certeza que deseja remover este usuário?')) {
+      await deleteUsuario(userId);
+    }
   };
+
+  const handleNewUser = () => {
+    setEditingUser(null);
+    form.reset({
+      ativo: true,
+      tipo: 'atendente'
+    });
+    setShowUserDialog(true);
+  };
+
+  if (loading) {
+    return (
+      <MainLayout 
+        title="Gestão de Usuários" 
+        subtitle="Controle de acesso e permissões dos usuários do sistema"
+      >
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {[...Array(4)].map((_, i) => (
+              <Card key={i}>
+                <CardHeader>
+                  <Skeleton className="h-4 w-24" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-8 w-16 mb-2" />
+                  <Skeleton className="h-3 w-32" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-6 w-48" />
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout 
@@ -262,119 +271,10 @@ const GestaoUsuarios = () => {
           </div>
 
           {/* Botão Novo Usuário */}
-          <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
-            <DialogTrigger asChild>
-              <Button onClick={() => setEditingUser(null)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Novo Usuário
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingUser ? 'Editar Usuário' : 'Cadastrar Novo Usuário'}
-                </DialogTitle>
-                <DialogDescription>
-                  {editingUser 
-                    ? 'Atualize as informações do usuário'
-                    : 'Preencha as informações do novo usuário'
-                  }
-                </DialogDescription>
-              </DialogHeader>
-              
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="nome">Nome Completo</Label>
-                    <Input 
-                      id="nome" 
-                      placeholder="Nome completo do usuário"
-                      defaultValue={editingUser?.nome}
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="email">E-mail</Label>
-                    <Input 
-                      id="email" 
-                      type="email"
-                      placeholder="email@exemplo.com"
-                      defaultValue={editingUser?.email}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="telefone">Telefone</Label>
-                    <Input 
-                      id="telefone" 
-                      placeholder="(11) 99999-9999"
-                      defaultValue={editingUser?.telefone}
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="tipo">Tipo de Usuário</Label>
-                    <Select defaultValue={editingUser?.tipo || 'atendente'}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="admin">Administrador</SelectItem>
-                        <SelectItem value="supervisor">Supervisor</SelectItem>
-                        <SelectItem value="atendente">Atendente</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="cartorio">Cartório</Label>
-                  <Select defaultValue={editingUser?.cartorioId || '1'}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1">Cartório do 1º Ofício</SelectItem>
-                      <SelectItem value="2">Cartório do 2º Ofício</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Switch 
-                    id="ativo" 
-                    defaultChecked={editingUser?.ativo !== false}
-                  />
-                  <Label htmlFor="ativo">Usuário ativo</Label>
-                </div>
-
-                <div className="flex justify-end space-x-4 pt-4">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => setShowUserDialog(false)}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button 
-                    onClick={() => handleSubmitUser({
-                      nome: 'Novo Usuário',
-                      email: 'novo@email.com',
-                      telefone: '(11) 99999-9999',
-                      tipo: 'atendente',
-                      cartorioId: '1',
-                      cartorioNome: 'Cartório do 1º Ofício',
-                      ativo: true
-                    })}
-                  >
-                    {editingUser ? 'Atualizar' : 'Cadastrar'}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={handleNewUser}>
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Usuário
+          </Button>
         </div>
 
         {/* Estatísticas */}
@@ -476,10 +376,12 @@ const GestaoUsuarios = () => {
                         </div>
                       </Badge>
                     </TableCell>
-                    <TableCell>{usuario.cartorioNome}</TableCell>
                     <TableCell>
-                      {usuario.ultimoAcesso ? 
-                        new Date(usuario.ultimoAcesso).toLocaleString('pt-BR') : 
+                      {usuario.cartorio?.nome || 'Não atribuído'}
+                    </TableCell>
+                    <TableCell>
+                      {usuario.ultimo_acesso ? 
+                        new Date(usuario.ultimo_acesso).toLocaleString('pt-BR') : 
                         'Nunca acessou'
                       }
                     </TableCell>
@@ -500,7 +402,7 @@ const GestaoUsuarios = () => {
                         <Button 
                           variant="ghost" 
                           size="sm"
-                          onClick={() => handleToggleStatus(usuario.id)}
+                          onClick={() => handleToggleStatus(usuario.id, usuario.ativo)}
                         >
                           {usuario.ativo ? 
                             <UserX className="h-4 w-4" /> : 
@@ -522,6 +424,130 @@ const GestaoUsuarios = () => {
             </Table>
           </CardContent>
         </Card>
+
+        {/* Modal de Formulário */}
+        <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {editingUser ? 'Editar Usuário' : 'Cadastrar Novo Usuário'}
+              </DialogTitle>
+              <DialogDescription>
+                {editingUser 
+                  ? 'Atualize as informações do usuário'
+                  : 'Preencha as informações do novo usuário'
+                }
+              </DialogDescription>
+            </DialogHeader>
+            
+            <form onSubmit={form.handleSubmit(handleSubmitUser)} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="nome">Nome Completo</Label>
+                  <Input 
+                    id="nome" 
+                    placeholder="Nome completo do usuário"
+                    {...form.register('nome')}
+                  />
+                  {form.formState.errors.nome && (
+                    <p className="text-sm text-red-500">{form.formState.errors.nome.message}</p>
+                  )}
+                </div>
+                
+                <div>
+                  <Label htmlFor="email">E-mail</Label>
+                  <Input 
+                    id="email" 
+                    type="email"
+                    placeholder="email@exemplo.com"
+                    {...form.register('email')}
+                  />
+                  {form.formState.errors.email && (
+                    <p className="text-sm text-red-500">{form.formState.errors.email.message}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="telefone">Telefone</Label>
+                  <Input 
+                    id="telefone" 
+                    placeholder="(11) 99999-9999"
+                    {...form.register('telefone')}
+                  />
+                  {form.formState.errors.telefone && (
+                    <p className="text-sm text-red-500">{form.formState.errors.telefone.message}</p>
+                  )}
+                </div>
+                
+                <div>
+                  <Label htmlFor="tipo">Tipo de Usuário</Label>
+                  <Select 
+                    value={form.watch('tipo')} 
+                    onValueChange={(value) => form.setValue('tipo', value as any)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">Administrador</SelectItem>
+                      <SelectItem value="supervisor">Supervisor</SelectItem>
+                      <SelectItem value="atendente">Atendente</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {form.formState.errors.tipo && (
+                    <p className="text-sm text-red-500">{form.formState.errors.tipo.message}</p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="cartorio">Cartório</Label>
+                <Select 
+                  value={form.watch('cartorio_id') || ''} 
+                  onValueChange={(value) => form.setValue('cartorio_id', value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um cartório" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Nenhum cartório</SelectItem>
+                    {cartorios.map((cartorio) => (
+                      <SelectItem key={cartorio.id} value={cartorio.id}>
+                        {cartorio.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Switch 
+                  id="ativo" 
+                  checked={form.watch('ativo')}
+                  onCheckedChange={(checked) => form.setValue('ativo', checked)}
+                />
+                <Label htmlFor="ativo">Usuário ativo</Label>
+              </div>
+
+              <div className="flex justify-end space-x-4 pt-4">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setShowUserDialog(false)}
+                  disabled={submitting}
+                >
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={submitting}>
+                  {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {editingUser ? 'Atualizar' : 'Cadastrar'}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   );

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import MainLayout from '@/components/layout/main-layout';
 import ProtocoloForm from '@/components/protocolos/protocolo-form';
 import ProtocoloDetails from '@/components/protocolos/protocolo-details';
+import { useProtocolos, useCartorios } from '@/hooks/use-supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,70 +31,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Plus, Search, Filter, Eye, Edit, Clock } from 'lucide-react';
-import { toast } from 'sonner';
 
 const Protocolos = () => {
+  const { protocolos, loading, createProtocolo, updateProtocolo, deleteProtocolo } = useProtocolos();
+  const { cartorios } = useCartorios();
   const [filtroStatus, setFiltroStatus] = useState('todos');
   const [busca, setBusca] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [selectedProtocolo, setSelectedProtocolo] = useState<any>(null);
   const [editingProtocolo, setEditingProtocolo] = useState<any>(null);
-
-  // Dados mockados
-  const [protocolos, setProtocolos] = useState([
-    {
-      id: '12345',
-      demanda: 'Certidão de Nascimento',
-      protocolo: 'CERT-2024-001',
-      dataAbertura: '2024-01-15',
-      servicos: ['Certidão de Nascimento'],
-      solicitante: 'Maria Silva Santos',
-      cpfCnpj: '123.456.789-00',
-      telefone: '(11) 99999-9999',
-      email: 'maria@email.com',
-      status: 'Em Andamento',
-      prazoExecucao: '2024-01-20',
-      observacao: 'Primeira via da certidão'
-    },
-    {
-      id: '12346',
-      demanda: 'Escritura de Compra e Venda',
-      protocolo: 'ESC-2024-002',
-      dataAbertura: '2024-01-15',
-      servicos: ['Escritura de Compra e Venda'],
-      solicitante: 'João Carlos Oliveira',
-      cpfCnpj: '987.654.321-00',
-      telefone: '(11) 88888-8888',
-      status: 'Aguardando Análise',
-      prazoExecucao: '2024-01-25'
-    },
-    {
-      id: '12347',
-      demanda: 'Procuração',
-      protocolo: 'PROC-2024-003',
-      dataAbertura: '2024-01-14',
-      servicos: ['Procuração'],
-      solicitante: 'Ana Paula Costa',
-      cpfCnpj: '456.789.123-00',
-      telefone: '(11) 77777-7777',
-      status: 'Concluído',
-      prazoExecucao: '2024-01-19'
-    },
-    {
-      id: '12348',
-      demanda: 'Reconhecimento de Firma',
-      protocolo: 'REC-2024-004',
-      dataAbertura: '2024-01-16',
-      servicos: ['Reconhecimento de Firma'],
-      solicitante: 'Carlos Eduardo Lima',
-      cpfCnpj: '789.123.456-00',
-      telefone: '(11) 66666-6666',
-      status: 'Pendente',
-      prazoExecucao: '2024-01-18'
-    }
-  ]);
 
   const statusOptions = [
     { value: 'todos', label: 'Todos os Status' },
@@ -114,6 +63,7 @@ const Protocolos = () => {
   };
 
   const isPrazoVencendo = (prazo: string) => {
+    if (!prazo) return false;
     const hoje = new Date();
     const dataPrazo = new Date(prazo);
     const diffTime = dataPrazo.getTime() - hoje.getTime();
@@ -124,7 +74,7 @@ const Protocolos = () => {
   const protocolosFiltrados = protocolos.filter(protocolo => {
     const matchBusca = protocolo.solicitante.toLowerCase().includes(busca.toLowerCase()) ||
                       protocolo.protocolo.toLowerCase().includes(busca.toLowerCase()) ||
-                      protocolo.cpfCnpj.includes(busca);
+                      protocolo.cpf_cnpj.includes(busca);
     
     const matchStatus = filtroStatus === 'todos' || 
                        (filtroStatus === 'aguardando' && protocolo.status === 'Aguardando Análise') ||
@@ -135,27 +85,27 @@ const Protocolos = () => {
     return matchBusca && matchStatus;
   });
 
-  const handleSubmitProtocolo = (data: any) => {
-    if (editingProtocolo) {
-      // Atualizar protocolo existente
-      setProtocolos(prev => prev.map(p => 
-        p.id === editingProtocolo.id 
-          ? { ...p, ...data, id: editingProtocolo.id }
-          : p
-      ));
-      toast.success('Protocolo atualizado com sucesso!');
-      setEditingProtocolo(null);
-    } else {
-      // Criar novo protocolo
-      const novoProtocolo = {
+  const handleSubmitProtocolo = async (data: any) => {
+    try {
+      // Adicionar dados necessários para o banco
+      const protocoloData = {
         ...data,
-        id: Date.now().toString(),
-        dataAbertura: new Date().toISOString().split('T')[0],
+        cartorio_id: cartorios[0]?.id || '', // Usar primeiro cartório por enquanto
+        criado_por: 'temp-user-id', // Será substituído quando tivermos auth
+        prazo_execucao: data.prazoExecucao ? new Date(data.prazoExecucao).toISOString().split('T')[0] : null
       };
-      setProtocolos(prev => [novoProtocolo, ...prev]);
-      toast.success('Protocolo cadastrado com sucesso!');
+
+      if (editingProtocolo) {
+        await updateProtocolo(editingProtocolo.id, protocoloData);
+        setEditingProtocolo(null);
+      } else {
+        await createProtocolo(protocoloData);
+      }
+      
+      setShowForm(false);
+    } catch (error) {
+      // Erro já tratado no hook
     }
-    setShowForm(false);
   };
 
   const handleViewDetails = (protocolo: any) => {
@@ -172,6 +122,43 @@ const Protocolos = () => {
     setEditingProtocolo(null);
     setShowForm(true);
   };
+
+  if (loading) {
+    return (
+      <MainLayout 
+        title="Gestão de Protocolos" 
+        subtitle="Controle completo dos processos do cartório"
+      >
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {[...Array(4)].map((_, i) => (
+              <Card key={i}>
+                <CardHeader>
+                  <Skeleton className="h-4 w-24" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-8 w-16 mb-2" />
+                  <Skeleton className="h-3 w-32" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-6 w-48" />
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout 
@@ -216,6 +203,67 @@ const Protocolos = () => {
           </Button>
         </div>
 
+        {/* Estatísticas */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Protocolos</CardTitle>
+              <Plus className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{protocolos.length}</div>
+              <p className="text-xs text-muted-foreground">
+                Cadastrados no sistema
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Em Andamento</CardTitle>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {protocolos.filter(p => p.status === 'Em Andamento').length}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Sendo processados
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Concluídos</CardTitle>
+              <Plus className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {protocolos.filter(p => p.status === 'Concluído').length}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Finalizados
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Vencendo Prazo</CardTitle>
+              <Clock className="h-4 w-4 text-red-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">
+                {protocolos.filter(p => p.prazo_execucao && isPrazoVencendo(p.prazo_execucao)).length}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Requer atenção
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Tabela de Protocolos */}
         <Card>
           <CardHeader>
@@ -246,19 +294,22 @@ const Protocolos = () => {
                     <TableCell>
                       <div>
                         <p className="font-medium">{protocolo.solicitante}</p>
-                        <p className="text-sm text-gray-500">{protocolo.cpfCnpj}</p>
+                        <p className="text-sm text-gray-500">{protocolo.cpf_cnpj}</p>
                       </div>
                     </TableCell>
                     <TableCell>{protocolo.demanda}</TableCell>
                     <TableCell>
-                      {new Date(protocolo.dataAbertura).toLocaleDateString('pt-BR')}
+                      {new Date(protocolo.created_at).toLocaleDateString('pt-BR')}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center space-x-2">
                         <span>
-                          {new Date(protocolo.prazoExecucao).toLocaleDateString('pt-BR')}
+                          {protocolo.prazo_execucao ? 
+                            new Date(protocolo.prazo_execucao).toLocaleDateString('pt-BR') : 
+                            'Não definido'
+                          }
                         </span>
-                        {isPrazoVencendo(protocolo.prazoExecucao) && (
+                        {protocolo.prazo_execucao && isPrazoVencendo(protocolo.prazo_execucao) && (
                           <Clock className="h-4 w-4 text-red-500" />
                         )}
                       </div>
@@ -321,7 +372,11 @@ const Protocolos = () => {
           <ProtocoloDetails
             isOpen={showDetails}
             onClose={() => setShowDetails(false)}
-            protocolo={selectedProtocolo}
+            protocolo={{
+              ...selectedProtocolo,
+              dataAbertura: selectedProtocolo.created_at,
+              prazoExecucao: selectedProtocolo.prazo_execucao || new Date().toISOString()
+            }}
           />
         )}
       </div>

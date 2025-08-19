@@ -2,9 +2,11 @@
 
 import React from 'react';
 import MainLayout from '@/components/layout/main-layout';
+import { useProtocolos, useCartorios, useUsuarios, useRelatoriosIA } from '@/hooks/use-supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   BarChart,
   Bar,
@@ -25,63 +27,86 @@ import {
   CheckCircle,
   AlertTriangle,
   TrendingUp,
-  Calendar
+  Calendar,
+  Users,
+  Building2
 } from 'lucide-react';
 
 const Dashboard = () => {
-  // Dados mockados para demonstração
-  const metricas = {
-    processosHoje: 12,
-    processosSemana: 89,
-    processosMes: 342,
-    processosVencendoPrazo: 5
-  };
+  const { protocolos, loading: loadingProtocolos } = useProtocolos();
+  const { cartorios, loading: loadingCartorios } = useCartorios();
+  const { usuarios, loading: loadingUsuarios } = useUsuarios();
+  const { relatorios, loading: loadingRelatorios } = useRelatoriosIA();
 
-  const distribuicaoStatus = [
-    { status: 'Aguardando Análise', quantidade: 45, cor: '#f59e0b' },
-    { status: 'Em Andamento', quantidade: 32, cor: '#3b82f6' },
-    { status: 'Concluído', quantidade: 78, cor: '#10b981' },
-    { status: 'Pendente', quantidade: 15, cor: '#ef4444' }
-  ];
+  const loading = loadingProtocolos || loadingCartorios || loadingUsuarios || loadingRelatorios;
 
-  const processosUltimos7Dias = [
-    { dia: 'Seg', quantidade: 12 },
-    { dia: 'Ter', quantidade: 19 },
-    { dia: 'Qua', quantidade: 15 },
-    { dia: 'Qui', quantidade: 22 },
-    { dia: 'Sex', quantidade: 18 },
-    { dia: 'Sáb', quantidade: 8 },
-    { dia: 'Dom', quantidade: 5 }
-  ];
+  // Calcular métricas em tempo real
+  const hoje = new Date();
+  const inicioSemana = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - hoje.getDay());
+  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
 
-  const protocolosRecentes = [
-    {
-      id: '12345',
-      solicitante: 'Maria Silva Santos',
-      servico: 'Certidão de Nascimento',
-      status: 'Em Andamento',
-      dataAbertura: '2024-01-15',
-      prazo: '2024-01-20'
-    },
-    {
-      id: '12346',
-      solicitante: 'João Carlos Oliveira',
-      servico: 'Escritura de Compra e Venda',
-      status: 'Aguardando Análise',
-      dataAbertura: '2024-01-15',
-      prazo: '2024-01-25'
-    },
-    {
-      id: '12347',
-      solicitante: 'Ana Paula Costa',
-      servico: 'Procuração',
-      status: 'Concluído',
-      dataAbertura: '2024-01-14',
-      prazo: '2024-01-19'
+  const processosHoje = protocolos.filter(p => {
+    const dataProtocolo = new Date(p.created_at);
+    return dataProtocolo.toDateString() === hoje.toDateString();
+  }).length;
+
+  const processosSemana = protocolos.filter(p => {
+    const dataProtocolo = new Date(p.created_at);
+    return dataProtocolo >= inicioSemana;
+  }).length;
+
+  const processosMes = protocolos.filter(p => {
+    const dataProtocolo = new Date(p.created_at);
+    return dataProtocolo >= inicioMes;
+  }).length;
+
+  const processosVencendoPrazo = protocolos.filter(p => {
+    if (!p.prazo_execucao) return false;
+    const prazo = new Date(p.prazo_execucao);
+    const diffTime = prazo.getTime() - hoje.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays <= 2 && diffDays >= 0;
+  }).length;
+
+  // Distribuição por status
+  const statusCount = protocolos.reduce((acc, protocolo) => {
+    acc[protocolo.status] = (acc[protocolo.status] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const distribuicaoStatus = Object.entries(statusCount).map(([status, quantidade]) => ({
+    status,
+    quantidade,
+    cor: getStatusColor(status)
+  }));
+
+  function getStatusColor(status: string) {
+    switch (status) {
+      case 'Aguardando Análise': return '#f59e0b';
+      case 'Em Andamento': return '#3b82f6';
+      case 'Concluído': return '#10b981';
+      case 'Pendente': return '#ef4444';
+      default: return '#6b7280';
     }
-  ];
+  }
 
-  const getStatusColor = (status: string) => {
+  // Dados dos últimos 7 dias
+  const processosUltimos7Dias = Array.from({ length: 7 }, (_, i) => {
+    const data = new Date(hoje);
+    data.setDate(data.getDate() - (6 - i));
+    
+    const quantidade = protocolos.filter(p => {
+      const dataProtocolo = new Date(p.created_at);
+      return dataProtocolo.toDateString() === data.toDateString();
+    }).length;
+
+    return {
+      dia: data.toLocaleDateString('pt-BR', { weekday: 'short' }),
+      quantidade
+    };
+  });
+
+  const getStatusColorClass = (status: string) => {
     switch (status) {
       case 'Concluído': return 'bg-green-100 text-green-800';
       case 'Em Andamento': return 'bg-blue-100 text-blue-800';
@@ -90,6 +115,43 @@ const Dashboard = () => {
       default: return 'bg-gray-100 text-gray-800';
     }
   };
+
+  if (loading) {
+    return (
+      <MainLayout 
+        title="Dashboard" 
+        subtitle="Visão geral dos processos e métricas do cartório"
+      >
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[...Array(4)].map((_, i) => (
+              <Card key={i}>
+                <CardHeader>
+                  <Skeleton className="h-4 w-24" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-8 w-16 mb-2" />
+                  <Skeleton className="h-3 w-32" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {[...Array(2)].map((_, i) => (
+              <Card key={i}>
+                <CardHeader>
+                  <Skeleton className="h-6 w-48" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-64 w-full" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout 
@@ -105,9 +167,9 @@ const Dashboard = () => {
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{metricas.processosHoje}</div>
+              <div className="text-2xl font-bold">{processosHoje}</div>
               <p className="text-xs text-muted-foreground">
-                +2 desde ontem
+                Novos protocolos hoje
               </p>
             </CardContent>
           </Card>
@@ -118,9 +180,9 @@ const Dashboard = () => {
               <Calendar className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{metricas.processosSemana}</div>
+              <div className="text-2xl font-bold">{processosSemana}</div>
               <p className="text-xs text-muted-foreground">
-                +12% em relação à semana passada
+                Protocolos esta semana
               </p>
             </CardContent>
           </Card>
@@ -131,9 +193,9 @@ const Dashboard = () => {
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{metricas.processosMes}</div>
+              <div className="text-2xl font-bold">{processosMes}</div>
               <p className="text-xs text-muted-foreground">
-                +8% em relação ao mês passado
+                Total do mês atual
               </p>
             </CardContent>
           </Card>
@@ -144,9 +206,51 @@ const Dashboard = () => {
               <AlertTriangle className="h-4 w-4 text-red-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-600">{metricas.processosVencendoPrazo}</div>
+              <div className="text-2xl font-bold text-red-600">{processosVencendoPrazo}</div>
               <p className="text-xs text-muted-foreground">
                 Requer atenção imediata
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Estatísticas Gerais */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Cartórios</CardTitle>
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{cartorios.length}</div>
+              <p className="text-xs text-muted-foreground">
+                {cartorios.filter(c => c.ativo).length} ativos
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Usuários</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{usuarios.length}</div>
+              <p className="text-xs text-muted-foreground">
+                {usuarios.filter(u => u.ativo).length} ativos
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Análises IA</CardTitle>
+              <CheckCircle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{relatorios.length}</div>
+              <p className="text-xs text-muted-foreground">
+                {relatorios.filter(r => r.status === 'concluido').length} concluídas
               </p>
             </CardContent>
           </Card>
@@ -217,18 +321,18 @@ const Dashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {protocolosRecentes.map((protocolo) => (
+              {protocolos.slice(0, 5).map((protocolo) => (
                 <div key={protocolo.id} className="flex items-center justify-between p-4 border rounded-lg">
                   <div className="flex-1">
                     <div className="flex items-center space-x-4">
                       <div>
-                        <p className="font-medium">#{protocolo.id}</p>
+                        <p className="font-medium">#{protocolo.protocolo}</p>
                         <p className="text-sm text-gray-600">{protocolo.solicitante}</p>
                       </div>
                       <div>
-                        <p className="text-sm font-medium">{protocolo.servico}</p>
+                        <p className="text-sm font-medium">{protocolo.demanda}</p>
                         <p className="text-xs text-gray-500">
-                          Aberto em {new Date(protocolo.dataAbertura).toLocaleDateString('pt-BR')}
+                          Aberto em {new Date(protocolo.created_at).toLocaleDateString('pt-BR')}
                         </p>
                       </div>
                     </div>
@@ -237,10 +341,13 @@ const Dashboard = () => {
                     <div className="text-right">
                       <p className="text-sm text-gray-600">Prazo</p>
                       <p className="text-sm font-medium">
-                        {new Date(protocolo.prazo).toLocaleDateString('pt-BR')}
+                        {protocolo.prazo_execucao ? 
+                          new Date(protocolo.prazo_execucao).toLocaleDateString('pt-BR') : 
+                          'Não definido'
+                        }
                       </p>
                     </div>
-                    <Badge className={getStatusColor(protocolo.status)}>
+                    <Badge className={getStatusColorClass(protocolo.status)}>
                       {protocolo.status}
                     </Badge>
                     <Button variant="outline" size="sm">
