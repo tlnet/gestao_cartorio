@@ -49,7 +49,7 @@ import {
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import * z from 'zod';
+import * as z from 'zod';
 
 const usuarioSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
