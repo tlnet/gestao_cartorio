@@ -39,15 +39,6 @@ const nextConfig: NextConfig = {
       };
     }
 
-    // Otimizações de bundle
-    config.optimization = {
-      ...config.optimization,
-      splitChunks: {
-        ...config.optimization.splitChunks,
-        chunks: "all",
-      },
-    };
-
     return config;
   },
 
