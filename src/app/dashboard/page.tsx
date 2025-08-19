@@ -1,6 +1,7 @@
 "use client";
 
 import React from 'react';
+import MainLayout from '@/components/layout/main-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -97,17 +98,12 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-600 mt-1">Visão geral dos processos e métricas do cartório</p>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="p-6 space-y-6">
+    <MainLayout 
+      title="Dashboard" 
+      subtitle="Visão geral dos processos e métricas do cartório"
+      userType="supervisor"
+    >
+      <div className="space-y-6">
         {/* Cards de Métricas */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Card>
@@ -306,7 +302,7 @@ const Dashboard = () => {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </MainLayout>
   );
 };
 

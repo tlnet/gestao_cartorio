@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
+import MainLayout from '@/components/layout/main-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -200,17 +201,12 @@ const GestaoCartorios = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Gestão de Cartórios</h1>
-          <p className="text-sm text-gray-600 mt-1">Administração de todos os cartórios do sistema</p>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="p-6 space-y-6">
+    <MainLayout 
+      title="Gestão de Cartórios" 
+      subtitle="Administração de todos os cartórios do sistema"
+      userType="admin"
+    >
+      <div className="space-y-6">
         {/* Header com filtros */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex flex-col sm:flex-row gap-4 flex-1">
@@ -411,6 +407,7 @@ const GestaoCartorios = () => {
         </Card>
 
         {/* Modal de Formulário */}
+        
         <Dialog open={showCartorioDialog} onOpenChange={setShowCartorioDialog}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
@@ -652,7 +649,7 @@ const GestaoCartorios = () => {
           </DialogContent>
         </Dialog>
       </div>
-    </div>
+    </MainLayout>
   );
 };
 
