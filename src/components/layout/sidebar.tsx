@@ -3,7 +3,6 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useAuth } from '@/contexts/auth-context';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
@@ -14,13 +13,12 @@ import {
   Users,
   Building2,
   LogOut,
-  User,
-  Loader2
+  User
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarInitials } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 interface SidebarProps {
   userType?: 'admin' | 'supervisor' | 'atendente';
@@ -28,7 +26,6 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ userType = 'supervisor' }) => {
   const pathname = usePathname();
-  const { user, signOut, loading } = useAuth();
 
   const menuItems = [
     {
@@ -102,7 +99,8 @@ const Sidebar: React.FC<SidebarProps> = ({ userType = 'supervisor' }) => {
   };
 
   const handleSignOut = async () => {
-    await signOut();
+    // Simular logout
+    window.location.href = '/login';
   };
 
   return (
@@ -147,50 +145,36 @@ const Sidebar: React.FC<SidebarProps> = ({ userType = 'supervisor' }) => {
 
       {/* User Info & Logout */}
       <div className="p-4 space-y-3">
-        {user ? (
-          <div className="space-y-3">
-            <div className="flex items-center space-x-3">
-              <Avatar className="h-10 w-10">
-                <AvatarFallback className="bg-blue-100 text-blue-600">
-                  {getUserInitials(user.email || '')}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">
-                  {user.user_metadata?.name || user.email?.split('@')[0] || 'Usuário'}
-                </p>
-                <p className="text-xs text-gray-500 truncate">{user.email}</p>
-              </div>
-            </div>
-            
-            <div className="flex justify-center">
-              <Badge className={getRoleColor(userType)} variant="secondary">
-                {getRoleLabel(userType)}
-              </Badge>
-            </div>
-            
-            <Button 
-              variant="ghost" 
-              className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
-              onClick={handleSignOut}
-              disabled={loading}
-            >
-              {loading ? (
-                <Loader2 className="mr-3 h-4 w-4 animate-spin" />
-              ) : (
-                <LogOut className="mr-3 h-4 w-4" />
-              )}
-              Sair
-            </Button>
-          </div>
-        ) : (
-          <div className="text-center">
-            <div className="flex items-center justify-center space-x-2 text-gray-500">
-              <User className="h-4 w-4" />
-              <span className="text-sm">Não autenticado</span>
+        <div className="space-y-3">
+          <div className="flex items-center space-x-3">
+            <Avatar className="h-10 w-10">
+              <AvatarFallback className="bg-blue-100 text-blue-600">
+                US
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate">
+                Usuário Demo
+              </p>
+              <p className="text-xs text-gray-500 truncate">demo@cartorio.com</p>
             </div>
           </div>
-        )}
+          
+          <div className="flex justify-center">
+            <Badge className={getRoleColor(userType)} variant="secondary">
+              {getRoleLabel(userType)}
+            </Badge>
+          </div>
+          
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
+            onClick={handleSignOut}
+          >
+            <LogOut className="mr-3 h-4 w-4" />
+            Sair
+          </Button>
+        </div>
       </div>
     </div>
   );

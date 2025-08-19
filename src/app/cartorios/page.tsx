@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useState } from 'react';
-import MainLayout from '@/components/layout/main-layout';
-import { useCartorios } from '@/hooks/use-supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,7 +31,6 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Building2,
   Plus,
@@ -53,6 +50,7 @@ import {
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import { toast } from 'sonner';
 
 const cartorioSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
@@ -69,7 +67,39 @@ const cartorioSchema = z.object({
 type CartorioFormData = z.infer<typeof cartorioSchema>;
 
 const GestaoCartorios = () => {
-  const { cartorios, loading, createCartorio, updateCartorio, deleteCartorio } = useCartorios();
+  // Dados mockados para evitar chamadas de API
+  const [cartorios] = useState([
+    {
+      id: '1',
+      nome: 'Cartório do 1º Ofício de Notas',
+      cnpj: '12.345.678/0001-90',
+      endereco: 'Rua das Flores, 123 - Centro - São Paulo/SP',
+      telefone: '(11) 3333-4444',
+      email: 'contato@cartorio1oficio.com.br',
+      ativo: true,
+      dias_alerta_vencimento: 3,
+      notificacao_whatsapp: true,
+      webhook_n8n: 'https://webhook.n8n.io/cartorio-123',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z'
+    },
+    {
+      id: '2',
+      nome: 'Cartório do 2º Ofício',
+      cnpj: '98.765.432/0001-10',
+      endereco: 'Av. Principal, 456 - Centro - São Paulo/SP',
+      telefone: '(11) 3333-5555',
+      email: 'contato@cartorio2oficio.com.br',
+      ativo: true,
+      dias_alerta_vencimento: 5,
+      notificacao_whatsapp: false,
+      webhook_n8n: null,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z'
+    }
+  ]);
+
+  const [loading] = useState(false);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('todos');
   const [showCartorioDialog, setShowCartorioDialog] = useState(false);
@@ -109,17 +139,20 @@ const GestaoCartorios = () => {
     try {
       setSubmitting(true);
       
+      // Simular criação/edição
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       if (editingCartorio) {
-        await updateCartorio(editingCartorio.id, data);
+        toast.success('Cartório atualizado com sucesso!');
         setEditingCartorio(null);
       } else {
-        await createCartorio(data);
+        toast.success('Cartório criado com sucesso!');
       }
       
       setShowCartorioDialog(false);
       form.reset();
     } catch (error) {
-      // Erro já tratado no hook
+      toast.error('Erro ao salvar cartório');
     } finally {
       setSubmitting(false);
     }
@@ -147,12 +180,12 @@ const GestaoCartorios = () => {
   };
 
   const handleToggleStatus = async (cartorio: any) => {
-    await updateCartorio(cartorio.id, { ativo: !cartorio.ativo });
+    toast.success(`Status do cartório ${cartorio.ativo ? 'desativado' : 'ativado'} com sucesso!`);
   };
 
   const handleDeleteCartorio = async (cartorioId: string) => {
     if (confirm('Tem certeza que deseja remover este cartório?')) {
-      await deleteCartorio(cartorioId);
+      toast.success('Cartório removido com sucesso!');
     }
   };
 
@@ -166,51 +199,18 @@ const GestaoCartorios = () => {
     setShowCartorioDialog(true);
   };
 
-  if (loading) {
-    return (
-      <MainLayout 
-        title="Gestão de Cartórios" 
-        subtitle="Administração de todos os cartórios do sistema"
-        userType="admin"
-      >
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            {[...Array(4)].map((_, i) => (
-              <Card key={i}>
-                <CardHeader>
-                  <Skeleton className="h-4 w-24" />
-                </CardHeader>
-                <CardContent>
-                  <Skeleton className="h-8 w-16 mb-2" />
-                  <Skeleton className="h-3 w-32" />
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-          <Card>
-            <CardHeader>
-              <Skeleton className="h-6 w-48" />
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {[...Array(5)].map((_, i) => (
-                  <Skeleton key={i} className="h-16 w-full" />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </MainLayout>
-    );
-  }
-
   return (
-    <MainLayout 
-      title="Gestão de Cartórios" 
-      subtitle="Administração de todos os cartórios do sistema"
-      userType="admin"
-    >
-      <div className="space-y-6">
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 px-6 py-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Gestão de Cartórios</h1>
+          <p className="text-sm text-gray-600 mt-1">Administração de todos os cartórios do sistema</p>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="p-6 space-y-6">
         {/* Header com filtros */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex flex-col sm:flex-row gap-4 flex-1">
@@ -652,7 +652,7 @@ const GestaoCartorios = () => {
           </DialogContent>
         </Dialog>
       </div>
-    </MainLayout>
+    </div>
   );
 };
 
