@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, Session, AuthError } from '@supabase/supabase-js';
+import { User, Session, AuthError, AuthChangeEvent } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Escutar mudanças de autenticação
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (event: AuthChangeEvent, session: Session | null) => {
         console.log('Auth state change:', event, session);
         
         setSession(session);
