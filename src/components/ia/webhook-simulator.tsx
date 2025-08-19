@@ -69,7 +69,7 @@ const WebhookSimulator: React.FC<WebhookSimulatorProps> = ({ onProcessComplete }
       };
 
       toast.success('Análise concluída com sucesso!', { id: 'webhook-call' });
-      on ProcessComplete(mockResponse);
+      onProcessComplete(mockResponse);
       
     } catch (error) {
       toast.error('Erro ao processar documento', { id: 'webhook-call' });
