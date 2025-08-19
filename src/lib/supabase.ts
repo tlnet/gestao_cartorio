@@ -3,7 +3,24 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+console.log('Configuração Supabase:', {
+  url: supabaseUrl ? 'Configurada' : 'FALTANDO',
+  key: supabaseAnonKey ? 'Configurada' : 'FALTANDO'
+});
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('❌ Variáveis de ambiente do Supabase não configuradas!');
+  console.error('NEXT_PUBLIC_SUPABASE_URL:', supabaseUrl);
+  console.error('NEXT_PUBLIC_SUPABASE_ANON_KEY:', supabaseAnonKey ? 'Presente' : 'Ausente');
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true
+  }
+})
 
 // Tipos para o banco de dados
 export interface Database {
@@ -52,40 +69,31 @@ export interface Database {
           updated_at?: string
         }
       }
-      usuarios: {
+      users: {
         Row: {
           id: string
-          nome: string
           email: string
-          telefone: string
-          tipo: 'admin' | 'supervisor' | 'atendente'
+          name: string | null
+          role: string
           cartorio_id: string | null
-          ativo: boolean
-          ultimo_acesso: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
-          id?: string
-          nome: string
+          id: string
           email: string
-          telefone: string
-          tipo: 'admin' | 'supervisor' | 'atendente'
+          name?: string | null
+          role?: string
           cartorio_id?: string | null
-          ativo?: boolean
-          ultimo_acesso?: string | null
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
-          nome?: string
           email?: string
-          telefone?: string
-          tipo?: 'admin' | 'supervisor' | 'atendente'
+          name?: string | null
+          role?: string
           cartorio_id?: string | null
-          ativo?: boolean
-          ultimo_acesso?: string | null
           updated_at?: string
         }
       }
