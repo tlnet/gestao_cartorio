@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 import MainLayout from '@/components/layout/main-layout';
+import ProtocoloForm from '@/components/protocolos/protocolo-form';
+import ProtocoloDetails from '@/components/protocolos/protocolo-details';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,16 +29,20 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { Plus, Search, Filter, Eye, Edit, Clock } from 'lucide-react';
+import { toast } from 'sonner';
 
 const Protocolos = () => {
   const [filtroStatus, setFiltroStatus] = useState('todos');
   const [busca, setBusca] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [selectedProtocolo, setSelectedProtocolo] = useState<any>(null);
+  const [editingProtocolo, setEditingProtocolo] = useState<any>(null);
 
   // Dados mockados
-  const protocolos = [
+  const [protocolos, setProtocolos] = useState([
     {
       id: '12345',
       demanda: 'Certidão de Nascimento',
@@ -46,8 +52,10 @@ const Protocolos = () => {
       solicitante: 'Maria Silva Santos',
       cpfCnpj: '123.456.789-00',
       telefone: '(11) 99999-9999',
+      email: 'maria@email.com',
       status: 'Em Andamento',
-      prazoExecucao: '2024-01-20'
+      prazoExecucao: '2024-01-20',
+      observacao: 'Primeira via da certidão'
     },
     {
       id: '12346',
@@ -85,7 +93,7 @@ const Protocolos = () => {
       status: 'Pendente',
       prazoExecucao: '2024-01-18'
     }
-  ];
+  ]);
 
   const statusOptions = [
     { value: 'todos', label: 'Todos os Status' },
@@ -127,6 +135,44 @@ const Protocolos = () => {
     return matchBusca && matchStatus;
   });
 
+  const handleSubmitProtocolo = (data: any) => {
+    if (editingProtocolo) {
+      // Atualizar protocolo existente
+      setProtocolos(prev => prev.map(p => 
+        p.id === editingProtocolo.id 
+          ? { ...p, ...data, id: editingProtocolo.id }
+          : p
+      ));
+      toast.success('Protocolo atualizado com sucesso!');
+      setEditingProtocolo(null);
+    } else {
+      // Criar novo protocolo
+      const novoProtocolo = {
+        ...data,
+        id: Date.now().toString(),
+        dataAbertura: new Date().toISOString().split('T')[0],
+      };
+      setProtocolos(prev => [novoProtocolo, ...prev]);
+      toast.success('Protocolo cadastrado com sucesso!');
+    }
+    setShowForm(false);
+  };
+
+  const handleViewDetails = (protocolo: any) => {
+    setSelectedProtocolo(protocolo);
+    setShowDetails(true);
+  };
+
+  const handleEditProtocolo = (protocolo: any) => {
+    setEditingProtocolo(protocolo);
+    setShowForm(true);
+  };
+
+  const handleNewProtocolo = () => {
+    setEditingProtocolo(null);
+    setShowForm(true);
+  };
+
   return (
     <MainLayout 
       title="Gestão de Protocolos" 
@@ -164,26 +210,10 @@ const Protocolos = () => {
           </div>
 
           {/* Botão Novo Protocolo */}
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Novo Protocolo
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>Cadastrar Novo Protocolo</DialogTitle>
-                <DialogDescription>
-                  Preencha as informações do novo protocolo
-                </DialogDescription>
-              </DialogHeader>
-              {/* Aqui seria o formulário de cadastro */}
-              <div className="p-4 text-center text-gray-500">
-                Formulário de cadastro será implementado aqui
-              </div>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={handleNewProtocolo}>
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Protocolo
+          </Button>
         </div>
 
         {/* Tabela de Protocolos */}
@@ -240,10 +270,18 @@ const Protocolos = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex space-x-2">
-                        <Button variant="ghost" size="sm">
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleViewDetails(protocolo)}
+                        >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="sm">
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleEditProtocolo(protocolo)}
+                        >
                           <Edit className="h-4 w-4" />
                         </Button>
                       </div>
@@ -254,6 +292,38 @@ const Protocolos = () => {
             </Table>
           </CardContent>
         </Card>
+
+        {/* Modal de Formulário */}
+        <Dialog open={showForm} onOpenChange={setShowForm}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {editingProtocolo ? 'Editar Protocolo' : 'Cadastrar Novo Protocolo'}
+              </DialogTitle>
+              <DialogDescription>
+                {editingProtocolo 
+                  ? 'Atualize as informações do protocolo'
+                  : 'Preencha as informações do novo protocolo'
+                }
+              </DialogDescription>
+            </DialogHeader>
+            <ProtocoloForm
+              onSubmit={handleSubmitProtocolo}
+              onCancel={() => setShowForm(false)}
+              initialData={editingProtocolo}
+              isEditing={!!editingProtocolo}
+            />
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal de Detalhes */}
+        {selectedProtocolo && (
+          <ProtocoloDetails
+            isOpen={showDetails}
+            onClose={() => setShowDetails(false)}
+            protocolo={selectedProtocolo}
+          />
+        )}
       </div>
     </MainLayout>
   );
