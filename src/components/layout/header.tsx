@@ -1,9 +1,27 @@
 "use client";
 
-import React from 'react';
-import { Bell, Search, User, LogOut, Settings as SettingsIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import React, { useState, useRef, useEffect } from "react";
+import {
+  Bell,
+  Search,
+  User,
+  LogOut,
+  Settings as SettingsIcon,
+  Edit,
+  Save,
+  X,
+  Camera,
+  Upload,
+  AlertTriangle,
+  Clock,
+  CheckCircle,
+  FileText,
+  Eye,
+  EyeOff,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,121 +29,319 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { useAuth } from "@/contexts/auth-context";
+import { supabase } from "@/lib/supabase";
+import NotificationBell from "@/components/notifications/notification-bell";
 
 interface HeaderProps {
   title: string;
   subtitle?: string;
 }
 
+interface Notification {
+  id: string;
+  type: "warning" | "info" | "success" | "error";
+  title: string;
+  message: string;
+  timestamp: Date;
+  read: boolean;
+  actionUrl?: string;
+  protocoloId?: string;
+}
+
 const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
-  const getUserInitials = (email: string) => {
-    return email.substring(0, 2).toUpperCase();
+  const router = useRouter();
+  const { user, signOut } = useAuth();
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // Buscar dados do usuário
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      if (user) {
+        try {
+          const { data, error } = await supabase
+            .from("users")
+            .select("*")
+            .eq("id", user.id)
+            .single();
+
+          if (error) {
+            console.error("Erro ao buscar perfil:", error);
+            return;
+          }
+
+          setUserProfile(data);
+        } catch (error) {
+          console.error("Erro ao buscar perfil:", error);
+        }
+      }
+    };
+
+    fetchUserProfile();
+  }, [user]);
+
+  // Estado das notificações
+  const [notifications, setNotifications] = useState<Notification[]>([
+    {
+      id: "1",
+      type: "warning",
+      title: "Protocolo vence hoje",
+      message: "Protocolo #12345 vence hoje - Solicitante: Maria Silva",
+      timestamp: new Date(Date.now() - 1000 * 60 * 30), // 30 minutos atrás
+      read: false,
+      actionUrl: "/protocolos",
+      protocoloId: "12345",
+    },
+    {
+      id: "2",
+      type: "info",
+      title: "Protocolos aguardando análise",
+      message: "5 protocolos aguardando análise há mais de 2 horas",
+      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 horas atrás
+      read: false,
+      actionUrl: "/protocolos",
+    },
+    {
+      id: "3",
+      type: "success",
+      title: "Relatório IA processado",
+      message: "Análise de malote concluída com sucesso",
+      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 4), // 4 horas atrás
+      read: true,
+      actionUrl: "/ia",
+    },
+    {
+      id: "4",
+      type: "error",
+      title: "Erro no processamento",
+      message: "Falha ao processar documento #98765",
+      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 6), // 6 horas atrás
+      read: false,
+      actionUrl: "/ia",
+    },
+  ]);
+
+  const getUserInitials = (fullName: string) => {
+    const names = fullName.trim().split(" ");
+    if (names.length >= 2) {
+      return `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase();
+    }
+    return fullName.substring(0, 2).toUpperCase();
   };
 
   const handleSignOut = async () => {
-    window.location.href = '/login';
+    try {
+      await signOut();
+    } catch (error) {
+      console.error("Erro ao fazer logout:", error);
+      toast.error("Erro ao fazer logout");
+    }
+  };
+
+  const handleProfileClick = () => {
+    router.push("/perfil");
+  };
+
+  const handleSettingsClick = () => {
+    router.push("/configuracoes");
+  };
+
+  // Função de busca
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchTerm.trim()) {
+      router.push(
+        `/protocolos?search=${encodeURIComponent(searchTerm.trim())}`
+      );
+    }
+  };
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+  };
+
+  const handleSearchIconClick = () => {
+    if (searchTerm.trim()) {
+      router.push(
+        `/protocolos?search=${encodeURIComponent(searchTerm.trim())}`
+      );
+    }
+  };
+
+  // Funções de notificação
+  const getUnreadCount = () => notifications.filter((n) => !n.read).length;
+
+  const markAsRead = (id: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+    );
+  };
+
+  const markAllAsRead = () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    toast.success("Todas as notificações marcadas como lidas!");
+  };
+
+  const deleteNotification = (id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    toast.success("Notificação removida!");
+  };
+
+  const handleNotificationClick = (notification: Notification) => {
+    if (!notification.read) {
+      markAsRead(notification.id);
+    }
+
+    if (notification.actionUrl) {
+      router.push(notification.actionUrl);
+    }
+  };
+
+  const getNotificationIcon = (type: Notification["type"]) => {
+    switch (type) {
+      case "warning":
+        return <AlertTriangle className="h-4 w-4 text-yellow-600" />;
+      case "error":
+        return <X className="h-4 w-4 text-red-600" />;
+      case "success":
+        return <CheckCircle className="h-4 w-4 text-green-600" />;
+      case "info":
+        return <Clock className="h-4 w-4 text-blue-600" />;
+      default:
+        return <FileText className="h-4 w-4 text-gray-600" />;
+    }
+  };
+
+  const getNotificationColor = (type: Notification["type"]) => {
+    switch (type) {
+      case "warning":
+        return "border-l-yellow-500 bg-yellow-50";
+      case "error":
+        return "border-l-red-500 bg-red-50";
+      case "success":
+        return "border-l-green-500 bg-green-50";
+      case "info":
+        return "border-l-blue-500 bg-blue-50";
+      default:
+        return "border-l-gray-500 bg-gray-50";
+    }
+  };
+
+  const formatTimestamp = (timestamp: Date) => {
+    const now = new Date();
+    const diff = now.getTime() - timestamp.getTime();
+    const minutes = Math.floor(diff / (1000 * 60));
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    if (minutes < 1) return "Agora mesmo";
+    if (minutes < 60) return `${minutes} min atrás`;
+    if (hours < 24) return `${hours}h atrás`;
+    if (days < 7) return `${days} dias atrás`;
+    return timestamp.toLocaleDateString("pt-BR");
   };
 
   return (
-    <header className="bg-white border-b border-gray-200 px-6 py-4">
-      <div className="flex items-center justify-between">
-        {/* Title Section */}
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
-          {subtitle && (
-            <p className="text-sm text-gray-600 mt-1">{subtitle}</p>
-          )}
-        </div>
-
-        {/* Actions Section */}
-        <div className="flex items-center space-x-4">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-            <Input
-              placeholder="Buscar protocolos..."
-              className="pl-10 w-64"
-            />
+    <>
+      <header className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex items-center justify-between">
+          {/* Title Section */}
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+            {subtitle && (
+              <p className="text-sm text-gray-600 mt-1">{subtitle}</p>
+            )}
           </div>
 
-          {/* Notifications */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">
-                  3
-                </Badge>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80">
-              <DropdownMenuLabel>Notificações</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">Protocolo #12345 vence hoje</p>
-                  <p className="text-xs text-gray-500">Solicitante: Maria Silva</p>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">5 protocolos aguardando análise</p>
-                  <p className="text-xs text-gray-500">Há 2 horas</p>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">Relatório IA processado</p>
-                  <p className="text-xs text-gray-500">Análise de malote concluída</p>
-                </div>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Actions Section */}
+          <div className="flex items-center space-x-4">
+            {/* Search */}
+            <form onSubmit={handleSearch} className="relative">
+              <Search
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4 cursor-pointer hover:text-gray-600 transition-colors"
+                onClick={handleSearchIconClick}
+              />
+              <Input
+                placeholder="Buscar protocolos"
+                className="pl-10 w-64"
+                value={searchTerm}
+                onChange={handleSearchChange}
+              />
+            </form>
 
-          {/* User Menu */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="flex items-center space-x-2 px-3">
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback className="bg-blue-100 text-blue-600 text-sm">
-                    US
-                  </AvatarFallback>
-                </Avatar>
-                <div className="hidden md:block text-left">
-                  <p className="text-sm font-medium">Usuário Demo</p>
-                  <p className="text-xs text-gray-500">demo@cartorio.com</p>
-                </div>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>
-                <div>
-                  <p className="font-medium">Usuário Demo</p>
-                  <p className="text-xs text-gray-500 font-normal">demo@cartorio.com</p>
-                </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <User className="mr-2 h-4 w-4" />
-                Meu Perfil
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <SettingsIcon className="mr-2 h-4 w-4" />
-                Configurações
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleSignOut} className="text-red-600">
-                <LogOut className="mr-2 h-4 w-4" />
-                Sair
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            {/* Notifications */}
+            <NotificationBell />
+
+            {/* User Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="flex items-center space-x-2 px-3"
+                >
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={userProfile?.avatar_url || undefined} />
+                    <AvatarFallback className="bg-blue-100 text-blue-600 text-sm">
+                      {getUserInitials(userProfile?.name || user?.email || "U")}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="hidden md:block text-left">
+                    <p className="text-sm font-medium">
+                      {userProfile?.name || user?.email || "Usuário"}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {user?.email || "email@exemplo.com"}
+                    </p>
+                  </div>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>
+                  <div>
+                    <p className="font-medium">
+                      {userProfile?.name || user?.email || "Usuário"}
+                    </p>
+                    <p className="text-xs text-gray-500 font-normal">
+                      {user?.email || "email@exemplo.com"}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleProfileClick}>
+                  <User className="mr-2 h-4 w-4" />
+                  Meu Perfil
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleSettingsClick}>
+                  <SettingsIcon className="mr-2 h-4 w-4" />
+                  Configurações
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={handleSignOut}
+                  className="text-red-600"
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sair
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+    </>
   );
 };
 

@@ -1,10 +1,15 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, Session, AuthError, AuthChangeEvent } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import React, { createContext, useContext, useEffect, useState } from "react";
+import {
+  User,
+  Session,
+  AuthError,
+  AuthChangeEvent,
+} from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 interface AuthContextType {
   user: User | null;
@@ -27,14 +32,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Verificar sessão inicial
     const getInitialSession = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
         if (error) throw error;
-        
+
         setSession(session);
         setUser(session?.user ?? null);
       } catch (error: any) {
         setError(error);
-        toast.error('Erro ao verificar sessão: ' + error.message);
+        toast.error("Erro ao verificar sessão: " + error.message);
       } finally {
         setLoading(false);
       }
@@ -43,31 +51,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     getInitialSession();
 
     // Escutar mudanças de autenticação
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, session: Session | null) => {
-        console.log('Auth state change:', event, session);
-        
+        console.log("Auth state change:", event, session);
+
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
 
-        if (event === 'SIGNED_IN') {
+        if (event === "SIGNED_IN") {
           setError(null);
-          toast.success('Login realizado com sucesso!');
-          router.push('/dashboard');
-        }
-        
-        if (event === 'SIGNED_OUT') {
-          setError(null);
-          toast.info('Logout realizado com sucesso!');
-          router.push('/login');
+          // Não fazer redirecionamento aqui para evitar conflitos
+          // O redirecionamento será feito pela função de login
         }
 
-        if (event === 'USER_UPDATED') {
+        if (event === "SIGNED_OUT") {
+          setError(null);
+          toast.info("Logout realizado com sucesso!");
+          router.push("/login");
+        }
+
+        if (event === "USER_UPDATED") {
           const { error } = await supabase.auth.getSession();
           if (error) {
             setError(error);
-            toast.error('Erro ao atualizar sessão: ' + error.message);
+            toast.error("Erro ao atualizar sessão: " + error.message);
           }
         }
       }
@@ -83,7 +93,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error;
     } catch (error: any) {
       setError(error);
-      toast.error('Erro ao fazer logout: ' + error.message);
+      toast.error("Erro ao fazer logout: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -94,20 +104,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     session,
     loading,
     signOut,
-    error
+    error,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 }

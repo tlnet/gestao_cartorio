@@ -1,20 +1,20 @@
 "use client";
 
-import React from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import React from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Form,
   FormControl,
@@ -23,29 +23,60 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@/components/ui/form';
-import { Calendar } from '@/components/ui/calendar';
+} from "@/components/ui/form";
+import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from '@/components/ui/popover';
-import { CalendarIcon, Plus, X } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
+} from "@/components/ui/popover";
+import { CalendarIcon, Plus, X } from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import {
+  formatPhone,
+  formatCPFCNPJ,
+  formatProtocol,
+  formatEmail,
+  isValidCPF,
+  isValidCNPJ,
+  isValidPhone,
+  isValidEmail,
+} from "@/lib/formatters";
+import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
 
 const protocoloSchema = z.object({
-  demanda: z.string().min(1, 'Demanda é obrigatória'),
-  protocolo: z.string().min(1, 'Número do protocolo é obrigatório'),
-  solicitante: z.string().min(1, 'Nome do solicitante é obrigatório'),
-  cpfCnpj: z.string().min(1, 'CPF/CNPJ é obrigatório'),
-  telefone: z.string().min(1, 'Telefone é obrigatório'),
-  servicos: z.array(z.string()).min(1, 'Pelo menos um serviço deve ser selecionado'),
-  status: z.string().min(1, 'Status é obrigatório'),
+  demanda: z.string().min(1, "Demanda é obrigatória"),
+  protocolo: z.string().min(1, "Número do protocolo é obrigatório"),
+  solicitante: z.string().min(1, "Nome do solicitante é obrigatório"),
+  cpfCnpj: z
+    .string()
+    .min(1, "CPF/CNPJ é obrigatório")
+    .refine((value) => {
+      const numbers = value.replace(/\D/g, "");
+      if (numbers.length === 11) {
+        return isValidCPF(value);
+      } else if (numbers.length === 14) {
+        return isValidCNPJ(value);
+      }
+      return false;
+    }, "CPF/CNPJ inválido"),
+  telefone: z
+    .string()
+    .min(1, "Telefone é obrigatório")
+    .refine((value) => isValidPhone(value), "Telefone inválido"),
+  servicos: z
+    .array(z.string())
+    .min(1, "Pelo menos um serviço deve ser selecionado"),
+  status: z.string().min(1, "Status é obrigatório"),
   apresentante: z.string().optional(),
-  email: z.string().email('Email inválido').optional().or(z.literal('')),
+  email: z
+    .string()
+    .refine((value) => !value || isValidEmail(value), "Email inválido")
+    .optional()
+    .or(z.literal("")),
   observacao: z.string().optional(),
   prazoExecucao: z.date().optional(),
 });
@@ -63,47 +94,62 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   onSubmit,
   onCancel,
   initialData,
-  isEditing = false
+  isEditing = false,
 }) => {
-  const [servicosSelecionados, setServicosSelecionados] = React.useState<string[]>(
-    initialData?.servicos || []
-  );
+  const [servicosSelecionados, setServicosSelecionados] = React.useState<
+    string[]
+  >(initialData?.servicos || []);
 
-  // Dados mockados - em produção viriam de APIs
+  const { statusPersonalizados } = useStatusPersonalizados();
+
+  // Combinar status padrão com status personalizados
   const statusOptions = [
-    'Aguardando Análise',
-    'Em Andamento',
-    'Pendente',
-    'Concluído',
-    'Cancelado'
+    "Aguardando Análise",
+    "Em Andamento",
+    "Pendente",
+    "Concluído",
+    "Cancelado",
+    // Adicionar apenas status personalizados que não sejam duplicatas dos padrão
+    ...statusPersonalizados
+      .filter((status) => {
+        const statusPadrao = [
+          "Aguardando Análise",
+          "Em Andamento",
+          "Pendente",
+          "Concluído",
+          "Cancelado",
+        ];
+        return !statusPadrao.includes(status.nome);
+      })
+      .map((status) => status.nome),
   ];
 
   const servicosDisponiveis = [
-    'Certidão de Nascimento',
-    'Certidão de Casamento',
-    'Certidão de Óbito',
-    'Escritura de Compra e Venda',
-    'Procuração',
-    'Reconhecimento de Firma',
-    'Autenticação de Documentos',
-    'Registro de Imóveis',
-    'Testamento',
-    'Inventário'
+    "Certidão de Nascimento",
+    "Certidão de Casamento",
+    "Certidão de Óbito",
+    "Escritura de Compra e Venda",
+    "Procuração",
+    "Reconhecimento de Firma",
+    "Autenticação de Documentos",
+    "Registro de Imóveis",
+    "Testamento",
+    "Inventário",
   ];
 
   const form = useForm<ProtocoloFormData>({
     resolver: zodResolver(protocoloSchema),
     defaultValues: {
-      demanda: initialData?.demanda || '',
-      protocolo: initialData?.protocolo || '',
-      solicitante: initialData?.solicitante || '',
-      cpfCnpj: initialData?.cpfCnpj || '',
-      telefone: initialData?.telefone || '',
+      demanda: initialData?.demanda || "",
+      protocolo: initialData?.protocolo || "",
+      solicitante: initialData?.solicitante || "",
+      cpfCnpj: initialData?.cpfCnpj || "",
+      telefone: initialData?.telefone || "",
       servicos: initialData?.servicos || [],
-      status: initialData?.status || 'Aguardando Análise',
-      apresentante: initialData?.apresentante || '',
-      email: initialData?.email || '',
-      observacao: initialData?.observacao || '',
+      status: initialData?.status || "Aguardando Análise",
+      apresentante: initialData?.apresentante || "",
+      email: initialData?.email || "",
+      observacao: initialData?.observacao || "",
       prazoExecucao: initialData?.prazoExecucao,
     },
   });
@@ -112,21 +158,42 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     if (!servicosSelecionados.includes(servico)) {
       const novosServicos = [...servicosSelecionados, servico];
       setServicosSelecionados(novosServicos);
-      form.setValue('servicos', novosServicos);
+      form.setValue("servicos", novosServicos);
     }
   };
 
   const removerServico = (servico: string) => {
-    const novosServicos = servicosSelecionados.filter(s => s !== servico);
+    const novosServicos = servicosSelecionados.filter((s) => s !== servico);
     setServicosSelecionados(novosServicos);
-    form.setValue('servicos', novosServicos);
+    form.setValue("servicos", novosServicos);
   };
 
   const handleSubmit = (data: ProtocoloFormData) => {
     onSubmit({
       ...data,
-      servicos: servicosSelecionados
+      servicos: servicosSelecionados,
     });
+  };
+
+  // Handlers de formatação
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatPhone(e.target.value);
+    form.setValue("telefone", formatted);
+  };
+
+  const handleCPFCNPJChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatCPFCNPJ(e.target.value);
+    form.setValue("cpfCnpj", formatted);
+  };
+
+  const handleProtocolChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatProtocol(e.target.value);
+    form.setValue("protocolo", formatted);
+  };
+
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatEmail(e.target.value);
+    form.setValue("email", formatted);
   };
 
   return (
@@ -136,7 +203,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
           {/* Campos Obrigatórios */}
           <div className="space-y-4">
             <h3 className="text-lg font-medium">Informações Básicas</h3>
-            
+
             <FormField
               control={form.control}
               name="demanda"
@@ -144,7 +211,10 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                 <FormItem>
                   <FormLabel>Demanda *</FormLabel>
                   <FormControl>
-                    <Input placeholder="Ex: Certidão de Nascimento" {...field} />
+                    <Input
+                      placeholder="Ex: Certidão de Nascimento"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -158,7 +228,14 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                 <FormItem>
                   <FormLabel>Número do Protocolo *</FormLabel>
                   <FormControl>
-                    <Input placeholder="Ex: CERT-2024-001" {...field} />
+                    <Input
+                      placeholder="Ex: CERT-2024-001"
+                      {...field}
+                      onChange={(e) => {
+                        field.onChange(e);
+                        handleProtocolChange(e);
+                      }}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -171,7 +248,10 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Status *</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione o status" />
@@ -220,9 +300,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                         mode="single"
                         selected={field.value}
                         onSelect={field.onChange}
-                        disabled={(date) =>
-                          date < new Date()
-                        }
+                        disabled={(date) => date < new Date()}
                         initialFocus
                       />
                     </PopoverContent>
@@ -236,7 +314,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
           {/* Dados do Solicitante */}
           <div className="space-y-4">
             <h3 className="text-lg font-medium">Dados do Solicitante</h3>
-            
+
             <FormField
               control={form.control}
               name="solicitante"
@@ -244,7 +322,10 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                 <FormItem>
                   <FormLabel>Nome Completo *</FormLabel>
                   <FormControl>
-                    <Input placeholder="Nome completo do solicitante" {...field} />
+                    <Input
+                      placeholder="Nome completo do solicitante"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -258,7 +339,14 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                 <FormItem>
                   <FormLabel>CPF/CNPJ *</FormLabel>
                   <FormControl>
-                    <Input placeholder="000.000.000-00" {...field} />
+                    <Input
+                      placeholder="000.000.000-00"
+                      {...field}
+                      onChange={(e) => {
+                        field.onChange(e);
+                        handleCPFCNPJChange(e);
+                      }}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -272,7 +360,14 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                 <FormItem>
                   <FormLabel>Telefone *</FormLabel>
                   <FormControl>
-                    <Input placeholder="(11) 99999-9999" {...field} />
+                    <Input
+                      placeholder="(11) 99999-9999"
+                      {...field}
+                      onChange={(e) => {
+                        field.onChange(e);
+                        handlePhoneChange(e);
+                      }}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -286,7 +381,14 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                 <FormItem>
                   <FormLabel>E-mail</FormLabel>
                   <FormControl>
-                    <Input placeholder="email@exemplo.com" {...field} />
+                    <Input
+                      placeholder="email@exemplo.com"
+                      {...field}
+                      onChange={(e) => {
+                        field.onChange(e);
+                        handleEmailChange(e);
+                      }}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -300,7 +402,10 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                 <FormItem>
                   <FormLabel>Apresentante</FormLabel>
                   <FormControl>
-                    <Input placeholder="Nome do apresentante (se diferente do solicitante)" {...field} />
+                    <Input
+                      placeholder="Nome do apresentante (se diferente do solicitante)"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -312,7 +417,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
         {/* Serviços */}
         <div className="space-y-4">
           <h3 className="text-lg font-medium">Serviços Solicitados *</h3>
-          
+
           <div className="space-y-3">
             <Select onValueChange={adicionarServico}>
               <SelectTrigger>
@@ -320,7 +425,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
               </SelectTrigger>
               <SelectContent>
                 {servicosDisponiveis
-                  .filter(servico => !servicosSelecionados.includes(servico))
+                  .filter((servico) => !servicosSelecionados.includes(servico))
                   .map((servico) => (
                     <SelectItem key={servico} value={servico}>
                       {servico}
@@ -332,10 +437,14 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
             {servicosSelecionados.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {servicosSelecionados.map((servico) => (
-                  <Badge key={servico} variant="secondary" className="flex items-center gap-1">
+                  <Badge
+                    key={servico}
+                    variant="secondary"
+                    className="flex items-center gap-1"
+                  >
                     {servico}
-                    <X 
-                      className="h-3 w-3 cursor-pointer" 
+                    <X
+                      className="h-3 w-3 cursor-pointer"
                       onClick={() => removerServico(servico)}
                     />
                   </Badge>
@@ -343,9 +452,11 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
               </div>
             )}
           </div>
-          
+
           {form.formState.errors.servicos && (
-            <p className="text-sm text-red-500">{form.formState.errors.servicos.message}</p>
+            <p className="text-sm text-red-500">
+              {form.formState.errors.servicos.message}
+            </p>
           )}
         </div>
 
@@ -357,10 +468,10 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
             <FormItem>
               <FormLabel>Observações</FormLabel>
               <FormControl>
-                <Textarea 
+                <Textarea
                   placeholder="Observações adicionais sobre o protocolo..."
                   className="min-h-[100px]"
-                  {...field} 
+                  {...field}
                 />
               </FormControl>
               <FormMessage />
@@ -374,7 +485,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
             Cancelar
           </Button>
           <Button type="submit">
-            {isEditing ? 'Atualizar Protocolo' : 'Cadastrar Protocolo'}
+            {isEditing ? "Atualizar Protocolo" : "Cadastrar Protocolo"}
           </Button>
         </div>
       </form>

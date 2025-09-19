@@ -1,20 +1,20 @@
 "use client";
 
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Brain } from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Brain } from "lucide-react";
 
 export default function Home() {
   const goToLogin = () => {
-    window.location.href = '/login';
+    window.location.href = "/login";
   };
 
   const goToDashboard = () => {
-    window.location.href = '/dashboard';
+    window.location.href = "/dashboard";
   };
 
   const goToTest = () => {
-    window.location.href = '/test';
+    window.location.href = "/test";
   };
 
   return (
@@ -39,9 +39,7 @@ export default function Home() {
             <Button onClick={goToLogin} variant="outline">
               🔐 Login
             </Button>
-            <Button onClick={goToDashboard}>
-              📊 Dashboard
-            </Button>
+            <Button onClick={goToDashboard}>📊 Dashboard</Button>
           </div>
           <div className="text-center text-sm text-gray-500">
             <p>✅ Sistema funcionando!</p>
