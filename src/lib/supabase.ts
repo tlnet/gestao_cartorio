@@ -1,19 +1,19 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "placeholder-key";
 
 console.log("Configuração Supabase:", {
-  url: supabaseUrl ? "Configurada" : "FALTANDO",
-  key: supabaseAnonKey ? "Configurada" : "FALTANDO",
+  url: process.env.NEXT_PUBLIC_SUPABASE_URL ? "Configurada" : "FALTANDO",
+  key: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "Configurada" : "FALTANDO",
 });
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error("❌ Variáveis de ambiente do Supabase não configuradas!");
-  console.error("NEXT_PUBLIC_SUPABASE_URL:", supabaseUrl);
-  console.error(
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  console.warn("⚠️ Variáveis de ambiente do Supabase não configuradas!");
+  console.warn("NEXT_PUBLIC_SUPABASE_URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+  console.warn(
     "NEXT_PUBLIC_SUPABASE_ANON_KEY:",
-    supabaseAnonKey ? "Presente" : "Ausente"
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "Presente" : "Ausente"
   );
 }
 
