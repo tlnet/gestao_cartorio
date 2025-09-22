@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import MainLayout from "@/components/layout/main-layout";
 import ProtocoloForm from "@/components/protocolos/protocolo-form";
@@ -62,7 +62,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 
-const Protocolos = () => {
+const ProtocolosContent = () => {
   const { user } = useAuth();
   const searchParams = useSearchParams();
   const {
@@ -836,6 +836,14 @@ const Protocolos = () => {
         )}
       </div>
     </MainLayout>
+  );
+};
+
+const Protocolos = () => {
+  return (
+    <Suspense fallback={<div>Carregando...</div>}>
+      <ProtocolosContent />
+    </Suspense>
   );
 };
 
