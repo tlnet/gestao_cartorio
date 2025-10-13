@@ -53,15 +53,22 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
+  Tag,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useN8NConfig } from "@/hooks/use-n8n-config";
 import { useServicos } from "@/hooks/use-servicos";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
+import { useAuth } from "@/contexts/auth-context";
+import { useState as useStateAuth, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+import { useCategoriasPersonalizadas } from "@/hooks/use-categorias-personalizadas";
 
 const Configuracoes = () => {
   const [activeTab, setActiveTab] = useState("cartorio");
+  const { user } = useAuth();
+  const [cartorioId, setCartorioId] = useStateAuth<string | undefined>();
   const [showStatusDialog, setShowStatusDialog] = useState(false);
   const [showServicoDialog, setShowServicoDialog] = useState(false);
   const [showEditStatusDialog, setShowEditStatusDialog] = useState(false);
@@ -69,9 +76,14 @@ const Configuracoes = () => {
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<{
     id: string;
-    type: "status" | "servico";
+    type: "status" | "servico" | "categoria";
     name: string;
   } | null>(null);
+
+  // Estados para categorias
+  const [showCategoriaDialog, setShowCategoriaDialog] = useState(false);
+  const [showEditCategoriaDialog, setShowEditCategoriaDialog] = useState(false);
+  const [editingCategoria, setEditingCategoria] = useState<any>(null);
 
   // Hooks para dados reais
   const {
@@ -95,9 +107,38 @@ const Configuracoes = () => {
     updateStatusPersonalizado,
     deleteStatusPersonalizado,
   } = useStatusPersonalizados();
+  const {
+    categorias: categoriasPersonalizadas,
+    loading: categoriasLoading,
+    criarCategoria,
+    atualizarCategoria,
+    deletarCategoria,
+  } = useCategoriasPersonalizadas(cartorioId);
 
   const [webhookUrl, setWebhookUrl] = useState("");
   const [testingWebhook, setTestingWebhook] = useState(false);
+
+  // Buscar cartório do usuário
+  useEffect(() => {
+    const fetchUserCartorio = async () => {
+      if (!user?.id) return;
+
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .select("cartorio_id")
+          .eq("id", user.id)
+          .single();
+
+        if (error) throw error;
+        setCartorioId(data?.cartorio_id);
+      } catch (error) {
+        console.error("Erro ao buscar cartório do usuário:", error);
+      }
+    };
+
+    fetchUserCartorio();
+  }, [user]);
 
   // Dados mockados
   const [configCartorio, setConfigCartorio] = useState({
@@ -130,10 +171,18 @@ const Configuracoes = () => {
     ativo: true,
   });
 
+  const [categoriaForm, setCategoriaForm] = useState({
+    nome: "",
+    descricao: "",
+    cor: "#3B82F6",
+    ordem: 1,
+  });
+
   const tabs = [
     { id: "cartorio", label: "Dados do Cartório", icon: Building2 },
     { id: "status", label: "Status Personalizados", icon: Settings },
     { id: "servicos", label: "Serviços", icon: Users },
+    { id: "categorias", label: "Categorias de Contas", icon: Tag },
     { id: "integracoes", label: "Integrações", icon: Webhook },
   ];
 
@@ -271,6 +320,8 @@ const Configuracoes = () => {
     try {
       if (itemToDelete.type === "servico") {
         await deleteServico(itemToDelete.id);
+      } else if (itemToDelete.type === "categoria") {
+        await deletarCategoria(itemToDelete.id);
       } else {
         await deleteStatusPersonalizado(itemToDelete.id);
       }
@@ -350,6 +401,82 @@ const Configuracoes = () => {
     } catch (error) {
       console.error("Erro ao desabilitar configuração N8N:", error);
     }
+  };
+
+  // Funções para categorias
+  const handleAddCategoria = async () => {
+    try {
+      if (!categoriaForm.nome.trim()) {
+        toast.error("Nome da categoria é obrigatório");
+        return;
+      }
+
+      await criarCategoria({
+        nome: categoriaForm.nome,
+        descricao: categoriaForm.descricao || undefined,
+        cor: categoriaForm.cor,
+        ordem: categoriaForm.ordem,
+      });
+
+      setCategoriaForm({
+        nome: "",
+        descricao: "",
+        cor: "#3B82F6",
+        ordem: categoriasPersonalizadas.length + 1,
+      });
+      setShowCategoriaDialog(false);
+    } catch (error) {
+      // Erro já tratado no hook
+    }
+  };
+
+  const handleEditCategoria = async () => {
+    try {
+      if (!categoriaForm.nome.trim()) {
+        toast.error("Nome da categoria é obrigatório");
+        return;
+      }
+
+      if (!editingCategoria) return;
+
+      await atualizarCategoria(editingCategoria.id, {
+        nome: categoriaForm.nome,
+        descricao: categoriaForm.descricao || undefined,
+        cor: categoriaForm.cor,
+        ordem: categoriaForm.ordem,
+      });
+
+      setEditingCategoria(null);
+      setCategoriaForm({
+        nome: "",
+        descricao: "",
+        cor: "#3B82F6",
+        ordem: 1,
+      });
+      setShowEditCategoriaDialog(false);
+    } catch (error) {
+      // Erro já tratado no hook
+    }
+  };
+
+  const handleDeleteCategoria = (categoria: any) => {
+    setItemToDelete({
+      id: categoria.id,
+      type: "categoria",
+      name: categoria.nome,
+    });
+    setShowDeleteConfirmation(true);
+  };
+
+  const openEditCategoriaDialog = (categoria: any) => {
+    setEditingCategoria(categoria);
+    setCategoriaForm({
+      nome: categoria.nome,
+      descricao: categoria.descricao || "",
+      cor: categoria.cor,
+      ordem: categoria.ordem,
+    });
+    setShowEditCategoriaDialog(true);
   };
 
   return (
@@ -932,6 +1059,220 @@ const Configuracoes = () => {
           </Card>
         )}
 
+        {/* Categorias de Contas */}
+        {activeTab === "categorias" && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Tag className="h-5 w-5" />
+                  Categorias Personalizadas
+                </div>
+                <Dialog
+                  open={showCategoriaDialog}
+                  onOpenChange={setShowCategoriaDialog}
+                >
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Nova Categoria
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Adicionar Nova Categoria</DialogTitle>
+                      <DialogDescription>
+                        Configure uma nova categoria personalizada para as
+                        contas a pagar
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="nomeCategoria">Nome da Categoria</Label>
+                        <Input
+                          id="nomeCategoria"
+                          placeholder="Ex: Aluguel, Energia, Internet..."
+                          value={categoriaForm.nome}
+                          onChange={(e) =>
+                            setCategoriaForm((prev) => ({
+                              ...prev,
+                              nome: e.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="descricaoCategoria">Descrição</Label>
+                        <Textarea
+                          id="descricaoCategoria"
+                          placeholder="Descrição opcional da categoria..."
+                          value={categoriaForm.descricao}
+                          onChange={(e) =>
+                            setCategoriaForm((prev) => ({
+                              ...prev,
+                              descricao: e.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="corCategoria">Cor</Label>
+                        <div className="flex items-center space-x-2">
+                          <Input
+                            id="corCategoria"
+                            type="color"
+                            value={categoriaForm.cor}
+                            onChange={(e) =>
+                              setCategoriaForm((prev) => ({
+                                ...prev,
+                                cor: e.target.value,
+                              }))
+                            }
+                            className="w-16 h-10"
+                          />
+                          <Input
+                            value={categoriaForm.cor}
+                            onChange={(e) =>
+                              setCategoriaForm((prev) => ({
+                                ...prev,
+                                cor: e.target.value,
+                              }))
+                            }
+                            placeholder="#3B82F6"
+                            className="flex-1"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <Label htmlFor="ordemCategoria">Ordem</Label>
+                        <Input
+                          id="ordemCategoria"
+                          type="number"
+                          min="1"
+                          value={categoriaForm.ordem}
+                          onChange={(e) =>
+                            setCategoriaForm((prev) => ({
+                              ...prev,
+                              ordem: parseInt(e.target.value) || 1,
+                            }))
+                          }
+                        />
+                      </div>
+                      <Button className="w-full" onClick={handleAddCategoria}>
+                        Adicionar Categoria
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </CardTitle>
+              <CardDescription>
+                Gerencie as categorias personalizadas para organizar suas contas
+                a pagar
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Ordem</TableHead>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Descrição</TableHead>
+                    <TableHead>Cor</TableHead>
+                    <TableHead>Preview</TableHead>
+                    <TableHead>Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {categoriasLoading ? (
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <TableRow key={i}>
+                        <TableCell>
+                          <Skeleton className="h-4 w-8" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-32" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-48" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-16" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-6 w-20" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-8 w-16" />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : categoriasPersonalizadas.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={6}
+                        className="text-center py-8 text-gray-500"
+                      >
+                        <div className="flex flex-col items-center gap-2">
+                          <Tag className="h-8 w-8 text-gray-400" />
+                          <p>Nenhuma categoria personalizada encontrada</p>
+                          <p className="text-sm">
+                            Adicione a primeira categoria para começar
+                          </p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    categoriasPersonalizadas
+                      .sort((a, b) => a.ordem - b.ordem)
+                      .map((categoria) => (
+                        <TableRow key={categoria.id}>
+                          <TableCell>{categoria.ordem}</TableCell>
+                          <TableCell className="font-medium">
+                            {categoria.nome}
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate">
+                            {categoria.descricao || "-"}
+                          </TableCell>
+                          <TableCell>{categoria.cor}</TableCell>
+                          <TableCell>
+                            <Badge
+                              style={{
+                                backgroundColor: categoria.cor,
+                                color: "white",
+                              }}
+                            >
+                              {categoria.nome}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex space-x-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  openEditCategoriaDialog(categoria)
+                                }
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteCategoria(categoria)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Integrações */}
         {activeTab === "integracoes" && (
           <Card>
@@ -1255,13 +1596,108 @@ const Configuracoes = () => {
           </DialogContent>
         </Dialog>
 
+        {/* Dialog de Edição de Categoria */}
+        <Dialog
+          open={showEditCategoriaDialog}
+          onOpenChange={setShowEditCategoriaDialog}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Editar Categoria</DialogTitle>
+              <DialogDescription>
+                Edite as informações da categoria
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="editNomeCategoria">Nome da Categoria</Label>
+                <Input
+                  id="editNomeCategoria"
+                  placeholder="Ex: Aluguel, Energia, Internet..."
+                  value={categoriaForm.nome}
+                  onChange={(e) =>
+                    setCategoriaForm((prev) => ({
+                      ...prev,
+                      nome: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <Label htmlFor="editDescricaoCategoria">Descrição</Label>
+                <Textarea
+                  id="editDescricaoCategoria"
+                  placeholder="Descrição opcional da categoria..."
+                  value={categoriaForm.descricao}
+                  onChange={(e) =>
+                    setCategoriaForm((prev) => ({
+                      ...prev,
+                      descricao: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <Label htmlFor="editCorCategoria">Cor</Label>
+                <div className="flex items-center space-x-2">
+                  <Input
+                    id="editCorCategoria"
+                    type="color"
+                    value={categoriaForm.cor}
+                    onChange={(e) =>
+                      setCategoriaForm((prev) => ({
+                        ...prev,
+                        cor: e.target.value,
+                      }))
+                    }
+                    className="w-16 h-10"
+                  />
+                  <Input
+                    value={categoriaForm.cor}
+                    onChange={(e) =>
+                      setCategoriaForm((prev) => ({
+                        ...prev,
+                        cor: e.target.value,
+                      }))
+                    }
+                    placeholder="#3B82F6"
+                    className="flex-1"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="editOrdemCategoria">Ordem</Label>
+                <Input
+                  id="editOrdemCategoria"
+                  type="number"
+                  min="1"
+                  value={categoriaForm.ordem}
+                  onChange={(e) =>
+                    setCategoriaForm((prev) => ({
+                      ...prev,
+                      ordem: parseInt(e.target.value) || 1,
+                    }))
+                  }
+                />
+              </div>
+              <Button className="w-full" onClick={handleEditCategoria}>
+                Salvar Alterações
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Dialog de Confirmação de Exclusão */}
         <ConfirmationDialog
           open={showDeleteConfirmation}
           onOpenChange={setShowDeleteConfirmation}
           onConfirm={confirmDelete}
           title={`Excluir ${
-            itemToDelete?.type === "status" ? "Status" : "Serviço"
+            itemToDelete?.type === "status"
+              ? "Status"
+              : itemToDelete?.type === "categoria"
+              ? "Categoria"
+              : "Serviço"
           }`}
           description={`Tem certeza que deseja excluir "${itemToDelete?.name}"? Esta ação não pode ser desfeita.`}
           confirmText="Excluir"

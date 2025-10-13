@@ -62,6 +62,8 @@ const NotificacoesPage = () => {
         return <AlertTriangle className="h-4 w-4 text-gray-600" />;
       case "info":
         return <Bell className="h-4 w-4 text-blue-600" />;
+      case "conta_pagar":
+        return <Bell className="h-4 w-4 text-red-600" />;
       default:
         return <Bell className="h-4 w-4 text-gray-600" />;
     }
@@ -81,6 +83,8 @@ const NotificacoesPage = () => {
         return "Sistema";
       case "info":
         return "Informação";
+      case "conta_pagar":
+        return "Conta a Pagar";
       default:
         return "Outros";
     }
@@ -250,6 +254,7 @@ const NotificacoesPage = () => {
                       <SelectItem value="protocolo_atualizado">
                         Protocolo Atualizado
                       </SelectItem>
+                      <SelectItem value="conta_pagar">Conta a Pagar</SelectItem>
                       <SelectItem value="sistema">Sistema</SelectItem>
                     </SelectContent>
                   </Select>

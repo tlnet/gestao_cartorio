@@ -160,3 +160,141 @@
     transform: translateY(0);
   }
 }
+
+/* =====================================================
+   ESTILOS DO CALENDÁRIO (React DatePicker)
+   ===================================================== */
+
+/* Container principal */
+.react-datepicker-wrapper {
+  width: 100%;
+}
+
+.react-datepicker__input-container {
+  width: 100%;
+}
+
+/* Calendário */
+.custom-calendar {
+  @apply rounded-lg border border-border shadow-md;
+  font-family: inherit;
+}
+
+.react-datepicker {
+  @apply bg-background border-border;
+}
+
+/* Cabeçalho */
+.react-datepicker__header {
+  @apply bg-background border-b border-border rounded-t-lg;
+  padding-top: 0.5rem;
+}
+
+.react-datepicker__current-month {
+  @apply text-foreground font-semibold;
+  font-size: 0.875rem;
+  padding: 0.5rem 0;
+}
+
+/* Navegação */
+.react-datepicker__navigation {
+  top: 0.75rem;
+}
+
+.react-datepicker__navigation--previous {
+  left: 0.75rem;
+}
+
+.react-datepicker__navigation--next {
+  right: 0.75rem;
+}
+
+.react-datepicker__navigation-icon::before {
+  @apply border-foreground;
+}
+
+/* Dias da semana */
+.react-datepicker__day-names {
+  @apply bg-background;
+  margin-top: 0.5rem;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 0.5rem;
+}
+
+.react-datepicker__day-name {
+  @apply text-muted-foreground;
+  width: 2rem;
+  height: 2rem;
+  line-height: 2rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+
+/* Dias */
+.react-datepicker__month {
+  margin: 0.5rem;
+}
+
+.react-datepicker__week {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+}
+
+.react-datepicker__day {
+  @apply text-foreground rounded-md;
+  width: 2rem;
+  height: 2rem;
+  line-height: 2rem;
+  font-size: 0.875rem;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.react-datepicker__day:hover {
+  @apply bg-accent text-accent-foreground;
+}
+
+.react-datepicker__day--selected,
+.react-datepicker__day--keyboard-selected {
+  @apply bg-primary text-primary-foreground font-normal;
+}
+
+.react-datepicker__day--selected:hover,
+.react-datepicker__day--keyboard-selected:hover {
+  @apply bg-primary text-primary-foreground;
+}
+
+.react-datepicker__day--today {
+  @apply bg-accent text-accent-foreground font-semibold;
+}
+
+.react-datepicker__day--outside-month {
+  @apply text-muted-foreground opacity-50;
+}
+
+.react-datepicker__day--disabled {
+  @apply text-muted-foreground opacity-50 cursor-not-allowed;
+}
+
+.react-datepicker__day--disabled:hover {
+  @apply bg-transparent;
+}
+
+/* Triângulo do popover */
+.react-datepicker__triangle {
+  display: none;
+}
+
+/* Garantir que popover apareça acima */
+[data-radix-popper-content-wrapper] {
+  z-index: 50 !important;
+}

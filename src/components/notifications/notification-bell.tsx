@@ -56,6 +56,8 @@ const NotificationBell = () => {
         return "🔧";
       case "info":
         return "ℹ️";
+      case "conta_pagar":
+        return "💰";
       default:
         return "📢";
     }

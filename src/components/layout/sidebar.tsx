@@ -15,6 +15,7 @@ import {
   LogOut,
   User,
   Bell,
+  Receipt,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -71,6 +72,12 @@ const Sidebar: React.FC<SidebarProps> = ({ userType = "supervisor" }) => {
       href: "/protocolos",
       icon: FileText,
       roles: ["admin", "supervisor", "atendente"],
+    },
+    {
+      title: "Contas a Pagar",
+      href: "/contas",
+      icon: Receipt,
+      roles: ["admin", "supervisor"],
     },
     {
       title: "Notificações",

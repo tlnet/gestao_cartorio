@@ -24,16 +24,8 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { CalendarIcon, Plus, X } from "lucide-react";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { cn } from "@/lib/utils";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Plus, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   formatPhone,
@@ -274,37 +266,15 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
               control={form.control}
               name="prazoExecucao"
               render={({ field }) => (
-                <FormItem className="flex flex-col">
+                <FormItem>
                   <FormLabel>Prazo de Execução</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            "w-full pl-3 text-left font-normal",
-                            !field.value && "text-muted-foreground"
-                          )}
-                        >
-                          {field.value ? (
-                            format(field.value, "PPP", { locale: ptBR })
-                          ) : (
-                            <span>Selecione uma data</span>
-                          )}
-                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
-                        disabled={(date) => date < new Date()}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <FormControl>
+                    <DatePicker
+                      selected={field.value || null}
+                      onChange={field.onChange}
+                      placeholderText="Selecione a data"
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

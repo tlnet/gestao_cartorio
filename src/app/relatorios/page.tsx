@@ -33,7 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Calendar } from "@/components/ui/calendar";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Popover,
   PopoverContent,
@@ -1249,59 +1249,21 @@ const Relatorios = () => {
               {/* Data Início */}
               <div className="space-y-2">
                 <Label>Data Início</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !dataInicio && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {dataInicio
-                        ? format(dataInicio, "PPP", { locale: ptBR })
-                        : "Selecionar data"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={dataInicio}
-                      onSelect={setDataInicio}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
+                <DatePicker
+                  selected={dataInicio}
+                  onChange={setDataInicio}
+                  placeholderText="Selecionar data"
+                />
               </div>
 
               {/* Data Fim */}
               <div className="space-y-2">
                 <Label>Data Fim</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !dataFim && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {dataFim
-                        ? format(dataFim, "PPP", { locale: ptBR })
-                        : "Selecionar data"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={dataFim}
-                      onSelect={setDataFim}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
+                <DatePicker
+                  selected={dataFim}
+                  onChange={setDataFim}
+                  placeholderText="Selecionar data"
+                />
               </div>
 
               {/* Filtro Status */}

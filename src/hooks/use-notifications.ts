@@ -14,7 +14,8 @@ export interface Notificacao {
     | "protocolo_criado"
     | "protocolo_atualizado"
     | "sistema"
-    | "info"; // Tipo existente na tabela
+    | "info"
+    | "conta_pagar"; // Tipo existente na tabela
   titulo: string;
   mensagem: string;
   lida: boolean;
@@ -247,6 +248,113 @@ export const useNotifications = () => {
     return notificacoes.filter((n) => n.prioridade === "urgente" && !n.lida);
   }, [notificacoes]);
 
+  // Verificar contas a pagar próximas do vencimento
+  const checkContasPagar = async () => {
+    try {
+      if (!user?.id) {
+        console.log("checkContasPagar: Usuário não autenticado");
+        return;
+      }
+
+      // Buscar cartório do usuário
+      const { data: userData, error: userError } = await supabase
+        .from("users")
+        .select("cartorio_id")
+        .eq("id", user.id)
+        .single();
+
+      if (userError) {
+        console.error("Erro ao buscar cartório do usuário:", userError);
+        return;
+      }
+
+      if (!userData?.cartorio_id) {
+        console.log("checkContasPagar: Usuário não possui cartório associado");
+        return;
+      }
+
+      // Buscar contas próximas do vencimento (7 dias)
+      const hoje = new Date();
+      const proximos7Dias = new Date();
+      proximos7Dias.setDate(hoje.getDate() + 7);
+
+      const { data: contas, error } = await supabase
+        .from("contas_pagar")
+        .select("id, descricao, valor, data_vencimento, status")
+        .eq("cartorio_id", userData.cartorio_id)
+        .eq("status", "A_PAGAR")
+        .gte("data_vencimento", hoje.toISOString().split("T")[0])
+        .lte("data_vencimento", proximos7Dias.toISOString().split("T")[0]);
+
+      if (error) {
+        console.error("Erro ao buscar contas a pagar:", error);
+        return;
+      }
+
+      // Criar notificações para contas próximas do vencimento
+      for (const conta of contas || []) {
+        try {
+          const dataVencimento = new Date(conta.data_vencimento);
+          const diasParaVencer = Math.ceil(
+            (dataVencimento.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)
+          );
+
+          // Verificar se já existe notificação para esta conta
+          const { data: notificacaoExistente } = await supabase
+            .from("notificacoes")
+            .select("id")
+            .eq("metadata->>conta_id", conta.id)
+            .eq("tipo", "conta_pagar")
+            .eq("usuario_id", user.id)
+            .single();
+
+          if (!notificacaoExistente) {
+            await createNotificacao({
+              cartorio_id: userData.cartorio_id,
+              tipo: "conta_pagar",
+              titulo:
+                diasParaVencer === 0
+                  ? "Conta vence hoje!"
+                  : diasParaVencer === 1
+                  ? "Conta vence amanhã!"
+                  : `Conta vence em ${diasParaVencer} dias`,
+              mensagem: `A conta "${
+                conta.descricao
+              }" no valor de R$ ${conta.valor
+                .toFixed(2)
+                .replace(".", ",")} vence em ${
+                diasParaVencer === 0
+                  ? "hoje"
+                  : diasParaVencer === 1
+                  ? "amanhã"
+                  : `${diasParaVencer} dias`
+              }.`,
+              prioridade:
+                diasParaVencer <= 1
+                  ? "urgente"
+                  : diasParaVencer <= 3
+                  ? "alta"
+                  : "normal",
+              data_vencimento: conta.data_vencimento,
+              metadata: {
+                conta_id: conta.id,
+                descricao: conta.descricao,
+                valor: conta.valor,
+                dias_para_vencer: diasParaVencer,
+              },
+              action_url: "/contas",
+            });
+          }
+        } catch (contaError) {
+          console.error(`Erro ao processar conta ${conta.id}:`, contaError);
+          // Continuar com a próxima conta
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao verificar contas a pagar:", err);
+    }
+  };
+
   // Verificar protocolos próximos do vencimento
   const checkProtocolosVencendo = async () => {
     try {
@@ -363,9 +471,10 @@ export const useNotifications = () => {
 
     fetchNotificacoes();
 
-    // Verificar protocolos vencendo a cada 5 minutos
+    // Verificar protocolos e contas vencendo a cada 5 minutos
     const interval = setInterval(() => {
       checkProtocolosVencendo();
+      checkContasPagar();
     }, 5 * 60 * 1000);
 
     // Verificar notificações a cada 30 segundos
@@ -395,5 +504,6 @@ export const useNotifications = () => {
     getNotificacoesUrgentes,
     getNotificacoesPrazoValidas,
     checkProtocolosVencendo,
+    checkContasPagar,
   };
 };
