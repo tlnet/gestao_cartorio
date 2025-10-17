@@ -9,6 +9,7 @@ export interface Servico {
   descricao?: string;
   preco?: number;
   prazo_execucao?: number;
+  dias_notificacao_antes_vencimento?: number;
   ativo: boolean;
   cartorio_id: string;
   created_at: string;
@@ -74,6 +75,7 @@ export const useServicos = () => {
     descricao?: string;
     preco?: number;
     prazo_execucao?: number;
+    dias_notificacao_antes_vencimento?: number;
     ativo?: boolean;
   }) => {
     try {

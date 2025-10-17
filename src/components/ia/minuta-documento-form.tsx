@@ -40,6 +40,7 @@ interface DocumentoCategoria {
   compradores: File[];
   vendedores: File[];
   matricula: File[];
+  outros: File[];
 }
 
 interface MinutaDocumentoFormProps {
@@ -58,6 +59,7 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
     compradores: [],
     vendedores: [],
     matricula: [],
+    outros: [],
   });
 
   const handleFileUpload = (
@@ -95,6 +97,8 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
         return "Documentos dos Vendedores";
       case "matricula":
         return "Matrícula do Imóvel";
+      case "outros":
+        return "Outros Documentos";
       default:
         return categoria;
     }
@@ -108,6 +112,8 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
         return <Users className="h-5 w-5" />;
       case "matricula":
         return <Building className="h-5 w-5" />;
+      case "outros":
+        return <FileText className="h-5 w-5" />;
       default:
         return <FileText className="h-5 w-5" />;
     }
@@ -121,6 +127,8 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
         return "bg-blue-500";
       case "matricula":
         return "bg-purple-500";
+      case "outros":
+        return "bg-orange-500";
       default:
         return "bg-gray-500";
     }
@@ -130,7 +138,8 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
     return (
       documentos.compradores.length +
       documentos.vendedores.length +
-      documentos.matricula.length
+      documentos.matricula.length +
+      documentos.outros.length
     );
   };
 
@@ -158,6 +167,7 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
         ...documentos.compradores,
         ...documentos.vendedores,
         ...documentos.matricula,
+        ...documentos.outros,
       ];
 
       for (const arquivo of todosArquivos) {
@@ -221,6 +231,7 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
           compradores: documentos.compradores.map((f) => f.name),
           vendedores: documentos.vendedores.map((f) => f.name),
           matricula: documentos.matricula.map((f) => f.name),
+          outros: documentos.outros.map((f) => f.name),
           totalDocumentosProcessados: getTotalArquivos(),
           observacoes: "Minuta gerada com base nos documentos fornecidos",
         },
@@ -236,6 +247,7 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
           compradores: documentos.compradores.map((f) => f.name),
           vendedores: documentos.vendedores.map((f) => f.name),
           matricula: documentos.matricula.map((f) => f.name),
+          outros: documentos.outros.map((f) => f.name),
         },
       });
 
@@ -249,6 +261,7 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
         compradores: [],
         vendedores: [],
         matricula: [],
+        outros: [],
       });
       setShowDialog(false);
     } catch (error) {
@@ -271,8 +284,9 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
           </div>
         </div>
         <CardDescription>
-          Cria minutas baseadas em documentos dos compradores, vendedores e
-          matrícula do imóvel
+          Cria automaticamente minutas de escritura de compra e venda utilizando
+          inteligência artificial, analisando documentos e gerando texto
+          jurídico personalizado
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -403,6 +417,7 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
                         </span>
                         <span>Vendedores: {documentos.vendedores.length}</span>
                         <span>Matrícula: {documentos.matricula.length}</span>
+                        <span>Outros: {documentos.outros.length}</span>
                       </div>
                     </div>
                     <Button
@@ -429,25 +444,51 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
               {/* Instruções */}
               <Card className="bg-gray-50">
                 <CardContent className="pt-6">
-                  <h4 className="font-medium mb-2">Instruções:</h4>
-                  <ul className="text-sm text-gray-600 space-y-1">
-                    <li>
-                      • <strong>Compradores:</strong> RG, CPF, comprovante de
-                      renda, estado civil
-                    </li>
-                    <li>
-                      • <strong>Vendedores:</strong> RG, CPF, certidão de
-                      casamento (se casado)
-                    </li>
-                    <li>
-                      • <strong>Matrícula:</strong> Matrícula atualizada do
-                      imóvel do cartório de registro
-                    </li>
-                    <li>
-                      • Todos os documentos devem estar legíveis e em boa
-                      qualidade
-                    </li>
-                  </ul>
+                  <h4 className="font-medium mb-3">
+                    📋 Documentos Necessários:
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <h5 className="font-medium text-sm text-gray-800">
+                        📄 Documentos Obrigatórios:
+                      </h5>
+                      <ul className="text-sm text-gray-600 space-y-1">
+                        <li>
+                          • <strong>IDENTIFICAÇÃO:</strong> RG, CPF ou CNH
+                        </li>
+                        <li>
+                          • <strong>CERTIDÃO:</strong> Casamento / Nascimento
+                        </li>
+                        <li>
+                          • <strong>COMPROVANTE:</strong> De endereço
+                        </li>
+                        <li>
+                          • <strong>MATRÍCULA:</strong> Do imóvel
+                        </li>
+                        <li>
+                          • <strong>CERTIDÃO ÔNUS:</strong> De ações reais e
+                          pessoais reipersecutórias
+                        </li>
+                        <li>
+                          • <strong>GUIA DE ITBI:</strong> Para transferência
+                        </li>
+                      </ul>
+                    </div>
+                    <div className="space-y-2">
+                      <h5 className="font-medium text-sm text-gray-800">
+                        📎 Documentos Adicionais:
+                      </h5>
+                      <ul className="text-sm text-gray-600 space-y-1">
+                        <li>
+                          • <strong>OUTROS:</strong> Qualquer documento
+                          adicional necessário
+                        </li>
+                        <li>• Todos os documentos devem estar legíveis</li>
+                        <li>• Formatos aceitos: PDF, DOC, DOCX, JPG, PNG</li>
+                        <li>• Máximo de 10MB por arquivo</li>
+                      </ul>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </div>

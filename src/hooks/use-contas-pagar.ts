@@ -12,6 +12,18 @@ import type {
   ResumoFinanceiro,
   CategoriaPersonalizada,
 } from "@/types";
+
+// Interface para documentos das contas
+export interface DocumentoConta {
+  id: string;
+  contaId: string;
+  nomeArquivo: string;
+  urlArquivo: string;
+  tipoArquivo: string;
+  tamanhoArquivo: number;
+  dataUpload: Date;
+  usuarioUpload?: string;
+}
 import { useCategoriasPersonalizadas } from "./use-categorias-personalizadas";
 
 interface ContaPagarDB {
@@ -174,6 +186,9 @@ export const useContasPagar = (cartorioId?: string) => {
 
         const contasFormatadas = (data || []).map(dbToContaPagar);
         setContas(contasFormatadas);
+
+        // Verificar e atualizar contas vencidas automaticamente
+        await verificarContasVencidas();
 
         // Calcular resumo
         calcularResumo(contasFormatadas);
@@ -445,6 +460,73 @@ export const useContasPagar = (cartorioId?: string) => {
     }
   };
 
+  // Verificar e atualizar contas vencidas automaticamente
+  const verificarContasVencidas = async () => {
+    try {
+      if (!cartorioId) return;
+
+      const hoje = new Date();
+      const hojeString = formatDateForDB(hoje);
+
+      // Buscar contas que venceram e ainda não estão marcadas como VENCIDA
+      const { data: contasVencidas, error } = await supabase
+        .from("contas_pagar")
+        .select("*")
+        .eq("cartorio_id", cartorioId)
+        .in("status", ["A_PAGAR", "AGENDADA"])
+        .lt("data_vencimento", hojeString);
+
+      if (error) throw error;
+
+      if (contasVencidas && contasVencidas.length > 0) {
+        // Atualizar todas as contas vencidas para status VENCIDA
+        const { error: updateError } = await supabase
+          .from("contas_pagar")
+          .update({
+            status: "VENCIDA",
+            atualizado_por: user?.id,
+            atualizado_em: new Date().toISOString(),
+          })
+          .in(
+            "id",
+            contasVencidas.map((conta) => conta.id)
+          );
+
+        if (updateError) throw updateError;
+
+        // Atualizar o estado local
+        const contasAtualizadas = contasVencidas.map((conta) => ({
+          ...dbToContaPagar(conta),
+          status: "VENCIDA" as StatusConta,
+        }));
+
+        setContas((prev) =>
+          prev.map((conta) => {
+            const contaAtualizada = contasAtualizadas.find(
+              (c) => c.id === conta.id
+            );
+            return contaAtualizada || conta;
+          })
+        );
+
+        // Recalcular resumo
+        const novasContas = contas.map((conta) => {
+          const contaAtualizada = contasAtualizadas.find(
+            (c) => c.id === conta.id
+          );
+          return contaAtualizada || conta;
+        });
+        calcularResumo(novasContas);
+
+        console.log(
+          `${contasVencidas.length} conta(s) marcada(s) como vencida(s) automaticamente`
+        );
+      }
+    } catch (err) {
+      console.error("Erro ao verificar contas vencidas:", err);
+    }
+  };
+
   // Carregar contas ao montar o componente
   useEffect(() => {
     if (cartorioId) {
@@ -480,6 +562,123 @@ export const useContasPagar = (cartorioId?: string) => {
     }));
   };
 
+  // Funções para gerenciar documentos das contas
+  const buscarDocumentosConta = useCallback(
+    async (contaId: string): Promise<DocumentoConta[]> => {
+      try {
+        const { data, error } = await supabase
+          .from("documentos_contas")
+          .select("*")
+          .eq("conta_id", contaId)
+          .order("data_upload", { ascending: false });
+
+        if (error) throw error;
+
+        return data.map((doc) => ({
+          id: doc.id,
+          contaId: doc.conta_id,
+          nomeArquivo: doc.nome_arquivo,
+          urlArquivo: doc.url_arquivo,
+          tipoArquivo: doc.tipo_arquivo,
+          tamanhoArquivo: doc.tamanho_arquivo,
+          dataUpload: new Date(doc.data_upload),
+          usuarioUpload: doc.usuario_upload,
+        }));
+      } catch (error) {
+        console.error("Erro ao buscar documentos da conta:", error);
+        toast.error("Erro ao carregar documentos");
+        return [];
+      }
+    },
+    []
+  );
+
+  const adicionarDocumentoConta = useCallback(
+    async (
+      contaId: string,
+      documento: Omit<DocumentoConta, "id" | "contaId" | "dataUpload">,
+      silent: boolean = false
+    ): Promise<DocumentoConta | null> => {
+      console.log("🔍 DEBUG: adicionarDocumentoConta chamada com:", {
+        contaId,
+        documento,
+        userId: user?.id,
+      });
+
+      try {
+        const insertData = {
+          conta_id: contaId,
+          nome_arquivo: documento.nomeArquivo,
+          url_arquivo: documento.urlArquivo,
+          tipo_arquivo: documento.tipoArquivo,
+          tamanho_arquivo: documento.tamanhoArquivo,
+          usuario_upload: user?.id,
+        };
+
+        console.log("🔍 DEBUG: Dados para inserção:", insertData);
+
+        const { data, error } = await supabase
+          .from("documentos_contas")
+          .insert(insertData)
+          .select()
+          .single();
+
+        console.log("🔍 DEBUG: Resultado da inserção:", { data, error });
+
+        if (error) {
+          console.error("❌ Erro na inserção:", error);
+          throw error;
+        }
+
+        const resultado = {
+          id: data.id,
+          contaId: data.conta_id,
+          nomeArquivo: data.nome_arquivo,
+          urlArquivo: data.url_arquivo,
+          tipoArquivo: data.tipo_arquivo,
+          tamanhoArquivo: data.tamanho_arquivo,
+          dataUpload: new Date(data.data_upload),
+          usuarioUpload: data.usuario_upload,
+        };
+
+        console.log("✅ DEBUG: Documento salvo com sucesso:", resultado);
+        return resultado;
+      } catch (error) {
+        console.error("❌ Erro ao adicionar documento:", error);
+        console.error("❌ Detalhes do erro:", {
+          message: error instanceof Error ? error.message : "Erro desconhecido",
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+        if (!silent) {
+          toast.error("Erro ao salvar documento");
+        }
+        return null;
+      }
+    },
+    [user?.id]
+  );
+
+  const removerDocumentoConta = useCallback(
+    async (documentoId: string): Promise<boolean> => {
+      try {
+        const { error } = await supabase
+          .from("documentos_contas")
+          .delete()
+          .eq("id", documentoId);
+
+        if (error) throw error;
+
+        toast.success("Documento removido com sucesso");
+        return true;
+      } catch (error) {
+        console.error("Erro ao remover documento:", error);
+        toast.error("Erro ao remover documento");
+        return false;
+      }
+    },
+    []
+  );
+
   return {
     contas,
     resumo,
@@ -492,6 +691,11 @@ export const useContasPagar = (cartorioId?: string) => {
     deletarConta,
     buscarContasAVencer,
     buscarContasVencidas,
+    verificarContasVencidas,
     getTodasCategorias,
+    // Funções de documentos
+    buscarDocumentosConta,
+    adicionarDocumentoConta,
+    removerDocumentoConta,
   };
 };

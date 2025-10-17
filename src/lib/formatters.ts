@@ -240,3 +240,43 @@ export const isValidEmail = (email: string): boolean => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 };
+
+/**
+ * Formata um valor monetário brasileiro
+ * @param value - Valor a ser formatado
+ * @returns Valor formatado como moeda brasileira (R$ 0,00)
+ */
+export const formatCurrency = (value: string): string => {
+  // Remove tudo que não é número
+  const numbers = value.replace(/\D/g, "");
+
+  if (numbers === "") return "";
+
+  // Converte para número e divide por 100 para obter os centavos
+  const amount = parseInt(numbers) / 100;
+
+  // Formata como moeda brasileira
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(amount);
+};
+
+/**
+ * Remove a formatação de moeda e retorna apenas números
+ * @param value - Valor formatado
+ * @returns String com apenas números
+ */
+export const unformatCurrency = (value: string): string => {
+  return value.replace(/\D/g, "");
+};
+
+/**
+ * Converte valor formatado para número
+ * @param value - Valor formatado (ex: "R$ 1.234,56")
+ * @returns Número (ex: 1234.56)
+ */
+export const parseCurrency = (value: string): number => {
+  const numbers = value.replace(/\D/g, "");
+  return numbers === "" ? 0 : parseInt(numbers) / 100;
+};

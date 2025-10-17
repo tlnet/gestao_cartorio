@@ -64,6 +64,9 @@ import { useAuth } from "@/contexts/auth-context";
 import { useState as useStateAuth, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useCategoriasPersonalizadas } from "@/hooks/use-categorias-personalizadas";
+import { formatCurrency, parseCurrency } from "@/lib/formatters";
+import { CurrencyInput } from "@/components/ui/currency-input";
+import { StaggeredCards, FadeInUp } from "@/components/ui/page-transition";
 
 const Configuracoes = () => {
   const [activeTab, setActiveTab] = useState("cartorio");
@@ -168,6 +171,7 @@ const Configuracoes = () => {
     descricao: "",
     preco: "",
     prazo_execucao: 3,
+    dias_notificacao_antes_vencimento: 1,
     ativo: true,
   });
 
@@ -244,8 +248,21 @@ const Configuracoes = () => {
         return;
       }
 
+      // Validação: dias de notificação deve ser menor que prazo de execução
+      if (
+        servicoForm.dias_notificacao_antes_vencimento &&
+        servicoForm.prazo_execucao &&
+        servicoForm.dias_notificacao_antes_vencimento >=
+          servicoForm.prazo_execucao
+      ) {
+        toast.error(
+          "Dias para notificação deve ser menor que o prazo de execução"
+        );
+        return;
+      }
+
       const preco = servicoForm.preco
-        ? parseFloat(servicoForm.preco)
+        ? parseCurrency(servicoForm.preco)
         : undefined;
 
       await createServico({
@@ -253,6 +270,8 @@ const Configuracoes = () => {
         descricao: servicoForm.descricao || undefined,
         preco: preco,
         prazo_execucao: servicoForm.prazo_execucao,
+        dias_notificacao_antes_vencimento:
+          servicoForm.dias_notificacao_antes_vencimento,
         ativo: servicoForm.ativo,
       });
 
@@ -261,6 +280,7 @@ const Configuracoes = () => {
         descricao: "",
         preco: "",
         prazo_execucao: 3,
+        dias_notificacao_antes_vencimento: 1,
         ativo: true,
       });
       setShowServicoDialog(false);
@@ -278,8 +298,21 @@ const Configuracoes = () => {
 
       if (!editingServico) return;
 
+      // Validação: dias de notificação deve ser menor que prazo de execução
+      if (
+        servicoForm.dias_notificacao_antes_vencimento &&
+        servicoForm.prazo_execucao &&
+        servicoForm.dias_notificacao_antes_vencimento >=
+          servicoForm.prazo_execucao
+      ) {
+        toast.error(
+          "Dias para notificação deve ser menor que o prazo de execução"
+        );
+        return;
+      }
+
       const preco = servicoForm.preco
-        ? parseFloat(servicoForm.preco)
+        ? parseCurrency(servicoForm.preco)
         : undefined;
 
       await updateServico(editingServico.id, {
@@ -287,6 +320,8 @@ const Configuracoes = () => {
         descricao: servicoForm.descricao || undefined,
         preco: preco,
         prazo_execucao: servicoForm.prazo_execucao,
+        dias_notificacao_antes_vencimento:
+          servicoForm.dias_notificacao_antes_vencimento,
         ativo: servicoForm.ativo,
       });
 
@@ -296,6 +331,7 @@ const Configuracoes = () => {
         descricao: "",
         preco: "",
         prazo_execucao: 3,
+        dias_notificacao_antes_vencimento: 1,
         ativo: true,
       });
       setShowEditServicoDialog(false);
@@ -348,8 +384,12 @@ const Configuracoes = () => {
     setServicoForm({
       nome: servico.nome,
       descricao: servico.descricao || "",
-      preco: servico.preco ? servico.preco.toString() : "",
+      preco: servico.preco
+        ? formatCurrency((servico.preco * 100).toString())
+        : "",
       prazo_execucao: servico.prazo_execucao || 3,
+      dias_notificacao_antes_vencimento:
+        servico.dias_notificacao_antes_vencimento || 1,
       ativo: servico.ativo,
     });
     setShowEditServicoDialog(true);
@@ -898,17 +938,13 @@ const Configuracoes = () => {
                         </div>
                         <div>
                           <Label htmlFor="precoServico">Preço (R$)</Label>
-                          <Input
+                          <CurrencyInput
                             id="precoServico"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            placeholder="0.00"
                             value={servicoForm.preco}
-                            onChange={(e) =>
+                            onChange={(value) =>
                               setServicoForm((prev) => ({
                                 ...prev,
-                                preco: e.target.value,
+                                preco: value,
                               }))
                             }
                           />
@@ -929,6 +965,31 @@ const Configuracoes = () => {
                               }))
                             }
                           />
+                        </div>
+                        <div>
+                          <Label htmlFor="diasNotificacaoServico">
+                            Dias para Notificação de Vencimento
+                          </Label>
+                          <Input
+                            id="diasNotificacaoServico"
+                            type="number"
+                            min="1"
+                            max={servicoForm.prazo_execucao - 1}
+                            value={
+                              servicoForm.dias_notificacao_antes_vencimento
+                            }
+                            onChange={(e) =>
+                              setServicoForm((prev) => ({
+                                ...prev,
+                                dias_notificacao_antes_vencimento:
+                                  parseInt(e.target.value) || 1,
+                              }))
+                            }
+                          />
+                          <p className="text-sm text-gray-500 mt-1">
+                            Quantos dias antes do vencimento receber notificação
+                            via WhatsApp
+                          </p>
                         </div>
                         <div className="flex items-center space-x-2">
                           <Switch
@@ -963,6 +1024,7 @@ const Configuracoes = () => {
                     <TableHead>Descrição</TableHead>
                     <TableHead>Preço</TableHead>
                     <TableHead>Prazo (dias)</TableHead>
+                    <TableHead>Notificação (dias)</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Ações</TableHead>
                   </TableRow>
@@ -984,6 +1046,9 @@ const Configuracoes = () => {
                           <Skeleton className="h-4 w-16" />
                         </TableCell>
                         <TableCell>
+                          <Skeleton className="h-4 w-16" />
+                        </TableCell>
+                        <TableCell>
                           <Skeleton className="h-6 w-16" />
                         </TableCell>
                         <TableCell>
@@ -994,7 +1059,7 @@ const Configuracoes = () => {
                   ) : servicos.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={6}
+                        colSpan={7}
                         className="text-center py-8 text-gray-500"
                       >
                         <div className="flex flex-col items-center gap-2">
@@ -1017,12 +1082,17 @@ const Configuracoes = () => {
                         </TableCell>
                         <TableCell>
                           {servico.preco
-                            ? `R$ ${servico.preco.toFixed(2)}`
+                            ? formatCurrency((servico.preco * 100).toString())
                             : "-"}
                         </TableCell>
                         <TableCell>
                           {servico.prazo_execucao
                             ? `${servico.prazo_execucao} dias`
+                            : "-"}
+                        </TableCell>
+                        <TableCell>
+                          {servico.dias_notificacao_antes_vencimento
+                            ? `${servico.dias_notificacao_antes_vencimento} dias antes`
                             : "-"}
                         </TableCell>
                         <TableCell>
@@ -1209,7 +1279,7 @@ const Configuracoes = () => {
                   ) : categoriasPersonalizadas.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={6}
+                        colSpan={7}
                         className="text-center py-8 text-gray-500"
                       >
                         <div className="flex flex-col items-center gap-2">
@@ -1547,17 +1617,13 @@ const Configuracoes = () => {
               </div>
               <div>
                 <Label htmlFor="editPrecoServico">Preço (R$)</Label>
-                <Input
+                <CurrencyInput
                   id="editPrecoServico"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0.00"
                   value={servicoForm.preco}
-                  onChange={(e) =>
+                  onChange={(value) =>
                     setServicoForm((prev) => ({
                       ...prev,
-                      preco: e.target.value,
+                      preco: value,
                     }))
                   }
                 />
@@ -1578,6 +1644,29 @@ const Configuracoes = () => {
                     }))
                   }
                 />
+              </div>
+              <div>
+                <Label htmlFor="editDiasNotificacaoServico">
+                  Dias para Notificação de Vencimento
+                </Label>
+                <Input
+                  id="editDiasNotificacaoServico"
+                  type="number"
+                  min="1"
+                  max={servicoForm.prazo_execucao - 1}
+                  value={servicoForm.dias_notificacao_antes_vencimento}
+                  onChange={(e) =>
+                    setServicoForm((prev) => ({
+                      ...prev,
+                      dias_notificacao_antes_vencimento:
+                        parseInt(e.target.value) || 1,
+                    }))
+                  }
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  Quantos dias antes do vencimento receber notificação via
+                  WhatsApp
+                </p>
               </div>
               <div className="flex items-center space-x-2">
                 <Switch

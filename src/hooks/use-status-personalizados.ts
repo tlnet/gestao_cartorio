@@ -127,9 +127,17 @@ export const useStatusPersonalizados = () => {
     updates: Partial<StatusPersonalizado>
   ) => {
     try {
+      // Preparar dados para update
+      const updateData: any = {};
+
+      if (updates.nome !== undefined) updateData.nome = updates.nome;
+      if (updates.cor !== undefined) updateData.cor = updates.cor;
+      if (updates.ordem !== undefined) updateData.ordem = updates.ordem;
+
+      // Usar método direto após remover triggers problemáticos
       const { data, error } = await supabase
         .from("status_personalizados")
-        .update(updates)
+        .update(updateData)
         .eq("id", id)
         .select()
         .single();

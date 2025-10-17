@@ -33,12 +33,14 @@ interface FiltrosContasProps {
   onFiltrosChange: (filtros: FiltrosContas) => void;
   loading?: boolean;
   cartorioId?: string;
+  showStatusFilter?: boolean;
 }
 
 export function FiltrosContasComponent({
   onFiltrosChange,
   loading,
   cartorioId,
+  showStatusFilter = true,
 }: FiltrosContasProps) {
   const [busca, setBusca] = useState("");
   const [statusSelecionados, setStatusSelecionados] = useState<StatusConta[]>(
@@ -97,7 +99,8 @@ export function FiltrosContasComponent({
     const filtros: FiltrosContas = {};
 
     if (busca) filtros.busca = busca;
-    if (statusSelecionados.length > 0) filtros.status = statusSelecionados;
+    if (showStatusFilter && statusSelecionados.length > 0)
+      filtros.status = statusSelecionados;
     if (categoriasSelecionadas.length > 0)
       filtros.categoria = categoriasSelecionadas;
     if (dataInicio) filtros.dataInicio = dataInicio;
@@ -135,7 +138,7 @@ export function FiltrosContasComponent({
 
   const temFiltrosAtivos =
     busca ||
-    statusSelecionados.length > 0 ||
+    (showStatusFilter && statusSelecionados.length > 0) ||
     categoriasSelecionadas.length > 0 ||
     dataInicio ||
     dataFim ||
@@ -176,38 +179,40 @@ export function FiltrosContasComponent({
 
       {/* Filtros Avançados */}
       <div className="flex flex-wrap gap-2">
-        {/* Filtro de Status */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" disabled={loading}>
-              Status
-              {statusSelecionados.length > 0 && (
-                <Badge variant="secondary" className="ml-2">
-                  {statusSelecionados.length}
-                </Badge>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-56">
-            <div className="space-y-2">
-              <h4 className="font-medium text-sm">Filtrar por Status</h4>
-              {Object.entries(STATUS_CONTA_LABELS).map(([key, label]) => (
-                <label
-                  key={key}
-                  className="flex items-center space-x-2 cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={statusSelecionados.includes(key as StatusConta)}
-                    onChange={() => toggleStatus(key as StatusConta)}
-                    className="rounded"
-                  />
-                  <span className="text-sm">{label}</span>
-                </label>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
+        {/* Filtro de Status - apenas se showStatusFilter for true */}
+        {showStatusFilter && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" disabled={loading}>
+                Status
+                {statusSelecionados.length > 0 && (
+                  <Badge variant="secondary" className="ml-2">
+                    {statusSelecionados.length}
+                  </Badge>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56">
+              <div className="space-y-2">
+                <h4 className="font-medium text-sm">Filtrar por Status</h4>
+                {Object.entries(STATUS_CONTA_LABELS).map(([key, label]) => (
+                  <label
+                    key={key}
+                    className="flex items-center space-x-2 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={statusSelecionados.includes(key as StatusConta)}
+                      onChange={() => toggleStatus(key as StatusConta)}
+                      className="rounded"
+                    />
+                    <span className="text-sm">{label}</span>
+                  </label>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
 
         {/* Filtro de Categoria */}
         <Popover>

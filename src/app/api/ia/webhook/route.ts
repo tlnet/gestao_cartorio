@@ -4,7 +4,10 @@ import { supabase } from "@/lib/supabase";
 export async function POST(request: NextRequest) {
   try {
     // Verificar se as variáveis de ambiente estão configuradas
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    if (
+      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    ) {
       return NextResponse.json(
         { error: "Variáveis de ambiente do Supabase não configuradas" },
         { status: 503 }
@@ -22,6 +25,10 @@ export async function POST(request: NextRequest) {
       relatorio_docx,
       resumo,
       error_message,
+      // Campos específicos para resumo de matrícula
+      matricula_resumida_url,
+      dados_extraidos,
+      tipo_processamento,
     } = body;
 
     if (!relatorio_id) {
@@ -37,12 +44,32 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
+    // Campos gerais (verificar se existem antes de adicionar)
     if (relatorio_pdf) updates.relatorio_pdf = relatorio_pdf;
     if (relatorio_doc) updates.relatorio_doc = relatorio_doc;
     if (relatorio_docx) updates.relatorio_docx = relatorio_docx;
-    if (resumo) updates.resumo = resumo;
-    if (error_message)
-      updates.resumo = { ...updates.resumo, error: error_message };
+
+    // Tratar resumo com verificação de existência da coluna
+    if (resumo) {
+      updates.resumo = resumo;
+    }
+    if (error_message) {
+      updates.resumo = { ...(updates.resumo || {}), error: error_message };
+    }
+
+    // Campos específicos para resumo de matrícula
+    if (matricula_resumida_url) {
+      updates.arquivo_resultado = matricula_resumida_url;
+    }
+
+    if (dados_extraidos) {
+      updates.resultado_final = {
+        ...(updates.resultado_final || {}),
+        dados_extraidos,
+        tipo_processamento: tipo_processamento || "resumo_matricula",
+        timestamp_conclusao: new Date().toISOString(),
+      };
+    }
 
     const { data, error } = await supabase
       .from("relatorios_ia")

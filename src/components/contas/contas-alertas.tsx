@@ -6,6 +6,7 @@ import { useAlertasPersistentes } from "@/hooks/use-alertas-persistentes";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { LoadingAnimation } from "@/components/ui/loading-spinner";
 import {
   Card,
   CardContent,
@@ -82,7 +83,9 @@ export function ContasAlertas({ cartorioId }: ContasAlertasProps) {
       <Card>
         <CardHeader>
           <CardTitle>Alertas de Pagamento</CardTitle>
-          <CardDescription>Carregando...</CardDescription>
+          <CardDescription>
+            <LoadingAnimation size="sm" variant="dots" />
+          </CardDescription>
         </CardHeader>
       </Card>
     );

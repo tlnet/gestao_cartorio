@@ -3,7 +3,7 @@
 import { useAuth } from "@/contexts/auth-context";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { Loader2 } from "lucide-react";
+import { LoadingAnimation } from "@/components/ui/loading-spinner";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -24,10 +24,7 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps) {
     return (
       fallback || (
         <div className="min-h-screen flex items-center justify-center">
-          <div className="flex flex-col items-center space-y-4">
-            <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-            <p className="text-gray-600">Verificando autenticação...</p>
-          </div>
+          <LoadingAnimation size="lg" variant="wave" />
         </div>
       )
     );

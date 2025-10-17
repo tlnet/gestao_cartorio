@@ -2,15 +2,18 @@
 
 import { Badge } from "@/components/ui/badge";
 import { CategoriaPersonalizada } from "@/types";
+import { LoadingAnimation } from "@/components/ui/loading-spinner";
 
 interface CategoriaBadgeProps {
   categoriaId: string;
   categoriasPersonalizadas: CategoriaPersonalizada[];
+  loading?: boolean;
 }
 
 export function CategoriaBadge({
   categoriaId,
   categoriasPersonalizadas,
+  loading = false,
 }: CategoriaBadgeProps) {
   // Função para obter informações da categoria
   const getCategoriaInfo = () => {
@@ -49,6 +52,15 @@ export function CategoriaBadge({
   };
 
   const categoriaInfo = getCategoriaInfo();
+
+  // Se estiver carregando, mostrar um badge com spinner (mesmo estilo dos documentos)
+  if (loading) {
+    return (
+      <Badge variant="secondary" className="flex items-center gap-1">
+        <LoadingAnimation size="sm" variant="dots" />
+      </Badge>
+    );
+  }
 
   return (
     <Badge

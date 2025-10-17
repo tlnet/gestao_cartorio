@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/contexts/auth-context";
 import { supabase } from "@/lib/supabase";
+import { UserSkeleton } from "@/components/ui/user-skeleton";
 import { useEffect, useState } from "react";
 
 interface SidebarProps {
@@ -33,12 +34,14 @@ const Sidebar: React.FC<SidebarProps> = ({ userType = "supervisor" }) => {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
   // Buscar dados do usuário
   useEffect(() => {
     const fetchUserProfile = async () => {
       if (user) {
         try {
+          setIsLoadingProfile(true);
           const { data, error } = await supabase
             .from("users")
             .select("*")
@@ -53,7 +56,11 @@ const Sidebar: React.FC<SidebarProps> = ({ userType = "supervisor" }) => {
           setUserProfile(data);
         } catch (error) {
           console.error("Erro ao buscar perfil:", error);
+        } finally {
+          setIsLoadingProfile(false);
         }
+      } else {
+        setIsLoadingProfile(false);
       }
     };
 
@@ -205,44 +212,48 @@ const Sidebar: React.FC<SidebarProps> = ({ userType = "supervisor" }) => {
       <Separator />
 
       {/* User Info & Logout */}
-      <div className="p-4 space-y-3">
-        <div className="space-y-3">
-          <div className="flex items-center space-x-3">
-            <Avatar className="h-10 w-10">
-              <AvatarImage src={userProfile?.avatar_url || undefined} />
-              <AvatarFallback className="bg-blue-100 text-blue-600">
-                {getUserInitials(userProfile?.name || user?.email || "U")}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">
-                {userProfile?.name || user?.email || "Usuário"}
-              </p>
-              <p className="text-xs text-gray-500 truncate">
-                {user?.email || "email@exemplo.com"}
-              </p>
+      {isLoadingProfile ? (
+        <UserSkeleton variant="sidebar" size="lg" showRole={true} />
+      ) : (
+        <div className="p-4 space-y-3">
+          <div className="space-y-3">
+            <div className="flex items-center space-x-3">
+              <Avatar className="h-10 w-10">
+                <AvatarImage src={userProfile?.avatar_url || undefined} />
+                <AvatarFallback className="bg-blue-100 text-blue-600">
+                  {getUserInitials(userProfile?.name || user?.email || "U")}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">
+                  {userProfile?.name || user?.email || "Usuário"}
+                </p>
+                <p className="text-xs text-gray-500 truncate">
+                  {user?.email || "email@exemplo.com"}
+                </p>
+              </div>
             </div>
-          </div>
 
-          <div className="flex justify-center">
-            <Badge
-              className={getRoleColor(userProfile?.role || userType)}
-              variant="secondary"
+            <div className="flex justify-center">
+              <Badge
+                className={getRoleColor(userProfile?.role || userType)}
+                variant="secondary"
+              >
+                {getRoleLabel(userProfile?.role || userType)}
+              </Badge>
+            </div>
+
+            <Button
+              variant="ghost"
+              className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
+              onClick={handleSignOut}
             >
-              {getRoleLabel(userProfile?.role || userType)}
-            </Badge>
+              <LogOut className="mr-3 h-4 w-4" />
+              Sair
+            </Button>
           </div>
-
-          <Button
-            variant="ghost"
-            className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
-            onClick={handleSignOut}
-          >
-            <LogOut className="mr-3 h-4 w-4" />
-            Sair
-          </Button>
         </div>
-      </div>
+      )}
     </div>
   );
 };

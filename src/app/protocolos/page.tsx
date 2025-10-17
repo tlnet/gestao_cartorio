@@ -11,6 +11,8 @@ import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
 import { useAuth } from "@/contexts/auth-context";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { LoadingAnimation } from "@/components/ui/loading-spinner";
+import { StaggeredCards, FadeInUp } from "@/components/ui/page-transition";
 import {
   parseLocalDate,
   formatDateForDisplay,
@@ -498,72 +500,82 @@ const ProtocolosContent = () => {
 
         {/* Estatísticas */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Total Protocolos
-              </CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{totalProtocolos}</div>
-              <p className="text-xs text-muted-foreground">
-                Cadastrados no sistema
-              </p>
-            </CardContent>
-          </Card>
+          <FadeInUp delay={100}>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Total Protocolos
+                </CardTitle>
+                <FileText className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{totalProtocolos}</div>
+                <p className="text-xs text-muted-foreground">
+                  Cadastrados no sistema
+                </p>
+              </CardContent>
+            </Card>
+          </FadeInUp>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Em Aberto</CardTitle>
-              <Clock className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-600">
-                {totalEmAberto}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Aguardando processamento
-              </p>
-            </CardContent>
-          </Card>
+          <FadeInUp delay={200}>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Em Aberto</CardTitle>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-600">
+                  {totalEmAberto}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Aguardando processamento
+                </p>
+              </CardContent>
+            </Card>
+          </FadeInUp>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Concluídos</CardTitle>
-              <CheckCircle className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {totalConcluidos}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Processos finalizados
-              </p>
-            </CardContent>
-          </Card>
+          <FadeInUp delay={300}>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Concluídos
+                </CardTitle>
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">
+                  {totalConcluidos}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Processos finalizados
+                </p>
+              </CardContent>
+            </Card>
+          </FadeInUp>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Vencendo Prazo
-              </CardTitle>
-              <Clock className="h-4 w-4 text-red-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">
-                {
-                  localProtocolos.filter(
-                    (p) =>
-                      p.prazo_execucao &&
-                      isPrazoVencendo(p.prazo_execucao) &&
-                      p.status !== "Concluído"
-                  ).length
-                }
-              </div>
-              <p className="text-xs text-muted-foreground">Requer atenção</p>
-            </CardContent>
-          </Card>
+          <FadeInUp delay={400}>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Vencendo Prazo
+                </CardTitle>
+                <Clock className="h-4 w-4 text-red-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-red-600">
+                  {
+                    localProtocolos.filter(
+                      (p) =>
+                        p.prazo_execucao &&
+                        isPrazoVencendo(p.prazo_execucao) &&
+                        p.status !== "Concluído"
+                    ).length
+                  }
+                </div>
+                <p className="text-xs text-muted-foreground">Requer atenção</p>
+              </CardContent>
+            </Card>
+          </FadeInUp>
         </div>
 
         {/* Seção de Protocolos em Aberto */}
@@ -841,7 +853,13 @@ const ProtocolosContent = () => {
 
 const Protocolos = () => {
   return (
-    <Suspense fallback={<div>Carregando...</div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <LoadingAnimation size="lg" variant="dots" />
+        </div>
+      }
+    >
       <ProtocolosContent />
     </Suspense>
   );

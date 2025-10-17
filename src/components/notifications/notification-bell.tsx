@@ -13,6 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useNotifications } from "@/hooks/use-notifications";
 import { formatDistanceToNow } from "date-fns";
+import { LoadingAnimation } from "@/components/ui/loading-spinner";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 
@@ -124,8 +125,8 @@ const NotificationBell = () => {
 
         <ScrollArea className="h-96">
           {loading ? (
-            <div className="p-4 text-center text-gray-500">
-              Carregando notificações...
+            <div className="p-4 text-center">
+              <LoadingAnimation size="md" variant="dots" />
             </div>
           ) : notificacoes.length === 0 ? (
             <div className="p-4 text-center text-gray-500">

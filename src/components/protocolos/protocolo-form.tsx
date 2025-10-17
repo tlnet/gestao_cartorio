@@ -38,6 +38,8 @@ import {
   isValidEmail,
 } from "@/lib/formatters";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
+import { useServicos } from "@/hooks/use-servicos";
+import { LoadingAnimation } from "@/components/ui/loading-spinner";
 
 const protocoloSchema = z.object({
   demanda: z.string().min(1, "Demanda é obrigatória"),
@@ -93,6 +95,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   >(initialData?.servicos || []);
 
   const { statusPersonalizados } = useStatusPersonalizados();
+  const { servicos, loading: servicosLoading } = useServicos();
 
   // Combinar status padrão com status personalizados
   const statusOptions = [
@@ -116,18 +119,17 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
       .map((status) => status.nome),
   ];
 
+  // Remover duplicatas e garantir chaves únicas
+  const statusOptionsUnicos = [...new Set(statusOptions)];
+
+  // Usar serviços personalizados do banco de dados
   const servicosDisponiveis = [
-    "Certidão de Nascimento",
-    "Certidão de Casamento",
-    "Certidão de Óbito",
-    "Escritura de Compra e Venda",
-    "Procuração",
-    "Reconhecimento de Firma",
-    "Autenticação de Documentos",
-    "Registro de Imóveis",
-    "Testamento",
-    "Inventário",
-  ];
+    ...new Set(
+      servicos
+        .filter((servico) => servico.ativo) // Apenas serviços ativos
+        .map((servico) => servico.nome)
+    ),
+  ].sort(); // Remover duplicatas e ordenar alfabeticamente
 
   const form = useForm<ProtocoloFormData>({
     resolver: zodResolver(protocoloSchema),
@@ -250,7 +252,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {statusOptions.map((status) => (
+                      {statusOptionsUnicos.map((status) => (
                         <SelectItem key={status} value={status}>
                           {status}
                         </SelectItem>
@@ -389,20 +391,35 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
           <h3 className="text-lg font-medium">Serviços Solicitados *</h3>
 
           <div className="space-y-3">
-            <Select onValueChange={adicionarServico}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione um serviço para adicionar" />
-              </SelectTrigger>
-              <SelectContent>
-                {servicosDisponiveis
-                  .filter((servico) => !servicosSelecionados.includes(servico))
-                  .map((servico) => (
-                    <SelectItem key={servico} value={servico}>
-                      {servico}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+            {servicosLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <LoadingAnimation size="md" variant="dots" />
+              </div>
+            ) : (
+              <Select onValueChange={adicionarServico}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um serviço para adicionar" />
+                </SelectTrigger>
+                <SelectContent>
+                  {servicosDisponiveis.length === 0 ? (
+                    <div className="p-2 text-sm text-gray-500 text-center">
+                      Nenhum serviço disponível. Configure os serviços na página
+                      de Configurações.
+                    </div>
+                  ) : (
+                    servicosDisponiveis
+                      .filter(
+                        (servico) => !servicosSelecionados.includes(servico)
+                      )
+                      .map((servico) => (
+                        <SelectItem key={servico} value={servico}>
+                          {servico}
+                        </SelectItem>
+                      ))
+                  )}
+                </SelectContent>
+              </Select>
+            )}
 
             {servicosSelecionados.length > 0 && (
               <div className="flex flex-wrap gap-2">

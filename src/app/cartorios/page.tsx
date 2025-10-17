@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import MainLayout from "@/components/layout/main-layout";
 import { useCartorios } from "@/hooks/use-supabase";
+import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
 import {
   Card,
   CardContent,
@@ -85,6 +86,8 @@ const GestaoCartorios = () => {
   const [selectedCartorio, setSelectedCartorio] = useState<any>(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [cartorioToDelete, setCartorioToDelete] = useState<any>(null);
 
   const form = useForm<CartorioFormData>({
     resolver: zodResolver(cartorioSchema),
@@ -160,9 +163,16 @@ const GestaoCartorios = () => {
     await updateCartorio(cartorio.id, { ativo: !cartorio.ativo });
   };
 
-  const handleDeleteCartorio = async (cartorioId: string) => {
-    if (confirm("Tem certeza que deseja remover este cartório?")) {
-      await deleteCartorio(cartorioId);
+  const handleDeleteCartorio = (cartorio: any) => {
+    setCartorioToDelete(cartorio);
+    setShowDeleteConfirmation(true);
+  };
+
+  const confirmDeleteCartorio = async () => {
+    if (cartorioToDelete) {
+      await deleteCartorio(cartorioToDelete.id);
+      setShowDeleteConfirmation(false);
+      setCartorioToDelete(null);
     }
   };
 
@@ -453,7 +463,7 @@ const GestaoCartorios = () => {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDeleteCartorio(cartorio.id)}
+                            onClick={() => handleDeleteCartorio(cartorio)}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -778,6 +788,18 @@ const GestaoCartorios = () => {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Dialog de Confirmação de Exclusão */}
+        <ConfirmationDialog
+          open={showDeleteConfirmation}
+          onOpenChange={setShowDeleteConfirmation}
+          onConfirm={confirmDeleteCartorio}
+          title="Excluir Cartório"
+          description={`Tem certeza que deseja excluir o cartório "${cartorioToDelete?.nome}"? Esta ação não pode ser desfeita.`}
+          confirmText="Excluir"
+          cancelText="Cancelar"
+          variant="destructive"
+        />
       </div>
     </MainLayout>
   );

@@ -28,6 +28,7 @@ import {
 import { StatusBadgeConta } from "./status-badge-conta";
 import { CategoriaBadge } from "./categoria-badge";
 import { ContaForm } from "./conta-form";
+import { DocumentosBadge } from "./documentos-badge";
 import { ContaPagar } from "@/types";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -59,6 +60,7 @@ interface ContasTableProps {
   onDelete: (id: string) => Promise<void>;
   onMarcarComoPaga: (id: string) => Promise<void>;
   cartorioId?: string;
+  refreshTrigger?: number; // Para forçar refresh dos documentos
 }
 
 export function ContasTable({
@@ -68,13 +70,14 @@ export function ContasTable({
   onDelete,
   onMarcarComoPaga,
   cartorioId,
+  refreshTrigger,
 }: ContasTableProps) {
   const [editingConta, setEditingConta] = useState<ContaPagar | null>(null);
   const [deletingConta, setDeletingConta] = useState<string | null>(null);
   const [viewingConta, setViewingConta] = useState<ContaPagar | null>(null);
 
   // Hook para categorias personalizadas
-  const { categorias: categoriasPersonalizadas } =
+  const { categorias: categoriasPersonalizadas, loading: categoriasLoading } =
     useCategoriasPersonalizadas(cartorioId);
 
   // Função para mapear categoria (UUID ou string) para nome
@@ -153,6 +156,7 @@ export function ContasTable({
                 <TableHead>Valor</TableHead>
                 <TableHead>Vencimento</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Documentos</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
@@ -198,6 +202,7 @@ export function ContasTable({
                 <TableHead>Valor</TableHead>
                 <TableHead>Vencimento</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Documentos</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
@@ -212,10 +217,18 @@ export function ContasTable({
                   conta.status === "A_PAGAR";
 
                 return (
-                  <TableRow key={conta.id}>
+                  <TableRow
+                    key={conta.id}
+                    className={conta.status === "PAGA" ? "bg-green-50/50" : ""}
+                  >
                     <TableCell className="font-medium">
                       <div>
-                        <div>{conta.descricao}</div>
+                        <div className="flex items-center gap-2">
+                          {conta.descricao}
+                          {conta.status === "PAGA" && (
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                          )}
+                        </div>
                         {isVencendoSoon && (
                           <Badge
                             variant="outline"
@@ -231,6 +244,7 @@ export function ContasTable({
                       <CategoriaBadge
                         categoriaId={conta.categoria}
                         categoriasPersonalizadas={categoriasPersonalizadas}
+                        loading={categoriasLoading}
                       />
                     </TableCell>
                     <TableCell>{conta.fornecedor || "-"}</TableCell>
@@ -240,6 +254,12 @@ export function ContasTable({
                     <TableCell>{formatDate(conta.dataVencimento)}</TableCell>
                     <TableCell>
                       <StatusBadgeConta status={conta.status} />
+                    </TableCell>
+                    <TableCell>
+                      <DocumentosBadge
+                        contaId={conta.id}
+                        refreshTrigger={refreshTrigger}
+                      />
                     </TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>

@@ -44,6 +44,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
 import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/notifications/notification-bell";
+import { UserSkeleton } from "@/components/ui/user-skeleton";
 
 interface HeaderProps {
   title: string;
@@ -65,6 +66,7 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
   const router = useRouter();
   const { user, signOut } = useAuth();
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
 
   // Buscar dados do usuário
@@ -72,6 +74,7 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
     const fetchUserProfile = async () => {
       if (user) {
         try {
+          setIsLoadingProfile(true);
           const { data, error } = await supabase
             .from("users")
             .select("*")
@@ -86,7 +89,11 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
           setUserProfile(data);
         } catch (error) {
           console.error("Erro ao buscar perfil:", error);
+        } finally {
+          setIsLoadingProfile(false);
         }
+      } else {
+        setIsLoadingProfile(false);
       }
     };
 
@@ -286,58 +293,64 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
             <NotificationBell />
 
             {/* User Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="flex items-center space-x-2 px-3"
-                >
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={userProfile?.avatar_url || undefined} />
-                    <AvatarFallback className="bg-blue-100 text-blue-600 text-sm">
-                      {getUserInitials(userProfile?.name || user?.email || "U")}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="hidden md:block text-left">
-                    <p className="text-sm font-medium">
-                      {userProfile?.name || user?.email || "Usuário"}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {user?.email || "email@exemplo.com"}
-                    </p>
-                  </div>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>
-                  <div>
-                    <p className="font-medium">
-                      {userProfile?.name || user?.email || "Usuário"}
-                    </p>
-                    <p className="text-xs text-gray-500 font-normal">
-                      {user?.email || "email@exemplo.com"}
-                    </p>
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleProfileClick}>
-                  <User className="mr-2 h-4 w-4" />
-                  Meu Perfil
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleSettingsClick}>
-                  <SettingsIcon className="mr-2 h-4 w-4" />
-                  Configurações
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={handleSignOut}
-                  className="text-red-600"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sair
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {isLoadingProfile ? (
+              <UserSkeleton variant="header" size="md" />
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="flex items-center space-x-2 px-3"
+                  >
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={userProfile?.avatar_url || undefined} />
+                      <AvatarFallback className="bg-blue-100 text-blue-600 text-sm">
+                        {getUserInitials(
+                          userProfile?.name || user?.email || "U"
+                        )}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="hidden md:block text-left">
+                      <p className="text-sm font-medium">
+                        {userProfile?.name || user?.email || "Usuário"}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {user?.email || "email@exemplo.com"}
+                      </p>
+                    </div>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>
+                    <div>
+                      <p className="font-medium">
+                        {userProfile?.name || user?.email || "Usuário"}
+                      </p>
+                      <p className="text-xs text-gray-500 font-normal">
+                        {user?.email || "email@exemplo.com"}
+                      </p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleProfileClick}>
+                    <User className="mr-2 h-4 w-4" />
+                    Meu Perfil
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleSettingsClick}>
+                    <SettingsIcon className="mr-2 h-4 w-4" />
+                    Configurações
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={handleSignOut}
+                    className="text-red-600"
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sair
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
       </header>

@@ -69,6 +69,7 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { StaggeredCards, FadeInUp } from "@/components/ui/page-transition";
 
 const Relatorios = () => {
   const { protocolos, loading: protocolosLoading } = useProtocolos();

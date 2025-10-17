@@ -3,6 +3,7 @@
 import React from "react";
 import Sidebar from "./sidebar";
 import Header from "./header";
+import { PageTransition } from "@/components/ui/page-transition";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -28,7 +29,9 @@ const MainLayout: React.FC<MainLayoutProps> = ({
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title={title} subtitle={subtitle} />
 
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-6">
+          <PageTransition delay={100}>{children}</PageTransition>
+        </main>
       </div>
     </div>
   );

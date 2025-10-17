@@ -11,6 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { LoadingAnimation } from "@/components/ui/loading-spinner";
 import {
   Card,
   CardContent,
@@ -678,10 +679,7 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
                 <CardContent>
                   {historicoLoading ? (
                     <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                      <p className="text-sm text-gray-500 mt-2">
-                        Carregando histórico...
-                      </p>
+                      <LoadingAnimation size="lg" variant="wave" />
                     </div>
                   ) : historico.length === 0 ? (
                     <div className="text-center py-8">

@@ -62,6 +62,8 @@ import {
   isValidPhone,
   isValidEmail,
 } from "@/lib/formatters";
+import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
+import { StaggeredCards, FadeInUp } from "@/components/ui/page-transition";
 
 const usuarioSchema = z.object({
   name: z.string().min(1, "Nome é obrigatório"),
@@ -91,6 +93,8 @@ const GestaoUsuarios = () => {
   const [showUserDialog, setShowUserDialog] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<any>(null);
 
   const form = useForm<UsuarioFormData>({
     resolver: zodResolver(usuarioSchema),
@@ -213,9 +217,16 @@ const GestaoUsuarios = () => {
     await updateUsuario(userId, { ativo: !currentStatus });
   };
 
-  const handleDeleteUser = async (userId: string) => {
-    if (confirm("Tem certeza que deseja remover este usuário?")) {
-      await deleteUsuario(userId);
+  const handleDeleteUser = (usuario: any) => {
+    setUserToDelete(usuario);
+    setShowDeleteConfirmation(true);
+  };
+
+  const confirmDeleteUser = async () => {
+    if (userToDelete) {
+      await deleteUsuario(userToDelete.id);
+      setShowDeleteConfirmation(false);
+      setUserToDelete(null);
     }
   };
 
@@ -498,7 +509,7 @@ const GestaoUsuarios = () => {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDeleteUser(usuario.id)}
+                            onClick={() => handleDeleteUser(usuario)}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -662,6 +673,18 @@ const GestaoUsuarios = () => {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Dialog de Confirmação de Exclusão */}
+        <ConfirmationDialog
+          open={showDeleteConfirmation}
+          onOpenChange={setShowDeleteConfirmation}
+          onConfirm={confirmDeleteUser}
+          title="Excluir Usuário"
+          description={`Tem certeza que deseja excluir o usuário "${userToDelete?.name}"? Esta ação não pode ser desfeita.`}
+          confirmText="Excluir"
+          cancelText="Cancelar"
+          variant="destructive"
+        />
       </div>
     </MainLayout>
   );

@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import MainLayout from "@/components/layout/main-layout";
 import { useContasPagar } from "@/hooks/use-contas-pagar";
 import { useAuth } from "@/contexts/auth-context";
+import { LoadingAnimation } from "@/components/ui/loading-spinner";
+import { StaggeredCards, FadeInUp } from "@/components/ui/page-transition";
 import { ContaForm } from "@/components/contas/conta-form";
 import { ContasTable } from "@/components/contas/contas-table";
 import { ResumoFinanceiroCard } from "@/components/contas/resumo-financeiro";
@@ -25,7 +27,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Download, FileSpreadsheet, AlertCircle } from "lucide-react";
+import {
+  Plus,
+  Download,
+  FileSpreadsheet,
+  AlertCircle,
+  CheckCircle,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import { ContaPagar, FiltrosContas } from "@/types";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -36,6 +46,10 @@ export default function ContasPage() {
   const [dialogNovaContaOpen, setDialogNovaContaOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("todas");
   const [filtrosAtuais, setFiltrosAtuais] = useState<FiltrosContas>({});
+  const [filtrosPagas, setFiltrosPagas] = useState<FiltrosContas>({});
+  const [showPagas, setShowPagas] = useState(false);
+  const [documentosPendentes, setDocumentosPendentes] = useState<any[]>([]);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const {
     contas,
@@ -49,6 +63,7 @@ export default function ContasPage() {
     deletarConta,
     buscarContasAVencer,
     buscarContasVencidas,
+    adicionarDocumentoConta,
   } = useContasPagar(cartorioId);
 
   // Buscar cartório do usuário
@@ -73,10 +88,70 @@ export default function ContasPage() {
     fetchUserCartorio();
   }, [user]);
 
+  // Função wrapper para atualizar conta e refresh dos documentos
+  const handleAtualizarConta = async (
+    id: string,
+    data: Partial<ContaPagar>
+  ) => {
+    try {
+      await atualizarConta(id, data);
+      // Atualizar refreshTrigger para forçar atualização dos DocumentosBadge
+      setRefreshTrigger((prev) => prev + 1);
+      console.log("🔍 DEBUG: refreshTrigger atualizado após edição de conta");
+    } catch (error) {
+      console.error("Erro ao atualizar conta:", error);
+      throw error;
+    }
+  };
+
   const handleNovaContaSubmit = async (data: Partial<ContaPagar>) => {
     try {
-      await criarConta(data as any);
+      console.log("🔍 DEBUG: handleNovaContaSubmit iniciado com:", {
+        data,
+        documentosPendentesCount: documentosPendentes.length,
+        documentosPendentes: documentosPendentes,
+      });
+
+      const contaCriada = await criarConta(data as any);
+
+      // Se há documentos pendentes e a conta foi criada, salvar os documentos
+      if (contaCriada && documentosPendentes.length > 0) {
+        console.log(
+          "🔍 DEBUG: Salvando documentos pendentes para nova conta:",
+          {
+            contaId: contaCriada.id,
+            documentosCount: documentosPendentes.length,
+          }
+        );
+
+        try {
+          for (const documento of documentosPendentes) {
+            await adicionarDocumentoConta(contaCriada.id, {
+              nomeArquivo: documento.nome,
+              urlArquivo: documento.url,
+              tipoArquivo: documento.tipo,
+              tamanhoArquivo: documento.tamanho,
+            });
+          }
+
+          console.log(
+            `✅ ${documentosPendentes.length} documento(s) salvo(s) para nova conta`
+          );
+          setDocumentosPendentes([]); // Limpar documentos pendentes
+        } catch (docError) {
+          console.error(
+            "❌ Erro ao salvar documentos da nova conta:",
+            docError
+          );
+        }
+      }
+
       setDialogNovaContaOpen(false);
+
+      // Se a conta foi criada com sucesso, recarregar a lista de contas
+      if (contaCriada) {
+        await fetchContas(filtrosAtuais);
+      }
     } catch (error) {
       console.error("Erro ao criar conta:", error);
       // Mostrar erro mais detalhado
@@ -92,9 +167,22 @@ export default function ContasPage() {
     }
   };
 
+  const handleDocumentosChange = (documentos: any[]) => {
+    console.log("🔍 DEBUG: handleDocumentosChange chamada com:", {
+      documentosCount: documentos.length,
+      documentos: documentos,
+    });
+    setDocumentosPendentes(documentos);
+  };
+
   const handleFiltrosChange = (filtros: FiltrosContas) => {
     setFiltrosAtuais(filtros);
     fetchContas(filtros);
+  };
+
+  const handleFiltrosPagasChange = (filtros: FiltrosContas) => {
+    setFiltrosPagas(filtros);
+    // Não precisa chamar fetchContas aqui pois as contas pagas são filtradas localmente
   };
 
   const handleTabChange = async (tab: string) => {
@@ -178,15 +266,67 @@ export default function ContasPage() {
     }
   };
 
-  // Filtrar contas pela aba ativa
-  const contasFiltradas = contas.filter((conta) => {
+  // Separar contas em pagas e em aberto
+  const contasPagasBrutas = contas.filter((conta) => conta.status === "PAGA");
+  const contasEmAberto = contas.filter((conta) => conta.status !== "PAGA");
+
+  // Aplicar filtros às contas pagas
+  const contasPagas = contasPagasBrutas.filter((conta) => {
+    // Aplicar filtros de categoria
+    if (filtrosPagas.categoria && filtrosPagas.categoria.length > 0) {
+      if (!filtrosPagas.categoria.includes(conta.categoria)) {
+        return false;
+      }
+    }
+
+    // Aplicar filtros de fornecedor
+    if (filtrosPagas.fornecedor && filtrosPagas.fornecedor.trim() !== "") {
+      if (
+        !conta.fornecedor
+          ?.toLowerCase()
+          .includes(filtrosPagas.fornecedor.toLowerCase())
+      ) {
+        return false;
+      }
+    }
+
+    // Aplicar filtros de valor
+    if (filtrosPagas.valorMin !== undefined) {
+      if (conta.valor < filtrosPagas.valorMin) {
+        return false;
+      }
+    }
+
+    if (filtrosPagas.valorMax !== undefined) {
+      if (conta.valor > filtrosPagas.valorMax) {
+        return false;
+      }
+    }
+
+    // Aplicar filtros de data
+    if (filtrosPagas.dataInicio) {
+      if (new Date(conta.dataVencimento) < new Date(filtrosPagas.dataInicio)) {
+        return false;
+      }
+    }
+
+    if (filtrosPagas.dataFim) {
+      if (new Date(conta.dataVencimento) > new Date(filtrosPagas.dataFim)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  // Filtrar contas pela aba ativa (apenas para contas em aberto)
+  const contasFiltradas = contasEmAberto.filter((conta) => {
     switch (activeTab) {
       case "a_pagar":
         return conta.status === "A_PAGAR";
       case "vencidas":
         return conta.status === "VENCIDA";
-      case "pagas":
-        return conta.status === "PAGA";
+      case "todas":
       default:
         return true;
     }
@@ -194,16 +334,19 @@ export default function ContasPage() {
 
   if (!user) {
     return (
-      <MainLayout>
+      <MainLayout
+        title="Contas a Pagar"
+        subtitle="Gestão financeira do cartório"
+      >
         <div className="flex items-center justify-center h-full">
-          <p>Carregando...</p>
+          <LoadingAnimation size="lg" variant="pulse" />
         </div>
       </MainLayout>
     );
   }
 
   return (
-    <MainLayout>
+    <MainLayout title="Contas a Pagar" subtitle="Gestão financeira do cartório">
       <div className="container mx-auto p-6 space-y-6">
         {/* Cabeçalho */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -244,33 +387,35 @@ export default function ContasPage() {
         {/* Resumo Financeiro */}
         <ResumoFinanceiroCard resumo={resumo} loading={loading} />
 
-        {/* Conteúdo Principal */}
+        {/* Conteúdo Principal - Contas em Aberto */}
         <Card>
           <CardHeader>
-            <CardTitle>Contas</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-blue-600" />
+              Contas em Aberto ({contasEmAberto.length})
+            </CardTitle>
             <CardDescription>
-              Visualize e gerencie todas as suas contas a pagar
+              Contas que ainda precisam ser pagas
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {/* Tabs */}
+            {/* Tabs para Contas em Aberto */}
             <Tabs
               value={activeTab}
               onValueChange={handleTabChange}
               className="space-y-4"
             >
-              <TabsList className="grid w-full grid-cols-4 lg:w-auto">
-                <TabsTrigger value="todas">Todas ({contas.length})</TabsTrigger>
+              <TabsList className="grid w-full grid-cols-3 lg:w-auto">
+                <TabsTrigger value="todas">
+                  Todas ({contasEmAberto.length})
+                </TabsTrigger>
                 <TabsTrigger value="a_pagar">
-                  A Pagar ({contas.filter((c) => c.status === "A_PAGAR").length}
-                  )
+                  A Pagar (
+                  {contasEmAberto.filter((c) => c.status === "A_PAGAR").length})
                 </TabsTrigger>
                 <TabsTrigger value="vencidas">
                   Vencidas (
-                  {contas.filter((c) => c.status === "VENCIDA").length})
-                </TabsTrigger>
-                <TabsTrigger value="pagas">
-                  Pagas ({contas.filter((c) => c.status === "PAGA").length})
+                  {contasEmAberto.filter((c) => c.status === "VENCIDA").length})
                 </TabsTrigger>
               </TabsList>
 
@@ -281,19 +426,92 @@ export default function ContasPage() {
                 cartorioId={cartorioId}
               />
 
-              {/* Tabela de Contas */}
+              {/* Tabela de Contas em Aberto */}
               <TabsContent value={activeTab} className="space-y-4">
                 <ContasTable
                   contas={contasFiltradas}
                   loading={loading}
-                  onEdit={atualizarConta}
+                  onEdit={handleAtualizarConta}
                   onDelete={deletarConta}
                   onMarcarComoPaga={marcarComoPaga}
                   cartorioId={cartorioId}
+                  refreshTrigger={refreshTrigger}
                 />
               </TabsContent>
             </Tabs>
           </CardContent>
+        </Card>
+
+        {/* Seção de Contas Pagas */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-green-600" />
+                <CardTitle>Contas Pagas ({contasPagas.length})</CardTitle>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowPagas(!showPagas)}
+                className="flex items-center gap-2"
+              >
+                {showPagas ? (
+                  <>
+                    <ChevronUp className="h-4 w-4" />
+                    Ocultar
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4" />
+                    Mostrar
+                  </>
+                )}
+              </Button>
+            </div>
+            <CardDescription>
+              Contas que foram pagas e finalizadas
+            </CardDescription>
+          </CardHeader>
+          {showPagas && (
+            <CardContent>
+              {/* Filtros para Contas Pagas */}
+              <div className="mb-4">
+                <FiltrosContasComponent
+                  onFiltrosChange={handleFiltrosPagasChange}
+                  loading={loading}
+                  cartorioId={cartorioId}
+                  showStatusFilter={false}
+                />
+              </div>
+
+              {contasPagas.length === 0 ? (
+                <div className="text-center py-12">
+                  <CheckCircle className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    {contasPagasBrutas.length === 0
+                      ? "Nenhuma conta paga"
+                      : "Nenhuma conta paga encontrada com os filtros aplicados"}
+                  </h3>
+                  <p className="text-gray-500">
+                    {contasPagasBrutas.length === 0
+                      ? "As contas pagas aparecerão aqui quando forem marcadas como pagas."
+                      : "Tente ajustar os filtros para ver mais resultados."}
+                  </p>
+                </div>
+              ) : (
+                <ContasTable
+                  contas={contasPagas}
+                  loading={loading}
+                  onEdit={handleAtualizarConta}
+                  onDelete={deletarConta}
+                  onMarcarComoPaga={marcarComoPaga}
+                  cartorioId={cartorioId}
+                  refreshTrigger={refreshTrigger}
+                />
+              )}
+            </CardContent>
+          )}
         </Card>
 
         {/* Dialog Nova Conta */}
@@ -312,6 +530,7 @@ export default function ContasPage() {
               onSubmit={handleNovaContaSubmit}
               onCancel={() => setDialogNovaContaOpen(false)}
               loading={loading}
+              onDocumentosChange={handleDocumentosChange}
             />
           </DialogContent>
         </Dialog>

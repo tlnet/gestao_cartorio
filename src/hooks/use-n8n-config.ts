@@ -15,11 +15,18 @@ export const useN8NConfig = () => {
   const [config, setConfig] = useState<N8NConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tableExists, setTableExists] = useState<boolean | null>(null);
 
   const fetchConfig = async (cartorioId?: string) => {
     try {
       setLoading(true);
       setError(null);
+
+      // Se já sabemos que a tabela não existe, não fazer nenhuma consulta
+      if (tableExists === false) {
+        setConfig(null);
+        return;
+      }
 
       // Se não tiver cartorioId, pegar do usuário logado
       if (!cartorioId) {
@@ -43,6 +50,25 @@ export const useN8NConfig = () => {
         return;
       }
 
+      // Verificar se a tabela existe apenas uma vez
+      if (tableExists === null) {
+        const { error: tableCheckError } = await supabase
+          .from("n8n_config")
+          .select("id")
+          .limit(1);
+
+        if (
+          tableCheckError &&
+          (tableCheckError.code === "42P01" ||
+            tableCheckError.message.includes("does not exist"))
+        ) {
+          setTableExists(false);
+          setConfig(null);
+          return;
+        }
+        setTableExists(true);
+      }
+
       const { data, error } = await supabase
         .from("n8n_config")
         .select("*")
@@ -51,17 +77,6 @@ export const useN8NConfig = () => {
         .single();
 
       if (error) {
-        // Se for erro de tabela não encontrada, apenas retorna null
-        if (
-          error.code === "42P01" ||
-          error.message.includes("does not exist")
-        ) {
-          console.warn(
-            "Tabela n8n_config não encontrada. Execute o script SQL primeiro."
-          );
-          setConfig(null);
-          return;
-        }
         // Se for erro de nenhuma linha retornada, também retorna null
         if (error.code === "PGRST116") {
           setConfig(null);
@@ -85,6 +100,14 @@ export const useN8NConfig = () => {
 
   const saveConfig = async (webhookUrl: string, cartorioId?: string) => {
     try {
+      // Se a tabela não existe, mostrar erro informativo
+      if (tableExists === false) {
+        toast.error(
+          "Tabela n8n_config não existe. Execute o script SQL primeiro para criar a tabela."
+        );
+        throw new Error("Tabela n8n_config não encontrada");
+      }
+
       // Se não tiver cartorioId, pegar do usuário logado
       if (!cartorioId) {
         const {
@@ -103,6 +126,27 @@ export const useN8NConfig = () => {
 
       if (!cartorioId) {
         throw new Error("Cartório não encontrado");
+      }
+
+      // Verificar se a tabela existe se ainda não foi verificado
+      if (tableExists === null) {
+        const { error: tableCheckError } = await supabase
+          .from("n8n_config")
+          .select("id")
+          .limit(1);
+
+        if (
+          tableCheckError &&
+          (tableCheckError.code === "42P01" ||
+            tableCheckError.message.includes("does not exist"))
+        ) {
+          setTableExists(false);
+          toast.error(
+            "Tabela n8n_config não existe. Execute o script SQL primeiro para criar a tabela."
+          );
+          throw new Error("Tabela n8n_config não encontrada");
+        }
+        setTableExists(true);
       }
 
       // Verificar se já existe configuração
@@ -189,12 +233,29 @@ export const useN8NConfig = () => {
     try {
       if (!config) return;
 
+      // Se a tabela não existe, apenas limpar o estado local
+      if (tableExists === false) {
+        setConfig(null);
+        return;
+      }
+
       const { error } = await supabase
         .from("n8n_config")
         .update({ ativo: false })
         .eq("id", config.id);
 
-      if (error) throw error;
+      if (error) {
+        // Se a tabela não existir, apenas limpar o estado local
+        if (
+          error.code === "42P01" ||
+          error.message.includes("does not exist")
+        ) {
+          setTableExists(false);
+          setConfig(null);
+          return;
+        }
+        throw error;
+      }
 
       setConfig(null);
       toast.success("Configuração N8N desabilitada");

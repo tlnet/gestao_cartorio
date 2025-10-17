@@ -9,7 +9,7 @@ export function cn(...inputs: ClassValue[]) {
  * Converte uma string de data no formato YYYY-MM-DD para um objeto Date local
  * Evita problemas de fuso horário ao interpretar datas como UTC
  */
-export function parseLocalDate(dateString: string): Date {
+export function parseLocalDate(dateString: string | Date): Date {
   if (!dateString) return new Date();
 
   // Se já é um objeto Date, retorna ele mesmo

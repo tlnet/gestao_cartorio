@@ -59,6 +59,7 @@ const AnaliseIA = () => {
     updateRelatorio,
     uploadFile,
     callN8NWebhook,
+    processarResumoMatricula,
   } = useRelatoriosIA();
 
   const { config: n8nConfig } = useN8NConfig();
@@ -159,11 +160,6 @@ const AnaliseIA = () => {
     try {
       console.log("Iniciando upload do arquivo:", file.name);
 
-      // Upload do arquivo para o storage
-      console.log("Fazendo upload para o storage...");
-      const arquivoUrl = await uploadFile(file);
-      console.log("Upload concluído, URL:", arquivoUrl);
-
       // Buscar cartório do usuário
       console.log("Buscando cartório do usuário...");
       const { data: userData } = await supabase
@@ -181,6 +177,21 @@ const AnaliseIA = () => {
         );
         return;
       }
+
+      // Usar função específica para resumo de matrícula
+      if (tipoAnalise === "resumo_matricula") {
+        console.log("Processando resumo de matrícula...");
+        await processarResumoMatricula(file, user.id, userData.cartorio_id);
+        return;
+      }
+
+      // Para outros tipos, usar o fluxo genérico
+      console.log("Processando análise genérica...");
+
+      // Upload do arquivo para o storage
+      console.log("Fazendo upload para o storage...");
+      const arquivoUrl = await uploadFile(file);
+      console.log("Upload concluído, URL:", arquivoUrl);
 
       // Verificar se o webhook N8N está configurado ANTES de criar o relatório
       console.log("Verificando configuração do webhook N8N...");
@@ -250,7 +261,7 @@ const AnaliseIA = () => {
       );
     } catch (error) {
       console.error("Erro detalhado no upload:", {
-        error,
+        error: error,
         message: error instanceof Error ? error.message : "Erro desconhecido",
         stack: error instanceof Error ? error.stack : undefined,
         type: typeof error,
