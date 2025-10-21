@@ -227,9 +227,22 @@ const NotificacoesPage = () => {
           {/* Filtros */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Filter className="h-5 w-5" />
-                <span>Filtros</span>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Filter className="h-5 w-5" />
+                  <span>Filtros</span>
+                </div>
+                {unreadCount > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={markAllAsRead}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <CheckCircle className="h-4 w-4 mr-1" />
+                    Marcar todas como lidas
+                  </Button>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -294,20 +307,6 @@ const NotificacoesPage = () => {
                   </div>
                 </div>
               </div>
-
-              {unreadCount > 0 && (
-                <div className="mt-4 pt-4 border-t">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={markAllAsRead}
-                    className="w-full"
-                  >
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    Marcar todas como lidas
-                  </Button>
-                </div>
-              )}
             </CardContent>
           </Card>
 

@@ -80,16 +80,25 @@ export function ContasTable({
   const { categorias: categoriasPersonalizadas, loading: categoriasLoading } =
     useCategoriasPersonalizadas(cartorioId);
 
+  // Função para verificar se é um UUID (categoria personalizada)
+  const isUUID = (str: string) => {
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(str);
+  };
+
   // Função para mapear categoria (UUID ou string) para nome
   const getCategoriaNome = (categoriaId: string) => {
     // Se é uma categoria personalizada (UUID), buscar pelo ID
-    if (categoriasPersonalizadas.length > 0) {
+    if (categoriasPersonalizadas.length > 0 && isUUID(categoriaId)) {
       const categoriaPersonalizada = categoriasPersonalizadas.find(
         (cat) => cat.id === categoriaId
       );
       if (categoriaPersonalizada) {
         return categoriaPersonalizada.nome;
       }
+      // Se é UUID mas não encontrou nas categorias ativas, é uma categoria removida
+      return "Categoria Removida";
     }
 
     // Se não encontrou nas personalizadas, verificar se é uma categoria padrão

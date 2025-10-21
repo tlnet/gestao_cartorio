@@ -17,10 +17,12 @@ export interface RelatorioIA {
   updated_at: string;
   // Campos relacionados
   usuario?: {
-    nome: string;
+    id: string;
+    name: string;
     email: string;
   };
   cartorio?: {
+    id: string;
     nome: string;
   };
 }
@@ -40,7 +42,7 @@ export const useRelatoriosIA = () => {
 
       console.log("Iniciando busca de relatórios...");
 
-      // Primeiro, vamos tentar uma consulta simples para ver se a tabela existe
+      // Primeiro, consulta simples para verificar se a tabela existe
       const { data, error } = await supabase
         .from("relatorios_ia")
         .select("*")
@@ -82,7 +84,49 @@ export const useRelatoriosIA = () => {
       }
 
       console.log("Relatórios carregados com sucesso:", data);
-      setRelatorios(data || []);
+
+      // Se há dados, carregar informações dos usuários separadamente
+      if (data && data.length > 0) {
+        const relatoriosComUsuarios = await Promise.all(
+          data.map(async (relatorio) => {
+            try {
+              // Buscar dados do usuário
+              const { data: usuarioData } = await supabase
+                .from("users")
+                .select("id, name, email")
+                .eq("id", relatorio.usuario_id)
+                .single();
+
+              // Buscar dados do cartório
+              const { data: cartorioData } = await supabase
+                .from("cartorios")
+                .select("id, nome")
+                .eq("id", relatorio.cartorio_id)
+                .single();
+
+              return {
+                ...relatorio,
+                usuario: usuarioData,
+                cartorio: cartorioData,
+              };
+            } catch (err) {
+              console.warn(
+                `Erro ao carregar dados do usuário ${relatorio.usuario_id}:`,
+                err
+              );
+              return {
+                ...relatorio,
+                usuario: null,
+                cartorio: null,
+              };
+            }
+          })
+        );
+
+        setRelatorios(relatoriosComUsuarios);
+      } else {
+        setRelatorios(data || []);
+      }
     } catch (err) {
       console.error("Erro detalhado ao carregar relatórios:", {
         error: err,
@@ -112,9 +156,22 @@ export const useRelatoriosIA = () => {
     try {
       console.log("Dados do relatório a serem inseridos:", relatorioData);
 
+      // Preparar dados apenas com campos que existem na tabela
+      const dadosParaInserir = {
+        tipo: relatorioData.tipo,
+        nome_arquivo: relatorioData.nome_arquivo,
+        usuario_id: relatorioData.usuario_id,
+        cartorio_id: relatorioData.cartorio_id,
+        status: "processando" as const,
+        dados_processamento: relatorioData.dados_processamento || null,
+        arquivo_resultado: relatorioData.arquivo_resultado || null,
+      };
+
+      console.log("Dados preparados para inserção:", dadosParaInserir);
+
       const { data, error } = await supabase
         .from("relatorios_ia")
-        .insert([relatorioData])
+        .insert([dadosParaInserir])
         .select()
         .single();
 
@@ -188,6 +245,25 @@ export const useRelatoriosIA = () => {
     }
   };
 
+  const limparRelatoriosProcessando = async () => {
+    try {
+      const { error } = await supabase
+        .from("relatorios_ia")
+        .delete()
+        .eq("status", "processando");
+
+      if (error) throw error;
+
+      toast.success("Todos os relatórios em processamento foram limpos!");
+      await fetchRelatorios(); // Recarregar lista
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Erro ao limpar relatórios";
+      toast.error(errorMessage);
+      throw err;
+    }
+  };
+
   const uploadFile = async (
     file: File,
     bucket: string = "documentos-ia"
@@ -251,19 +327,159 @@ export const useRelatoriosIA = () => {
         );
       }
 
-      const response = await fetch(webhookUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+      console.log("🌐 callN8NWebhook: Tentando envio direto para:", webhookUrl);
 
-      if (!response.ok) {
-        throw new Error(`Erro na chamada do webhook: ${response.status}`);
+      let response;
+      try {
+        // Tentar envio direto primeiro
+        response = await fetch(webhookUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "GestaoCartorio/1.0",
+          },
+          body: JSON.stringify(payload),
+        });
+        console.log("✅ callN8NWebhook: Envio direto funcionou!");
+        console.log("📊 callN8NWebhook: Status da resposta:", response.status);
+      } catch (corsError) {
+        console.log("⚠️ callN8NWebhook: CORS bloqueado, tentando via proxy...");
+
+        // Se CORS falhar, tentar via proxy
+        const proxyUrl = `${window.location.origin}/api/webhook-proxy`;
+        console.log("🔗 callN8NWebhook: URL do proxy:", proxyUrl);
+
+        response = await fetch(proxyUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            webhookUrl: webhookUrl,
+            payload: payload,
+          }),
+        });
+        console.log("✅ callN8NWebhook: Envio via proxy funcionou!");
       }
 
-      const result = await response.json();
+      if (!response.ok) {
+        const errorData = await response
+          .json()
+          .catch(() => ({ error: "Erro desconhecido" }));
+        throw new Error(
+          `Erro na chamada do webhook: ${response.status} - ${
+            errorData.error || errorData.details || "Erro desconhecido"
+          }`
+        );
+      }
+
+      // Verificar o tipo de conteúdo da resposta
+      const contentType = response.headers.get("content-type");
+      console.log("📋 callN8NWebhook: Content-Type da resposta:", contentType);
+
+      let result;
+
+      // Se for um arquivo binário (PDF, DOC, etc.), processar o arquivo
+      if (
+        contentType?.includes("application/pdf") ||
+        contentType?.includes("application/msword") ||
+        contentType?.includes(
+          "application/vnd.openxmlformats-officedocument"
+        ) ||
+        contentType?.includes("application/octet-stream")
+      ) {
+        console.log(
+          "📁 callN8NWebhook: Arquivo binário recebido, processando..."
+        );
+
+        try {
+          // Extrair o arquivo binário da resposta
+          const arrayBuffer = await response.arrayBuffer();
+          const blob = new Blob([arrayBuffer], { type: contentType });
+
+          // Fazer upload para Supabase Storage
+          const timestamp = Date.now();
+          const fileExtension = contentType.includes("pdf")
+            ? "pdf"
+            : contentType.includes("msword")
+            ? "doc"
+            : "docx";
+          const fileName = `relatorio-${Date.now()}-${timestamp}.${fileExtension}`;
+
+          const { data: uploadData, error: uploadError } =
+            await supabase.storage
+              .from("documentos-ia")
+              .upload(fileName, blob, {
+                contentType: contentType,
+                upsert: false,
+              });
+
+          if (uploadError) {
+            console.error("❌ Erro no upload do arquivo:", uploadError);
+            throw new Error(`Erro no upload: ${uploadError.message}`);
+          }
+
+          // Obter URL pública
+          const {
+            data: { publicUrl },
+          } = supabase.storage.from("documentos-ia").getPublicUrl(fileName);
+
+          console.log("✅ Arquivo enviado para Supabase:", publicUrl);
+
+          result = {
+            success: true,
+            message: "Arquivo processado e enviado com sucesso",
+            contentType: contentType,
+            isBinaryFile: true,
+            fileUrl: publicUrl,
+            fileName: fileName,
+          };
+        } catch (uploadError) {
+          console.error("❌ Erro ao processar arquivo binário:", uploadError);
+          result = {
+            success: false,
+            message: "Erro ao processar arquivo binário",
+            error:
+              uploadError instanceof Error
+                ? uploadError.message
+                : "Erro desconhecido",
+          };
+        }
+      } else {
+        // Tentar parsear JSON para outros tipos de conteúdo
+        try {
+          const responseText = await response.text();
+          console.log(
+            "📄 callN8NWebhook: Resposta bruta do webhook:",
+            responseText
+          );
+
+          if (responseText.trim() === "") {
+            console.log("⚠️ callN8NWebhook: Resposta vazia do webhook");
+            result = {
+              success: true,
+              message: "Webhook processado com sucesso (resposta vazia)",
+            };
+          } else {
+            result = JSON.parse(responseText);
+            console.log(
+              "✅ callN8NWebhook: JSON parseado com sucesso:",
+              result
+            );
+          }
+        } catch (jsonError) {
+          console.log(
+            "⚠️ callN8NWebhook: Resposta não é JSON válido, tratando como sucesso"
+          );
+          result = {
+            success: true,
+            message: "Webhook processado com sucesso",
+            rawResponse: "Resposta não-JSON recebida",
+          };
+        }
+      }
+
+      console.log("📊 callN8NWebhook: Resultado final:", result);
       return result;
     } catch (err) {
       const errorMessage =
@@ -273,49 +489,103 @@ export const useRelatoriosIA = () => {
     }
   };
 
-  // Função específica para resumo de matrícula
-  const processarResumoMatricula = async (
-    file: File,
+  // Função genérica para processar qualquer tipo de análise
+  const processarAnalise = async (
+    tipo: "resumo_matricula" | "analise_malote" | "minuta_documento",
+    arquivos: File | File[],
     usuarioId: string,
-    cartorioId: string
+    cartorioId: string,
+    dadosAdicionais?: any,
+    webhookUrl?: string
   ) => {
     try {
-      console.log("Iniciando processamento de resumo de matrícula...");
+      console.log(`Iniciando processamento de ${tipo}...`);
+      console.log("Parâmetros recebidos:", {
+        tipo,
+        usuarioId,
+        cartorioId,
+        webhookUrl,
+        n8nConfig: !!n8nConfig,
+        n8nConfigData: n8nConfig,
+      });
 
-      // 1. Upload do arquivo
-      const arquivoUrl = await uploadFile(file);
-      console.log("Arquivo enviado para:", arquivoUrl);
+      // 1. Upload dos arquivos
+      const arquivosUrls: string[] = [];
+      const arquivosArray = Array.isArray(arquivos) ? arquivos : [arquivos];
+
+      for (const arquivo of arquivosArray) {
+        const arquivoUrl = await uploadFile(arquivo);
+        arquivosUrls.push(arquivoUrl);
+        console.log(`Arquivo ${arquivo.name} enviado para:`, arquivoUrl);
+      }
 
       // 2. Criar relatório no banco
       const relatorio = await createRelatorio({
-        tipo: "resumo_matricula",
-        nome_arquivo: file.name,
+        tipo,
+        nome_arquivo: Array.isArray(arquivos)
+          ? `analise_${tipo}_${Date.now()}.pdf`
+          : arquivos.name,
         usuario_id: usuarioId,
         cartorio_id: cartorioId,
         dados_processamento: {
-          arquivo_original: file.name,
-          arquivo_url: arquivoUrl,
-          tipo_processamento: "resumo_matricula",
+          arquivos_originais: arquivosArray.map((f) => f.name),
+          arquivos_urls: arquivosUrls,
+          tipo_processamento: tipo,
           timestamp_inicio: new Date().toISOString(),
+          ...dadosAdicionais,
         },
-        arquivo_resultado: arquivoUrl,
+        arquivo_resultado: arquivosUrls.join(","),
       });
 
       console.log("Relatório criado:", relatorio);
 
-      // 3. Enviar para webhook específico do resumo de matrícula
-      const webhookUrl =
-        "https://webhook.conversix.com.br/webhook/resumo-matricula";
+      // 3. Obter webhook específico para o tipo
+      const finalWebhookUrl =
+        webhookUrl ||
+        (n8nConfig
+          ? tipo === "resumo_matricula"
+            ? n8nConfig.webhook_resumo_matricula || n8nConfig.webhook_url
+            : tipo === "analise_malote"
+            ? n8nConfig.webhook_analise_malote || n8nConfig.webhook_url
+            : tipo === "minuta_documento"
+            ? n8nConfig.webhook_minuta_documento || n8nConfig.webhook_url
+            : n8nConfig.webhook_url
+          : null);
 
+      if (!finalWebhookUrl) {
+        console.error("Webhook não configurado:", {
+          tipo,
+          n8nConfig,
+          webhookUrl,
+        });
+        throw new Error(
+          `Webhook para ${tipo} não configurado. Execute o script SQL para configurar os webhooks.`
+        );
+      }
+
+      console.log("Webhook configurado:", {
+        tipo,
+        finalWebhookUrl,
+        n8nConfig: !!n8nConfig,
+        n8nConfigData: n8nConfig,
+      });
+
+      // Verificar se a URL é válida
+      if (!finalWebhookUrl.startsWith("http")) {
+        throw new Error(`URL do webhook inválida: ${finalWebhookUrl}`);
+      }
+
+      // 4. Preparar payload específico por tipo
       const payload = {
         relatorio_id: relatorio.id,
-        tipo: "resumo_matricula",
-        arquivo_url: arquivoUrl,
+        tipo,
+        arquivos_urls: arquivosUrls,
         webhook_callback: `${window.location.origin}/api/ia/webhook`,
         dados_processamento: {
-          arquivo_original: file.name,
-          tipo_documento: "matricula_imobiliaria",
+          arquivos_originais: arquivosArray.map((f) => f.name),
+          tipo_documento: tipo,
           timestamp: new Date().toISOString(),
+          ...dadosAdicionais,
         },
         metadata: {
           usuario_id: usuarioId,
@@ -324,66 +594,289 @@ export const useRelatoriosIA = () => {
         },
       };
 
-      console.log("Enviando para webhook:", webhookUrl);
-      console.log("Payload:", payload);
+      console.log("🌐 Enviando para webhook via proxy:", finalWebhookUrl);
+      console.log("📋 Payload:", payload);
 
-      // Modo de teste - simular sucesso se webhook não estiver disponível
-      const isTestMode =
-        webhookUrl.includes("localhost") || webhookUrl.includes("test");
+      // 5. Enviar para webhook (tentando contornar CORS)
+      console.log("🌐 Tentando enviar diretamente para webhook...");
 
-      if (isTestMode) {
-        console.log("🧪 Modo de teste ativado - simulando sucesso");
-        toast.success(
-          "Documento enviado para análise de resumo de matrícula! (Modo teste)"
+      let response;
+      try {
+        // Tentar envio direto primeiro (POST)
+        response = await fetch(finalWebhookUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "GestaoCartorio/1.0",
+          },
+          body: JSON.stringify(payload),
+        });
+        console.log("✅ Envio direto funcionou!");
+        console.log("📊 Status da resposta:", response.status);
+        console.log(
+          "📋 Headers da resposta:",
+          Object.fromEntries(response.headers.entries())
         );
-        return;
-      }
+      } catch (corsError) {
+        console.log("⚠️ CORS bloqueado, tentando via proxy...");
+        console.log("🔍 Erro CORS:", corsError);
 
-      const response = await fetch(webhookUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      }).catch((fetchError) => {
-        console.error("Erro de conexão com webhook:", fetchError);
-        console.log("🔄 Tentando modo de teste...");
+        // Se CORS falhar, tentar via proxy
+        const proxyUrl = `${window.location.origin}/api/webhook-proxy`;
+        console.log("🔗 URL do proxy:", proxyUrl);
 
-        // Se falhar, simular sucesso para desenvolvimento
-        toast.success(
-          "Documento enviado para análise de resumo de matrícula! (Webhook offline - modo desenvolvimento)"
-        );
-        return;
-      });
-
-      if (!response) {
-        return; // Modo de teste ativado
+        try {
+          response = await fetch(proxyUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              webhookUrl: finalWebhookUrl,
+              payload: payload,
+            }),
+          });
+          console.log("✅ Envio via proxy funcionou! Status:", response.status);
+        } catch (proxyError) {
+          console.error("❌ Erro no proxy:", proxyError);
+          throw new Error(
+            `Erro no proxy: ${
+              proxyError instanceof Error
+                ? proxyError.message
+                : "Erro desconhecido"
+            }`
+          );
+        }
       }
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Erro do webhook:", {
+        const errorData = await response
+          .json()
+          .catch(() => ({ error: "Erro desconhecido" }));
+        console.error("Erro do webhook via proxy:", {
           status: response.status,
-          statusText: response.statusText,
-          body: errorText,
+          error: errorData,
         });
         throw new Error(
-          `Erro na chamada do webhook: ${response.status} - ${response.statusText}`
+          `Erro do webhook: ${response.status} - ${
+            errorData.error || errorData.details || "Erro desconhecido"
+          }`
         );
       }
 
-      const result = await response.json();
-      console.log("Resposta do webhook:", result);
+      // Verificar o tipo de conteúdo da resposta
+      const contentType = response.headers.get("content-type");
+      console.log("📋 Content-Type da resposta:", contentType);
 
-      toast.success("Documento enviado para análise de resumo de matrícula!");
+      let result;
+
+      // Se for um arquivo binário (PDF, DOC, etc.), processar o arquivo
+      if (
+        contentType?.includes("application/pdf") ||
+        contentType?.includes("application/msword") ||
+        contentType?.includes(
+          "application/vnd.openxmlformats-officedocument"
+        ) ||
+        contentType?.includes("application/octet-stream")
+      ) {
+        console.log("📁 Arquivo binário recebido, processando...");
+
+        try {
+          // Extrair o arquivo binário da resposta
+          const arrayBuffer = await response.arrayBuffer();
+          const blob = new Blob([arrayBuffer], { type: contentType });
+
+          // Fazer upload para Supabase Storage
+          const timestamp = Date.now();
+          const fileExtension = contentType.includes("pdf")
+            ? "pdf"
+            : contentType.includes("msword")
+            ? "doc"
+            : "docx";
+          const fileName = `relatorio-${relatorio.id}-${timestamp}.${fileExtension}`;
+
+          const { data: uploadData, error: uploadError } =
+            await supabase.storage
+              .from("documentos-ia")
+              .upload(fileName, blob, {
+                contentType: contentType,
+                upsert: false,
+              });
+
+          if (uploadError) {
+            console.error("❌ Erro no upload do arquivo:", uploadError);
+            throw new Error(`Erro no upload: ${uploadError.message}`);
+          }
+
+          // Obter URL pública
+          const {
+            data: { publicUrl },
+          } = supabase.storage.from("documentos-ia").getPublicUrl(fileName);
+
+          console.log("✅ Arquivo enviado para Supabase:", publicUrl);
+
+          // Atualizar o relatório no banco de dados
+          const updates: any = {
+            status: "concluido",
+            updated_at: new Date().toISOString(),
+          };
+
+          // Definir campo baseado no tipo de arquivo
+          if (contentType.includes("application/pdf")) {
+            updates.relatorio_pdf = publicUrl;
+          } else if (
+            contentType.includes("application/msword") ||
+            contentType.includes(
+              "application/vnd.openxmlformats-officedocument"
+            )
+          ) {
+            updates.relatorio_doc = publicUrl;
+          } else {
+            updates.arquivo_resultado = publicUrl;
+          }
+
+          // Atualizar no banco
+          const { error: updateError } = await supabase
+            .from("relatorios_ia")
+            .update(updates)
+            .eq("id", relatorio.id);
+
+          if (updateError) {
+            console.error("❌ Erro ao atualizar relatório:", updateError);
+            throw new Error(
+              `Erro ao atualizar relatório: ${updateError.message}`
+            );
+          }
+
+          console.log("✅ Relatório atualizado para 'concluído'");
+
+          result = {
+            success: true,
+            message: "Arquivo processado e relatório atualizado com sucesso",
+            contentType: contentType,
+            isBinaryFile: true,
+            fileUrl: publicUrl,
+            fileName: fileName,
+          };
+        } catch (uploadError) {
+          console.error("❌ Erro ao processar arquivo binário:", uploadError);
+          result = {
+            success: false,
+            message: "Erro ao processar arquivo binário",
+            error:
+              uploadError instanceof Error
+                ? uploadError.message
+                : "Erro desconhecido",
+          };
+        }
+      } else {
+        // Tentar parsear JSON para outros tipos de conteúdo
+        try {
+          const responseText = await response.text();
+          console.log("📄 Resposta bruta do webhook:", responseText);
+
+          if (responseText.trim() === "") {
+            console.log("⚠️ Resposta vazia do webhook");
+            result = {
+              success: true,
+              message: "Webhook processado com sucesso (resposta vazia)",
+            };
+          } else {
+            result = JSON.parse(responseText);
+            console.log("✅ JSON parseado com sucesso:", result);
+          }
+        } catch (jsonError) {
+          console.log("⚠️ Resposta não é JSON válido, tratando como sucesso");
+          result = {
+            success: true,
+            message: "Webhook processado com sucesso",
+            rawResponse: "Resposta não-JSON recebida",
+          };
+        }
+      }
+
+      console.log("📊 Resultado final:", result);
+
+      const tipoLabel = {
+        resumo_matricula: "resumo de matrícula",
+        analise_malote: "análise de malote",
+        minuta_documento: "minuta de documento",
+      }[tipo];
+
+      toast.success(`Documento enviado para ${tipoLabel}!`);
       return relatorio;
     } catch (err) {
-      console.error("Erro ao processar resumo de matrícula:", err);
+      console.error(`Erro ao processar ${tipo}:`, err);
       const errorMessage =
-        err instanceof Error ? err.message : "Erro ao processar documento";
+        err instanceof Error ? err.message : `Erro ao processar ${tipo}`;
       toast.error(errorMessage);
       throw err;
     }
+  };
+
+  // Função específica para resumo de matrícula
+  const processarResumoMatricula = async (
+    file: File,
+    usuarioId: string,
+    cartorioId: string,
+    webhookUrl?: string
+  ) => {
+    return processarAnalise(
+      "resumo_matricula",
+      file,
+      usuarioId,
+      cartorioId,
+      {
+        tipo_documento: "matricula_imobiliaria",
+      },
+      webhookUrl
+    );
+  };
+
+  // Função específica para análise de malote
+  const processarAnaliseMalote = async (
+    file: File,
+    usuarioId: string,
+    cartorioId: string,
+    webhookUrl?: string
+  ) => {
+    return processarAnalise(
+      "analise_malote",
+      file,
+      usuarioId,
+      cartorioId,
+      {
+        tipo_documento: "malote_eletronico",
+      },
+      webhookUrl
+    );
+  };
+
+  // Função específica para minuta de documento
+  const processarMinutaDocumento = async (
+    files: File[],
+    usuarioId: string,
+    cartorioId: string,
+    documentos: {
+      compradores: string[];
+      vendedores: string[];
+      matricula: string[];
+      outros: string[];
+    },
+    webhookUrl?: string
+  ) => {
+    return processarAnalise(
+      "minuta_documento",
+      files,
+      usuarioId,
+      cartorioId,
+      {
+        tipo_documento: "escritura_compra_venda",
+        documentos,
+        total_documentos: files.length,
+      },
+      webhookUrl
+    );
   };
 
   useEffect(() => {
@@ -398,8 +891,12 @@ export const useRelatoriosIA = () => {
     createRelatorio,
     updateRelatorio,
     deleteRelatorio,
+    limparRelatoriosProcessando,
     uploadFile,
     callN8NWebhook,
     processarResumoMatricula,
+    processarAnaliseMalote,
+    processarMinutaDocumento,
+    processarAnalise,
   };
 };

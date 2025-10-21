@@ -3,6 +3,12 @@ import { supabase } from "@/lib/supabase";
 
 export async function POST(request: NextRequest) {
   try {
+    console.log("🔔 Webhook recebido:", {
+      headers: Object.fromEntries(request.headers.entries()),
+      contentType: request.headers.get("content-type"),
+      timestamp: new Date().toISOString(),
+    });
+
     // Verificar se as variáveis de ambiente estão configuradas
     if (
       !process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -14,7 +20,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
+    // Verificar se é um arquivo binário ou JSON
+    const contentType = request.headers.get("content-type");
+    let body;
+
+    if (contentType?.includes("application/json")) {
+      body = await request.json();
+      console.log("📄 Dados JSON recebidos:", body);
+    } else if (
+      contentType?.includes("multipart/form-data") ||
+      contentType?.includes("application/octet-stream")
+    ) {
+      // Lidar com arquivo binário
+      const formData = await request.formData();
+      const file = formData.get("file") as File;
+      const metadata = formData.get("metadata") as string;
+
+      if (!file) {
+        return NextResponse.json(
+          { error: "Arquivo não encontrado no payload" },
+          { status: 400 }
+        );
+      }
+
+      body = {
+        relatorio_id: metadata ? JSON.parse(metadata).relatorio_id : null,
+        status: "concluido",
+        arquivo_binario: file,
+        tipo_arquivo: file.type,
+        nome_arquivo: file.name,
+        tamanho_arquivo: file.size,
+      };
+
+      console.log("📁 Arquivo binário recebido:", {
+        nome: file.name,
+        tipo: file.type,
+        tamanho: file.size,
+        relatorio_id: body.relatorio_id,
+      });
+    } else {
+      return NextResponse.json(
+        { error: "Tipo de conteúdo não suportado" },
+        { status: 400 }
+      );
+    }
 
     // Validar dados recebidos do N8N
     const {
@@ -29,6 +78,11 @@ export async function POST(request: NextRequest) {
       matricula_resumida_url,
       dados_extraidos,
       tipo_processamento,
+      // Campos para arquivo binário
+      arquivo_binario,
+      tipo_arquivo,
+      nome_arquivo,
+      tamanho_arquivo,
     } = body;
 
     if (!relatorio_id) {
@@ -44,31 +98,93 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
-    // Campos gerais (verificar se existem antes de adicionar)
-    if (relatorio_pdf) updates.relatorio_pdf = relatorio_pdf;
-    if (relatorio_doc) updates.relatorio_doc = relatorio_doc;
-    if (relatorio_docx) updates.relatorio_docx = relatorio_docx;
+    // Se recebeu arquivo binário, fazer upload para o Supabase Storage
+    if (arquivo_binario) {
+      try {
+        console.log("📤 Fazendo upload do arquivo binário...");
+        console.log("📊 Dados do arquivo:", {
+          relatorio_id,
+          nome_arquivo,
+          tipo_arquivo,
+          tamanho_arquivo,
+          status,
+        });
 
-    // Tratar resumo com verificação de existência da coluna
-    if (resumo) {
-      updates.resumo = resumo;
-    }
-    if (error_message) {
-      updates.resumo = { ...(updates.resumo || {}), error: error_message };
-    }
+        // Gerar nome único para o arquivo
+        const timestamp = Date.now();
+        const fileExtension = nome_arquivo.split(".").pop() || "pdf";
+        const fileName = `relatorio-${relatorio_id}-${timestamp}.${fileExtension}`;
 
-    // Campos específicos para resumo de matrícula
-    if (matricula_resumida_url) {
-      updates.arquivo_resultado = matricula_resumida_url;
-    }
+        // Upload para Supabase Storage
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from("documentos-ia")
+          .upload(fileName, arquivo_binario, {
+            contentType: tipo_arquivo,
+            upsert: false,
+          });
 
-    if (dados_extraidos) {
-      updates.resultado_final = {
-        ...(updates.resultado_final || {}),
-        dados_extraidos,
-        tipo_processamento: tipo_processamento || "resumo_matricula",
-        timestamp_conclusao: new Date().toISOString(),
-      };
+        if (uploadError) {
+          console.error("❌ Erro no upload:", uploadError);
+          throw uploadError;
+        }
+
+        // Obter URL pública
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("documentos-ia").getPublicUrl(fileName);
+
+        console.log("✅ Arquivo enviado com sucesso:", publicUrl);
+
+        // Atualizar campos do relatório baseado no tipo de arquivo
+        if (tipo_arquivo === "application/pdf") {
+          updates.relatorio_pdf = publicUrl;
+        } else if (
+          tipo_arquivo === "application/msword" ||
+          tipo_arquivo ===
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ) {
+          updates.relatorio_doc = publicUrl;
+        } else {
+          updates.arquivo_resultado = publicUrl;
+        }
+
+        updates.status = "concluido";
+      } catch (uploadError) {
+        console.error("❌ Erro no upload do arquivo:", uploadError);
+        updates.status = "erro";
+        updates.resumo = {
+          ...(updates.resumo || {}),
+          error: "Erro no upload do arquivo processado",
+        };
+      }
+    } else {
+      // Lógica original para dados JSON
+      // Campos gerais (verificar se existem antes de adicionar)
+      if (relatorio_pdf) updates.relatorio_pdf = relatorio_pdf;
+      if (relatorio_doc) updates.relatorio_doc = relatorio_doc;
+      if (relatorio_docx) updates.relatorio_docx = relatorio_docx;
+
+      // Tratar resumo com verificação de existência da coluna
+      if (resumo) {
+        updates.resumo = resumo;
+      }
+      if (error_message) {
+        updates.resumo = { ...(updates.resumo || {}), error: error_message };
+      }
+
+      // Campos específicos para resumo de matrícula
+      if (matricula_resumida_url) {
+        updates.arquivo_resultado = matricula_resumida_url;
+      }
+
+      if (dados_extraidos) {
+        updates.resultado_final = {
+          ...(updates.resultado_final || {}),
+          dados_extraidos,
+          tipo_processamento: tipo_processamento || "resumo_matricula",
+          timestamp_conclusao: new Date().toISOString(),
+        };
+      }
     }
 
     const { data, error } = await supabase
@@ -86,7 +202,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("Relatório atualizado com sucesso:", data);
+    console.log("✅ Relatório atualizado com sucesso:", {
+      relatorio_id,
+      status: updates.status,
+      timestamp: new Date().toISOString(),
+      data,
+    });
 
     return NextResponse.json({
       success: true,

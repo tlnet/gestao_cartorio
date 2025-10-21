@@ -51,7 +51,13 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
   onProcessComplete,
 }) => {
   const { user } = useAuth();
-  const { createRelatorio, uploadFile, callN8NWebhook } = useRelatoriosIA();
+  const {
+    createRelatorio,
+    uploadFile,
+    callN8NWebhook,
+    processarMinutaDocumento,
+  } = useRelatoriosIA();
+  const { getWebhookUrl } = useN8NConfig();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
@@ -161,20 +167,6 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
         id: "process-minuta",
       });
 
-      // Upload de todos os arquivos
-      const arquivosUrls: string[] = [];
-      const todosArquivos = [
-        ...documentos.compradores,
-        ...documentos.vendedores,
-        ...documentos.matricula,
-        ...documentos.outros,
-      ];
-
-      for (const arquivo of todosArquivos) {
-        const url = await uploadFile(arquivo);
-        arquivosUrls.push(url);
-      }
-
       // Verificar se o usuário tem cartório associado
       if (!user.user_metadata?.cartorio_id) {
         toast.error(
@@ -183,73 +175,28 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
         return;
       }
 
-      // Verificar se o webhook N8N está configurado ANTES de criar o relatório
-      const { config: n8nConfig } = useN8NConfig();
-      if (!n8nConfig?.webhook_url) {
-        toast.error(
-          <div className="space-y-3 p-2">
-            <div className="font-bold text-red-800 text-lg">
-              ⚠️ Webhook N8N não configurado
-            </div>
-            <div className="text-red-700">
-              Para gerar minutas de documentos, você precisa configurar a URL do
-              webhook N8N primeiro.
-            </div>
-            <div className="pt-2">
-              <a
-                href="/configuracoes"
-                className="inline-block bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors"
-                onClick={(e) => {
-                  e.preventDefault();
-                  window.location.href = "/configuracoes";
-                }}
-              >
-                🔧 Configurar Webhook N8N
-              </a>
-            </div>
-          </div>,
-          {
-            duration: 10000,
-            style: {
-              border: "2px solid #dc2626",
-              backgroundColor: "#fef2f2",
-            },
-          }
-        );
-        return;
-      }
+      // Preparar todos os arquivos
+      const todosArquivos = [
+        ...documentos.compradores,
+        ...documentos.vendedores,
+        ...documentos.matricula,
+        ...documentos.outros,
+      ];
 
-      // Criar relatório no banco APENAS se o webhook estiver configurado
-      const relatorio = await createRelatorio({
-        tipo: "minuta_documento",
-        nome_arquivo: `minuta_compra_venda_${Date.now()}.pdf`,
-        arquivo_resultado: arquivosUrls.join(","), // URLs separadas por vírgula
-        usuario_id: user.id,
-        cartorio_id: user.user_metadata.cartorio_id,
-        dados_processamento: {
-          tipoDocumento: "Escritura de Compra e Venda",
-          compradores: documentos.compradores.map((f) => f.name),
-          vendedores: documentos.vendedores.map((f) => f.name),
-          matricula: documentos.matricula.map((f) => f.name),
-          outros: documentos.outros.map((f) => f.name),
-          totalDocumentosProcessados: getTotalArquivos(),
-          observacoes: "Minuta gerada com base nos documentos fornecidos",
-        },
-      });
-
-      // Chamar webhook N8N
-      await callN8NWebhook({
-        relatorio_id: relatorio.id,
-        tipo: "minuta_documento",
-        arquivos_urls: arquivosUrls,
-        webhook_callback: `${window.location.origin}/api/ia/webhook`,
-        documentos: {
+      // Usar função específica para minuta de documento
+      const webhookUrl = getWebhookUrl("minuta_documento");
+      const relatorio = await processarMinutaDocumento(
+        todosArquivos,
+        user.id,
+        user.user_metadata.cartorio_id,
+        {
           compradores: documentos.compradores.map((f) => f.name),
           vendedores: documentos.vendedores.map((f) => f.name),
           matricula: documentos.matricula.map((f) => f.name),
           outros: documentos.outros.map((f) => f.name),
         },
-      });
+        webhookUrl
+      );
 
       toast.success("Documentos enviados para análise com sucesso!", {
         id: "process-minuta",

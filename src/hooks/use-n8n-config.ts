@@ -5,7 +5,10 @@ import { toast } from "sonner";
 export interface N8NConfig {
   id: string;
   cartorio_id: string;
-  webhook_url: string;
+  webhook_url: string; // Webhook genérico (fallback)
+  webhook_resumo_matricula?: string;
+  webhook_analise_malote?: string;
+  webhook_minuta_documento?: string;
   ativo: boolean;
   created_at: string;
   updated_at: string;
@@ -19,17 +22,23 @@ export const useN8NConfig = () => {
 
   const fetchConfig = async (cartorioId?: string) => {
     try {
+      console.log(
+        "useN8NConfig: Iniciando fetchConfig com cartorioId:",
+        cartorioId
+      );
       setLoading(true);
       setError(null);
 
       // Se já sabemos que a tabela não existe, não fazer nenhuma consulta
       if (tableExists === false) {
+        console.log("useN8NConfig: Tabela não existe, retornando null");
         setConfig(null);
         return;
       }
 
       // Se não tiver cartorioId, pegar do usuário logado
       if (!cartorioId) {
+        console.log("useN8NConfig: Buscando cartorioId do usuário logado");
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -42,10 +51,12 @@ export const useN8NConfig = () => {
           .eq("id", user.id)
           .single();
 
+        console.log("useN8NConfig: Dados do usuário:", userData);
         cartorioId = userData?.cartorio_id;
       }
 
       if (!cartorioId) {
+        console.log("useN8NConfig: Nenhum cartorioId encontrado");
         setConfig(null);
         return;
       }
@@ -69,6 +80,10 @@ export const useN8NConfig = () => {
         setTableExists(true);
       }
 
+      console.log(
+        "useN8NConfig: Buscando configuração para cartorioId:",
+        cartorioId
+      );
       const { data, error } = await supabase
         .from("n8n_config")
         .select("*")
@@ -76,15 +91,22 @@ export const useN8NConfig = () => {
         .eq("ativo", true)
         .single();
 
+      console.log("useN8NConfig: Resultado da busca:", { data, error });
+
       if (error) {
         // Se for erro de nenhuma linha retornada, também retorna null
         if (error.code === "PGRST116") {
+          console.log(
+            "useN8NConfig: Nenhuma configuração encontrada (PGRST116)"
+          );
           setConfig(null);
           return;
         }
+        console.error("useN8NConfig: Erro na busca:", error);
         throw error;
       }
 
+      console.log("useN8NConfig: Configuração encontrada:", data);
       setConfig(data || null);
     } catch (err) {
       const errorMessage =
@@ -267,6 +289,32 @@ export const useN8NConfig = () => {
     }
   };
 
+  // Função para obter webhook específico por tipo de análise
+  const getWebhookUrl = (
+    tipo: "resumo_matricula" | "analise_malote" | "minuta_documento"
+  ): string | null => {
+    if (!config) return null;
+
+    switch (tipo) {
+      case "resumo_matricula":
+        return config.webhook_resumo_matricula || config.webhook_url || null;
+      case "analise_malote":
+        return config.webhook_analise_malote || config.webhook_url || null;
+      case "minuta_documento":
+        return config.webhook_minuta_documento || config.webhook_url || null;
+      default:
+        return config.webhook_url || null;
+    }
+  };
+
+  // Função para verificar se webhook específico está configurado
+  const isWebhookConfigured = (
+    tipo: "resumo_matricula" | "analise_malote" | "minuta_documento"
+  ): boolean => {
+    const webhookUrl = getWebhookUrl(tipo);
+    return webhookUrl !== null && webhookUrl.trim() !== "";
+  };
+
   useEffect(() => {
     fetchConfig();
   }, []);
@@ -279,5 +327,7 @@ export const useN8NConfig = () => {
     saveConfig,
     testWebhook,
     disableConfig,
+    getWebhookUrl,
+    isWebhookConfigured,
   };
 };

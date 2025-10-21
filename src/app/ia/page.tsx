@@ -60,11 +60,22 @@ const AnaliseIA = () => {
     uploadFile,
     callN8NWebhook,
     processarResumoMatricula,
+    processarAnaliseMalote,
+    processarMinutaDocumento,
+    fetchRelatorios,
+    limparRelatoriosProcessando,
   } = useRelatoriosIA();
 
-  const { config: n8nConfig } = useN8NConfig();
+  const { config: n8nConfig, getWebhookUrl } = useN8NConfig();
 
   const [uploadingFile, setUploadingFile] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<{
+    [key: string]: File | null;
+  }>({});
+  const [processingFiles, setProcessingFiles] = useState<Set<string>>(
+    new Set()
+  );
+  const [openDialogs, setOpenDialogs] = useState<Set<string>>(new Set());
   const [metricas, setMetricas] = useState({
     analisesHoje: 0,
     tempoMedio: "0min",
@@ -128,6 +139,64 @@ const AnaliseIA = () => {
     }
   };
 
+  // Função para obter URL do arquivo original
+  const getArquivoOriginalUrl = (relatorio: any) => {
+    // Tentar obter URL do arquivo original dos dados de processamento
+    const dadosProcessamento = relatorio.dados_processamento;
+
+    if (dadosProcessamento) {
+      // Se há dados de processamento, tentar obter a URL do arquivo original
+      if (
+        dadosProcessamento.arquivos_urls &&
+        dadosProcessamento.arquivos_urls.length > 0
+      ) {
+        return dadosProcessamento.arquivos_urls[0];
+      }
+    }
+
+    // Se não encontrou nos dados de processamento, tentar arquivo_resultado
+    if (relatorio.arquivo_resultado) {
+      return relatorio.arquivo_resultado;
+    }
+
+    return null;
+  };
+
+  // Função para fazer download direto
+  const downloadFile = async (url: string, filename: string) => {
+    try {
+      // Buscar o arquivo
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error("Erro ao baixar arquivo");
+      }
+
+      // Criar blob
+      const blob = await response.blob();
+
+      // Criar URL temporária
+      const blobUrl = window.URL.createObjectURL(blob);
+
+      // Criar link de download
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = filename;
+
+      // Adicionar ao DOM temporariamente e clicar
+      document.body.appendChild(link);
+      link.click();
+
+      // Limpar
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+
+      toast.success("Download iniciado!");
+    } catch (error) {
+      console.error("Erro no download:", error);
+      toast.error("Erro ao baixar arquivo");
+    }
+  };
+
   // Calcular métricas baseadas nos dados reais
   useEffect(() => {
     const hoje = new Date().toDateString();
@@ -149,16 +218,79 @@ const AnaliseIA = () => {
     });
   }, [relatorios, n8nConfig]);
 
-  const handleFileUpload = async (tipoAnalise: string, file: File) => {
+  // Polling otimizado para atualizar status em tempo real
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+
+    const startPolling = () => {
+      intervalId = setInterval(() => {
+        // Verificar se há relatórios processando
+        const hasProcessing = relatorios.some(
+          (r) => r.status === "processando"
+        );
+        if (hasProcessing) {
+          // Atualização silenciosa - sem logs visíveis para o usuário
+          fetchRelatorios();
+        } else {
+          // Se não há processando, parar o polling
+          clearInterval(intervalId);
+        }
+      }, 30000); // Verificar a cada 30 segundos (tempo médio da automação é 2min)
+    };
+
+    // Só iniciar polling se há relatórios processando
+    const hasProcessing = relatorios.some((r) => r.status === "processando");
+    if (hasProcessing) {
+      startPolling();
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [relatorios, fetchRelatorios]);
+
+  const handleFileSelect = (tipoAnalise: string, file: File) => {
+    setSelectedFiles((prev) => ({
+      ...prev,
+      [tipoAnalise]: file,
+    }));
+    toast.success(
+      `Arquivo ${file.name} selecionado. Clique em "Iniciar Análise" para processar.`
+    );
+  };
+
+  const handleStartAnalysis = async (tipoAnalise: string) => {
+    const file = selectedFiles[tipoAnalise];
+    if (!file) {
+      toast.error("Nenhum arquivo selecionado");
+      return;
+    }
+
     if (!user) {
       toast.error("Usuário não autenticado");
       return;
     }
 
+    // Proteção contra múltiplas execuções
+    if (processingFiles.has(tipoAnalise)) {
+      toast.error("Análise já está sendo processada. Aguarde...");
+      return;
+    }
+
+    setProcessingFiles((prev) => new Set(prev).add(tipoAnalise));
     setUploadingFile(tipoAnalise);
 
+    // Fechar o dialog/popup automaticamente
+    setOpenDialogs((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(tipoAnalise);
+      return newSet;
+    });
+
     try {
-      console.log("Iniciando upload do arquivo:", file.name);
+      console.log("Iniciando análise do arquivo:", file.name);
 
       // Buscar cartório do usuário
       console.log("Buscando cartório do usuário...");
@@ -178,10 +310,28 @@ const AnaliseIA = () => {
         return;
       }
 
-      // Usar função específica para resumo de matrícula
+      // Usar função específica para cada tipo de análise
       if (tipoAnalise === "resumo_matricula") {
         console.log("Processando resumo de matrícula...");
-        await processarResumoMatricula(file, user.id, userData.cartorio_id);
+        const webhookUrl = getWebhookUrl("resumo_matricula");
+        await processarResumoMatricula(
+          file,
+          user.id,
+          userData.cartorio_id,
+          webhookUrl
+        );
+        return;
+      }
+
+      if (tipoAnalise === "analise_malote") {
+        console.log("Processando análise de malote...");
+        const webhookUrl = getWebhookUrl("analise_malote");
+        await processarAnaliseMalote(
+          file,
+          user.id,
+          userData.cartorio_id,
+          webhookUrl
+        );
         return;
       }
 
@@ -259,16 +409,55 @@ const AnaliseIA = () => {
           tipoAnalise
         )}`
       );
+
+      // Limpar arquivo selecionado após análise iniciada
+      setSelectedFiles((prev) => ({
+        ...prev,
+        [tipoAnalise]: null,
+      }));
+
+      // Recarregar relatórios para mostrar o novo status
+      fetchRelatorios();
     } catch (error) {
-      console.error("Erro detalhado no upload:", {
+      console.error("Erro detalhado na análise:", {
         error: error,
         message: error instanceof Error ? error.message : "Erro desconhecido",
         stack: error instanceof Error ? error.stack : undefined,
         type: typeof error,
       });
-      toast.error("Erro ao enviar arquivo para análise");
+
+      // Tratamento específico para erro de webhook não configurado
+      if (error instanceof Error && error.message.includes("Webhook para")) {
+        toast.error(
+          <div className="space-y-3 p-2">
+            <div className="font-bold text-red-800 text-lg">
+              ⚠️ Webhook não configurado
+            </div>
+            <div className="text-red-700">{error.message}</div>
+            <div className="pt-2">
+              <p className="text-sm text-gray-600">
+                Execute o script SQL fornecido para configurar os webhooks.
+              </p>
+            </div>
+          </div>,
+          {
+            duration: 10000,
+            style: {
+              border: "2px solid #dc2626",
+              backgroundColor: "#fef2f2",
+            },
+          }
+        );
+      } else {
+        toast.error("Erro ao enviar arquivo para análise");
+      }
     } finally {
       setUploadingFile(null);
+      setProcessingFiles((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(tipoAnalise);
+        return newSet;
+      });
     }
   };
 
@@ -304,7 +493,20 @@ const AnaliseIA = () => {
                   <CardDescription>{tipo.descricao}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Dialog>
+                  <Dialog
+                    open={openDialogs.has(tipo.id)}
+                    onOpenChange={(open) => {
+                      if (!open) {
+                        setOpenDialogs((prev) => {
+                          const newSet = new Set(prev);
+                          newSet.delete(tipo.id);
+                          return newSet;
+                        });
+                      } else {
+                        setOpenDialogs((prev) => new Set(prev).add(tipo.id));
+                      }
+                    }}
+                  >
                     <DialogTrigger asChild>
                       <Button className="w-full" disabled={isUploading}>
                         {isUploading ? (
@@ -335,17 +537,38 @@ const AnaliseIA = () => {
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
-                                handleFileUpload(tipo.id, file);
+                                handleFileSelect(tipo.id, file);
                               }
                             }}
                           />
                           <p className="text-sm text-gray-500 mt-1">
                             Formatos aceitos: PDF, DOC, DOCX, ZIP
                           </p>
+                          {selectedFiles[tipo.id] && (
+                            <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
+                              <p className="text-sm text-green-800">
+                                ✅ Arquivo selecionado:{" "}
+                                {selectedFiles[tipo.id]?.name}
+                              </p>
+                            </div>
+                          )}
                         </div>
-                        <Button className="w-full">
-                          <Brain className="mr-2 h-4 w-4" />
-                          Iniciar Análise
+                        <Button
+                          className="w-full"
+                          onClick={() => handleStartAnalysis(tipo.id)}
+                          disabled={!selectedFiles[tipo.id] || isUploading}
+                        >
+                          {isUploading ? (
+                            <>
+                              <Clock className="mr-2 h-4 w-4 animate-spin" />
+                              Processando...
+                            </>
+                          ) : (
+                            <>
+                              <Brain className="mr-2 h-4 w-4" />
+                              Iniciar Análise
+                            </>
+                          )}
                         </Button>
                       </div>
                     </DialogContent>
@@ -362,10 +585,25 @@ const AnaliseIA = () => {
         {/* Histórico de Análises */}
         <Card>
           <CardHeader>
-            <CardTitle>Histórico de Análises</CardTitle>
-            <CardDescription>
-              Relatórios processados pela inteligência artificial
-            </CardDescription>
+            <div className="flex justify-between items-center">
+              <div>
+                <CardTitle>Histórico de Análises</CardTitle>
+                <CardDescription>
+                  Relatórios processados pela inteligência artificial
+                </CardDescription>
+              </div>
+              <div className="flex gap-2">
+                {relatorios.some((r) => r.status === "processando") && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={limparRelatoriosProcessando}
+                  >
+                    🧹 Limpar Processando
+                  </Button>
+                )}
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -415,59 +653,180 @@ const AnaliseIA = () => {
                         </Badge>
                       </TableCell>
                       <TableCell className="font-medium">
-                        {relatorio.nome_arquivo}
+                        {(() => {
+                          const arquivoOriginalUrl =
+                            getArquivoOriginalUrl(relatorio);
+
+                          return arquivoOriginalUrl ? (
+                            <button
+                              onClick={() => {
+                                console.log(
+                                  "🔍 Abrindo arquivo original:",
+                                  arquivoOriginalUrl
+                                );
+                                // Abrir o arquivo original em uma nova aba
+                                window.open(arquivoOriginalUrl, "_blank");
+                              }}
+                              className="text-gray-600 hover:text-gray-800 hover:font-bold cursor-pointer text-left transition-all duration-200"
+                              title="Clique para visualizar o arquivo original"
+                            >
+                              📄 {relatorio.nome_arquivo}
+                            </button>
+                          ) : (
+                            <span
+                              className="text-gray-500"
+                              title="Arquivo original não disponível"
+                            >
+                              📄 {relatorio.nome_arquivo}
+                            </span>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>
                         {new Date(relatorio.created_at).toLocaleString("pt-BR")}
                       </TableCell>
                       <TableCell>
-                        {relatorio.usuario?.nome || "Usuário não encontrado"}
+                        {relatorio.usuario?.name || "Usuário não encontrado"}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-2">
-                          <Badge className={getStatusColor(relatorio.status)}>
-                            <div className="flex items-center space-x-1">
-                              {getStatusIcon(relatorio.status)}
-                              <span>
-                                {relatorio.status === "concluido"
-                                  ? "Concluído"
-                                  : relatorio.status === "processando"
-                                  ? "Processando"
-                                  : "Erro"}
-                              </span>
-                            </div>
-                          </Badge>
+                          {relatorio.status === "processando" ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                              <Badge variant="secondary">Processando...</Badge>
+                            </>
+                          ) : (
+                            <Badge className={getStatusColor(relatorio.status)}>
+                              <div className="flex items-center space-x-1">
+                                {getStatusIcon(relatorio.status)}
+                                <span>
+                                  {relatorio.status === "concluido"
+                                    ? "Concluído"
+                                    : relatorio.status === "processando"
+                                    ? "Processando"
+                                    : "Erro"}
+                                </span>
+                              </div>
+                            </Badge>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex space-x-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={relatorio.status !== "concluido"}
-                            onClick={() => {
-                              if (relatorio.relatorio_pdf) {
-                                window.open(relatorio.relatorio_pdf, "_blank");
-                              }
-                            }}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={relatorio.status !== "concluido"}
-                            onClick={() => {
-                              if (relatorio.relatorio_pdf) {
-                                const link = document.createElement("a");
-                                link.href = relatorio.relatorio_pdf;
-                                link.download = relatorio.nome_arquivo;
-                                link.click();
-                              }
-                            }}
-                          >
-                            <Download className="h-4 w-4" />
-                          </Button>
+                        <div className="flex space-x-1">
+                          {relatorio.status === "concluido" && (
+                            <>
+                              {/* Priorizar relatorio_pdf, depois relatorio_doc, depois arquivo_resultado */}
+                              {relatorio.relatorio_pdf && (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                      window.open(
+                                        relatorio.relatorio_pdf,
+                                        "_blank"
+                                      )
+                                    }
+                                    title="Visualizar análise PDF"
+                                    className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      downloadFile(
+                                        relatorio.relatorio_pdf,
+                                        `analise_${relatorio.nome_arquivo}.pdf`
+                                      );
+                                    }}
+                                    title="Download análise PDF"
+                                    className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              )}
+                              {!relatorio.relatorio_pdf &&
+                                relatorio.relatorio_doc && (
+                                  <>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() =>
+                                        window.open(
+                                          relatorio.relatorio_doc,
+                                          "_blank"
+                                        )
+                                      }
+                                      title="Visualizar análise DOC"
+                                      className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
+                                    >
+                                      <FileText className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        downloadFile(
+                                          relatorio.relatorio_doc,
+                                          `analise_${relatorio.nome_arquivo}.doc`
+                                        );
+                                      }}
+                                      title="Download análise DOC"
+                                      className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
+                                    >
+                                      <Download className="h-4 w-4" />
+                                    </Button>
+                                  </>
+                                )}
+                              {!relatorio.relatorio_pdf &&
+                                !relatorio.relatorio_doc &&
+                                relatorio.arquivo_resultado && (
+                                  <>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() =>
+                                        window.open(
+                                          relatorio.arquivo_resultado,
+                                          "_blank"
+                                        )
+                                      }
+                                      title="Visualizar análise"
+                                      className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        downloadFile(
+                                          relatorio.arquivo_resultado,
+                                          `analise_${relatorio.nome_arquivo}`
+                                        );
+                                      }}
+                                      title="Download análise"
+                                      className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
+                                    >
+                                      <Download className="h-4 w-4" />
+                                    </Button>
+                                  </>
+                                )}
+                            </>
+                          )}
+                          {relatorio.status === "processando" && (
+                            <Button variant="ghost" size="sm" disabled>
+                              <Clock className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {relatorio.status === "erro" && (
+                            <Button variant="ghost" size="sm" disabled>
+                              <AlertCircle className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

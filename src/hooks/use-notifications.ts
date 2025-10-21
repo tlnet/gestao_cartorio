@@ -248,6 +248,83 @@ export const useNotifications = () => {
     return notificacoes.filter((n) => n.prioridade === "urgente" && !n.lida);
   }, [notificacoes]);
 
+  // Função para limpar notificações duplicadas
+  const limparNotificacoesDuplicadas = async () => {
+    try {
+      if (!user?.id) return;
+
+      // Buscar notificações duplicadas (mesmo tipo, mesmo metadata, criadas no mesmo dia)
+      const hoje = new Date();
+      const inicioDoDia = new Date(
+        hoje.getFullYear(),
+        hoje.getMonth(),
+        hoje.getDate()
+      );
+
+      const { data: notificacoesDuplicadas, error } = await supabase
+        .from("notificacoes")
+        .select("id, tipo, metadata, created_at")
+        .eq("usuario_id", user.id)
+        .gte("created_at", inicioDoDia.toISOString())
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Erro ao buscar notificações duplicadas:", error);
+        return;
+      }
+
+      // Agrupar por tipo e metadata para identificar duplicatas
+      const grupos = new Map();
+
+      notificacoesDuplicadas?.forEach((notif) => {
+        const chave = `${notif.tipo}_${JSON.stringify(notif.metadata)}`;
+        if (!grupos.has(chave)) {
+          grupos.set(chave, []);
+        }
+        grupos.get(chave).push(notif);
+      });
+
+      // Remover duplicatas, mantendo apenas a mais recente
+      for (const [chave, grupo] of grupos) {
+        if (grupo.length > 1) {
+          // Ordenar por data de criação (mais recente primeiro)
+          grupo.sort(
+            (a, b) =>
+              new Date(b.created_at).getTime() -
+              new Date(a.created_at).getTime()
+          );
+
+          // Manter apenas a primeira (mais recente) e remover as outras
+          const duplicatas = grupo.slice(1);
+          const idsParaRemover = duplicatas.map((d) => d.id);
+
+          if (idsParaRemover.length > 0) {
+            const { error: deleteError } = await supabase
+              .from("notificacoes")
+              .delete()
+              .in("id", idsParaRemover);
+
+            if (deleteError) {
+              console.error(
+                "Erro ao remover notificações duplicadas:",
+                deleteError
+              );
+            } else {
+              console.log(
+                `Removidas ${idsParaRemover.length} notificações duplicadas para ${chave}`
+              );
+            }
+          }
+        }
+      }
+
+      // Recarregar notificações após limpeza
+      await fetchNotificacoes();
+    } catch (err) {
+      console.error("Erro ao limpar notificações duplicadas:", err);
+    }
+  };
+
   // Verificar contas a pagar próximas do vencimento
   const checkContasPagar = async () => {
     try {
@@ -299,13 +376,17 @@ export const useNotifications = () => {
             (dataVencimento.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)
           );
 
-          // Verificar se já existe notificação para esta conta
+          // Verificar se já existe notificação para esta conta nas últimas 24 horas
+          const vinteQuatroHorasAtras = new Date();
+          vinteQuatroHorasAtras.setHours(vinteQuatroHorasAtras.getHours() - 24);
+
           const { data: notificacaoExistente } = await supabase
             .from("notificacoes")
-            .select("id")
+            .select("id, created_at")
             .eq("metadata->>conta_id", conta.id)
             .eq("tipo", "conta_pagar")
             .eq("usuario_id", user.id)
+            .gte("created_at", vinteQuatroHorasAtras.toISOString())
             .single();
 
           if (!notificacaoExistente) {
@@ -409,13 +490,17 @@ export const useNotifications = () => {
             (dataVencimento.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)
           );
 
-          // Verificar se já existe notificação para este protocolo
+          // Verificar se já existe notificação para este protocolo nas últimas 24 horas
+          const vinteQuatroHorasAtras = new Date();
+          vinteQuatroHorasAtras.setHours(vinteQuatroHorasAtras.getHours() - 24);
+
           const { data: notificacaoExistente } = await supabase
             .from("notificacoes")
-            .select("id")
+            .select("id, created_at")
             .eq("protocolo_id", protocolo.id)
             .eq("tipo", "prazo_vencimento")
             .eq("usuario_id", user.id)
+            .gte("created_at", vinteQuatroHorasAtras.toISOString())
             .single();
 
           if (!notificacaoExistente) {
@@ -471,16 +556,19 @@ export const useNotifications = () => {
 
     fetchNotificacoes();
 
-    // Verificar protocolos e contas vencendo a cada 5 minutos
+    // Limpar notificações duplicadas na inicialização
+    limparNotificacoesDuplicadas();
+
+    // Verificar protocolos e contas vencendo a cada 30 minutos (reduzido de 5 minutos)
     const interval = setInterval(() => {
       checkProtocolosVencendo();
       checkContasPagar();
-    }, 5 * 60 * 1000);
+    }, 30 * 60 * 1000);
 
-    // Verificar notificações a cada 30 segundos
+    // Verificar notificações a cada 2 minutos (reduzido de 30 segundos)
     const notificationInterval = setInterval(() => {
       fetchNotificacoes();
-    }, 30 * 1000);
+    }, 2 * 60 * 1000);
 
     return () => {
       clearInterval(interval);
@@ -505,5 +593,6 @@ export const useNotifications = () => {
     getNotificacoesPrazoValidas,
     checkProtocolosVencendo,
     checkContasPagar,
+    limparNotificacoesDuplicadas,
   };
 };
