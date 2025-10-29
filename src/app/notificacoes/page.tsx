@@ -27,10 +27,16 @@ import {
   Filter,
   Trash2,
   CheckCircle,
+  Smartphone,
+  Receipt,
+  Clipboard,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { FadeInUp } from "@/components/ui/page-transition";
+import { formatPhone } from "@/lib/formatters";
+import { toast } from "sonner";
 
 const NotificacoesPage = () => {
   const {
@@ -47,6 +53,8 @@ const NotificacoesPage = () => {
   const [filtroTipo, setFiltroTipo] = useState("todos");
   const [filtroPrioridade, setFiltroPrioridade] = useState("todos");
   const [busca, setBusca] = useState("");
+  const [whatsappContas, setWhatsappContas] = useState("");
+  const [whatsappProtocolos, setWhatsappProtocolos] = useState("");
 
   const getTipoIcon = (tipo: string) => {
     switch (tipo) {
@@ -223,6 +231,86 @@ const NotificacoesPage = () => {
               </CardContent>
             </Card>
           </div>
+
+          {/* Configuração de WhatsApp */}
+          <FadeInUp delay={100}>
+            <Card>
+              <CardHeader>
+                <div className="flex items-center space-x-2">
+                  <Smartphone className="h-5 w-5 text-green-600" />
+                  <CardTitle>Configuração de WhatsApp</CardTitle>
+                </div>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Configure números de WhatsApp para receber notificações por
+                  categoria. Você pode definir números diferentes para cada tipo
+                  de notificação.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Campo WhatsApp Contas a Pagar */}
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <Receipt className="h-4 w-4 text-red-600" />
+                      <label className="text-sm font-medium">
+                        WhatsApp para Contas a Pagar
+                      </label>
+                    </div>
+                    <Input
+                      placeholder="(00) 00000-0000"
+                      value={whatsappContas}
+                      onChange={(e) => {
+                        const formatted = formatPhone(e.target.value);
+                        setWhatsappContas(formatted);
+                      }}
+                      className="w-full"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Número de WhatsApp para receber notificações sobre contas
+                      a pagar e vencimentos
+                    </p>
+                  </div>
+
+                  {/* Campo WhatsApp Protocolos */}
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <Clipboard className="h-4 w-4 text-blue-600" />
+                      <label className="text-sm font-medium">
+                        WhatsApp para Protocolos
+                      </label>
+                    </div>
+                    <Input
+                      placeholder="(00) 00000-0000"
+                      value={whatsappProtocolos}
+                      onChange={(e) => {
+                        const formatted = formatPhone(e.target.value);
+                        setWhatsappProtocolos(formatted);
+                      }}
+                      className="w-full"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Número de WhatsApp para receber notificações sobre
+                      protocolos criados e atualizados
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <Button
+                    onClick={() => {
+                      toast.success("Configurações salvas com sucesso!", {
+                        description:
+                          "Os números de WhatsApp foram configurados (simulação)",
+                      });
+                    }}
+                    className="min-w-[150px]"
+                  >
+                    Salvar Configurações
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </FadeInUp>
 
           {/* Filtros */}
           <Card>
