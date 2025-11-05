@@ -627,7 +627,7 @@ const GestaoUsuarios = () => {
                   onValueChange={(value) =>
                     form.setValue(
                       "cartorio_id",
-                      value === "null" ? null : value
+                      value === "null" ? (null as any) : value
                     )
                   }
                 >

@@ -58,7 +58,7 @@ interface ContasTableProps {
   loading?: boolean;
   onEdit: (id: string, data: Partial<ContaPagar>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-  onMarcarComoPaga: (id: string) => Promise<void>;
+  onMarcarComoPaga: (id: string, dataPagamento?: Date) => Promise<ContaPagar | void>;
   cartorioId?: string;
   refreshTrigger?: number; // Para forçar refresh dos documentos
 }
@@ -243,8 +243,11 @@ export function ContasTable({
                             variant="outline"
                             className="mt-1 text-xs bg-orange-50 text-orange-700 border-orange-200"
                           >
-                            Vence em {diasAteVencimento}{" "}
-                            {diasAteVencimento === 1 ? "dia" : "dias"}
+                            {diasAteVencimento === 0
+                              ? "Vence hoje"
+                              : `Vence em ${diasAteVencimento} ${
+                                  diasAteVencimento === 1 ? "dia" : "dias"
+                                }`}
                           </Badge>
                         )}
                       </div>

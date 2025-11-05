@@ -167,6 +167,8 @@ export interface FiltrosContas {
   dataFim?: Date;
   fornecedor?: string;
   busca?: string;
+  valorMin?: number;
+  valorMax?: number;
 }
 
 export interface CategoriaPersonalizada {

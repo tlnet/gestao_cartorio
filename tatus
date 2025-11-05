@@ -1,0 +1,27 @@
+warning: in the working copy of 'env.template', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/ia/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/notificacoes/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/app/relatorios/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/protocolos/protocolo-details.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/hooks/use-notifications.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/hooks/use-relatorios-ia.ts', LF will be replaced by CRLF the next time Git touches it
+ env.template                                       |  12 [32m+[m
+ src/app/api/webhook-proxy/route.ts                 |  43 [32m+[m[31m-[m
+ src/app/cnib/page.tsx                              | 465 [32m++++++++++++++++++++[m[31m-[m
+ src/app/ia/page.tsx                                | 437 [32m+++++++++++++++[m[31m----[m
+ src/app/notificacoes/page.tsx                      |   4 [32m+[m[31m-[m
+ src/app/relatorios/page.tsx                        |   8 [32m+[m[31m-[m
+ src/app/usuarios/page.tsx                          |   2 [32m+[m[31m-[m
+ src/components/contas/contas-table.tsx             |   9 [32m+[m[31m-[m
+ src/components/contas/filtros-contas.tsx           |   8 [32m+[m[31m-[m
+ src/components/ia/minuta-documento-form.tsx        | 140 [32m++++++[m[31m-[m
+ src/components/notifications/notification-bell.tsx |   4 [32m+[m[31m-[m
+ src/components/protocolos/add-comment-form.tsx     |   2 [32m+[m[31m-[m
+ src/components/protocolos/protocolo-details.tsx    |   2 [32m+[m[31m-[m
+ src/components/ui/calendar.tsx                     |   6 [32m+[m[31m-[m
+ src/components/ui/date-picker.tsx                  |   4 [32m+[m[31m-[m
+ src/hooks/use-historico-protocolos.ts              |   4 [32m+[m[31m-[m
+ src/hooks/use-notifications.ts                     |  16 [32m+[m[31m-[m
+ src/hooks/use-relatorios-ia.ts                     | 125 [32m+++++[m[31m-[m
+ src/types/index.ts                                 |   2 [32m+[m
+ 19 files changed, 1137 insertions(+), 156 deletions(-)

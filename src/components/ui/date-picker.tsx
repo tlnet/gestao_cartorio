@@ -18,7 +18,7 @@ interface DatePickerProps {
   className?: string;
 }
 
-export const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(
+export const DatePicker = forwardRef<any, DatePickerProps>(
   ({ selected, onChange, disabled, placeholderText, className }, ref) => {
     return (
       <div className="relative">
@@ -36,7 +36,7 @@ export const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(
           wrapperClassName="w-full"
           calendarClassName="custom-calendar"
           showPopperArrow={false}
-          ref={ref}
+          ref={ref as any}
         />
         <CalendarIcon className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-50 pointer-events-none" />
       </div>

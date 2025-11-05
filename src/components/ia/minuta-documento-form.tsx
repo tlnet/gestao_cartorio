@@ -35,6 +35,7 @@ import { toast } from "sonner";
 import { useRelatoriosIA } from "@/hooks/use-relatorios-ia";
 import { useN8NConfig } from "@/hooks/use-n8n-config";
 import { useAuth } from "@/contexts/auth-context";
+import { supabase } from "@/lib/supabase";
 
 interface DocumentoCategoria {
   compradores: File[];
@@ -167,10 +168,27 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
         id: "process-minuta",
       });
 
+      // Buscar cartório do usuário (igual às outras análises)
+      console.log("Buscando cartório do usuário...");
+      const { data: userData, error: userError } = await supabase
+        .from("users")
+        .select("cartorio_id")
+        .eq("id", user.id)
+        .single();
+
+      console.log("Dados do usuário:", userData);
+
+      if (userError) {
+        console.error("Erro ao buscar dados do usuário:", userError);
+        toast.error("Erro ao buscar dados do usuário", { id: "process-minuta" });
+        return;
+      }
+
       // Verificar se o usuário tem cartório associado
-      if (!user.user_metadata?.cartorio_id) {
+      if (!userData?.cartorio_id) {
         toast.error(
-          "Usuário não possui cartório associado. Entre em contato com o administrador."
+          "Usuário não possui cartório associado. Entre em contato com o administrador.",
+          { id: "process-minuta" }
         );
         return;
       }
@@ -183,12 +201,31 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
         ...documentos.outros,
       ];
 
+      console.log("Processando minuta de documento...", {
+        totalArquivos: todosArquivos.length,
+        compradores: documentos.compradores.length,
+        vendedores: documentos.vendedores.length,
+        matricula: documentos.matricula.length,
+        outros: documentos.outros.length,
+      });
+
       // Usar função específica para minuta de documento
       const webhookUrl = getWebhookUrl("minuta_documento");
+      
+      if (!webhookUrl) {
+        toast.error(
+          "Webhook para minuta de documento não configurado. Configure na página de Configurações.",
+          { id: "process-minuta" }
+        );
+        return;
+      }
+
+      console.log("Webhook URL obtido:", webhookUrl);
+
       const relatorio = await processarMinutaDocumento(
         todosArquivos,
         user.id,
-        user.user_metadata.cartorio_id,
+        userData.cartorio_id,
         {
           compradores: documentos.compradores.map((f) => f.name),
           vendedores: documentos.vendedores.map((f) => f.name),
@@ -197,6 +234,8 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
         },
         webhookUrl
       );
+
+      console.log("Minuta processada com sucesso:", relatorio);
 
       toast.success("Documentos enviados para análise com sucesso!", {
         id: "process-minuta",
@@ -213,7 +252,100 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
       setShowDialog(false);
     } catch (error) {
       console.error("Erro ao processar minuta:", error);
-      toast.error("Erro ao processar documentos", { id: "process-minuta" });
+      const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
+      
+      // Tratamento específico para erro de webhook não configurado
+      if (errorMessage.includes("Webhook para") || errorMessage.includes("não configurado")) {
+        toast.error(
+          <div className="space-y-3 p-2">
+            <div className="font-bold text-red-800 text-lg">
+              ⚠️ Webhook não configurado
+            </div>
+            <div className="text-red-700">{errorMessage}</div>
+            <div className="pt-2">
+              <p className="text-sm text-gray-600">
+                Execute o script SQL fornecido para configurar os webhooks ou configure manualmente na página de Configurações.
+              </p>
+            </div>
+          </div>,
+          {
+            id: "process-minuta",
+            duration: 10000,
+            style: {
+              border: "2px solid #dc2626",
+              backgroundColor: "#fef2f2",
+            },
+          }
+        );
+      } else if (errorMessage.includes("404") || errorMessage.includes("não encontrado")) {
+        // Tratamento específico para erro 404 (webhook não encontrado)
+        toast.error(
+          <div className="space-y-3 p-2">
+            <div className="font-bold text-red-800 text-lg">
+              ⚠️ Webhook não encontrado (404)
+            </div>
+            <div className="text-red-700">{errorMessage}</div>
+            <div className="pt-2">
+              <p className="text-sm text-gray-600">
+                O webhook configurado não está disponível. Verifique:
+              </p>
+              <ul className="text-sm text-gray-600 list-disc list-inside mt-1 space-y-1">
+                <li>Se a URL está correta</li>
+                <li>Se o webhook está ativo no N8N</li>
+                <li>Se o serviço N8N está funcionando</li>
+              </ul>
+            </div>
+          </div>,
+          {
+            id: "process-minuta",
+            duration: 15000,
+            style: {
+              border: "2px solid #dc2626",
+              backgroundColor: "#fef2f2",
+            },
+          }
+        );
+      } else if (errorMessage.includes("500") || errorMessage.includes("Erro interno no webhook")) {
+        // Tratamento específico para erro 500 (problema no workflow N8N)
+        toast.error(
+          <div className="space-y-3 p-2">
+            <div className="font-bold text-red-800 text-lg">
+              ⚠️ Erro no Workflow N8N (500)
+            </div>
+            <div className="text-red-700">{errorMessage}</div>
+            <div className="pt-2">
+              <p className="text-sm text-gray-600 font-medium mb-2">
+                O workflow no N8N não pode ser iniciado. Verifique a configuração:
+              </p>
+              <ul className="text-sm text-gray-600 list-disc list-inside mt-1 space-y-1">
+                <li>O parâmetro "Respond" do webhook deve estar configurado como "Using Respond to Webhook Node"</li>
+                <li>OU o workflow deve conter um nó "Respond to Webhook"</li>
+                <li>Verifique se o workflow está ativo/publicado no N8N</li>
+                <li>Verifique os logs do N8N para mais detalhes do erro</li>
+              </ul>
+            </div>
+          </div>,
+          {
+            id: "process-minuta",
+            duration: 20000,
+            style: {
+              border: "2px solid #dc2626",
+              backgroundColor: "#fef2f2",
+            },
+          }
+        );
+      } else {
+        toast.error(
+          <div className="space-y-2 p-2">
+            <div className="font-bold text-red-800">Erro ao processar documentos</div>
+            <div className="text-red-700 text-sm">{errorMessage}</div>
+          </div>,
+          {
+            id: "process-minuta",
+            duration: 8000,
+          }
+        );
+      }
     } finally {
       setIsProcessing(false);
     }

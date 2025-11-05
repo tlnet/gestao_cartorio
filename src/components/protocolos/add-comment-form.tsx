@@ -38,7 +38,7 @@ const AddCommentForm: React.FC<AddCommentFormProps> = ({
         protocolo_id: protocoloId,
         status_anterior: "Comentário",
         novo_status: "Comentário Adicionado",
-        usuario_responsavel: user?.name || "Usuário",
+        usuario_responsavel: (user?.user_metadata?.name || user?.email?.split("@")[0] || "Usuário") as string,
         observacao: comment.trim(),
       });
 

@@ -269,8 +269,8 @@ export function FiltrosContasComponent({
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
             <DatePicker
-              selected={dataInicio}
-              onChange={setDataInicio}
+              selected={dataInicio || null}
+              onChange={(date) => setDataInicio(date || undefined)}
               placeholderText="Selecione a data"
             />
           </PopoverContent>
@@ -288,8 +288,8 @@ export function FiltrosContasComponent({
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
             <DatePicker
-              selected={dataFim}
-              onChange={setDataFim}
+              selected={dataFim || null}
+              onChange={(date) => setDataFim(date || undefined)}
               placeholderText="Selecione a data"
             />
           </PopoverContent>

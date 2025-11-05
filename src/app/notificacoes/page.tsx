@@ -359,10 +359,10 @@ const NotificacoesPage = () => {
                               variant="outline"
                               className={cn(
                                 "text-xs",
-                                getPrioridadeColor(notificacao.prioridade)
+                                notificacao.prioridade ? getPrioridadeColor(notificacao.prioridade) : ""
                               )}
                             >
-                              {notificacao.prioridade}
+                              {notificacao.prioridade || "normal"}
                             </Badge>
                             <Badge variant="secondary" className="text-xs">
                               {getTipoLabel(notificacao.tipo)}

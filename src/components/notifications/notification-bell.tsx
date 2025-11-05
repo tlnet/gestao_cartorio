@@ -164,10 +164,10 @@ const NotificationBell = () => {
                             variant="outline"
                             className={cn(
                               "text-xs",
-                              getPriorityColor(notificacao.prioridade)
+                              notificacao.prioridade ? getPriorityColor(notificacao.prioridade) : ""
                             )}
                           >
-                            {notificacao.prioridade}
+                            {notificacao.prioridade || "normal"}
                           </Badge>
                           <Button
                             variant="ghost"

@@ -58,7 +58,7 @@ export const useHistoricoProtocolos = (protocoloId?: string) => {
     try {
       // Usar o nome do usuário autenticado se disponível
       const usuarioResponsavel =
-        user?.name || historicoData.usuario_responsavel || "Usuário";
+        (user?.user_metadata?.name || user?.email?.split("@")[0] || historicoData.usuario_responsavel || "Usuário") as string;
 
       console.log("Criando histórico com dados:", {
         ...historicoData,
@@ -76,7 +76,7 @@ export const useHistoricoProtocolos = (protocoloId?: string) => {
         console.warn("Erro ao verificar tabela:", tableError);
       }
 
-      console.log("Tabela existe?", tableCheck?.length > 0);
+      console.log("Tabela existe?", tableCheck && tableCheck.length > 0);
 
       console.log("Tentando inserir no Supabase...");
       const { data, error } = await supabase

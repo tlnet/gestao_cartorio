@@ -13,6 +13,8 @@ export interface RelatorioIA {
   dados_processamento?: any;
   resultado_final?: any;
   arquivo_resultado?: string;
+  relatorio_pdf?: string;
+  relatorio_doc?: string;
   created_at: string;
   updated_at: string;
   // Campos relacionados
@@ -204,7 +206,11 @@ export const useRelatoriosIA = () => {
     }
   };
 
-  const updateRelatorio = async (id: string, updates: Partial<RelatorioIA>) => {
+  const updateRelatorio = async (
+    id: string,
+    updates: Partial<RelatorioIA>,
+    options?: { silent?: boolean }
+  ) => {
     try {
       const { data, error } = await supabase
         .from("relatorios_ia")
@@ -215,13 +221,22 @@ export const useRelatoriosIA = () => {
 
       if (error) throw error;
 
-      toast.success("Relatório atualizado com sucesso!");
+      // Só mostrar toast de sucesso se não for uma atualização silenciosa
+      if (!options?.silent) {
+        toast.success("Relatório atualizado com sucesso!");
+      }
+      
       await fetchRelatorios(); // Recarregar lista
       return data;
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Erro ao atualizar relatório";
-      toast.error(errorMessage);
+      
+      // Só mostrar toast de erro se não for uma atualização silenciosa
+      if (!options?.silent) {
+        toast.error(errorMessage);
+      }
+      
       throw err;
     }
   };
@@ -286,10 +301,10 @@ export const useRelatoriosIA = () => {
 
       if (error) {
         console.error("Erro do Supabase Storage:", {
-          code: error.code,
           message: error.message,
-          details: error.details,
-          hint: error.hint,
+          ...(error && typeof error === "object" && "code" in error ? { code: (error as any).code } : {}),
+          ...(error && typeof error === "object" && "details" in error ? { details: (error as any).details } : {}),
+          ...(error && typeof error === "object" && "hint" in error ? { hint: (error as any).hint } : {}),
         });
         throw error;
       }
@@ -563,15 +578,31 @@ export const useRelatoriosIA = () => {
         );
       }
 
-      console.log("Webhook configurado:", {
+      console.log("🔍 Webhook configurado para análise:", {
         tipo,
         finalWebhookUrl,
+        webhookUrlPassado: webhookUrl || "não informado",
         n8nConfig: !!n8nConfig,
-        n8nConfigData: n8nConfig,
+        webhookResumoMatricula: n8nConfig?.webhook_resumo_matricula,
+        webhookAnaliseMalote: n8nConfig?.webhook_analise_malote,
+        webhookMinutaDocumento: n8nConfig?.webhook_minuta_documento,
+        webhookGenerico: n8nConfig?.webhook_url,
       });
 
       // Verificar se a URL é válida
       if (!finalWebhookUrl.startsWith("http")) {
+        throw new Error(`URL do webhook inválida: ${finalWebhookUrl}`);
+      }
+
+      // Validar formato da URL
+      try {
+        const url = new URL(finalWebhookUrl);
+        console.log("✅ URL do webhook válida:", {
+          protocolo: url.protocol,
+          host: url.host,
+          pathname: url.pathname,
+        });
+      } catch (urlError) {
         throw new Error(`URL do webhook inválida: ${finalWebhookUrl}`);
       }
 
@@ -594,15 +625,19 @@ export const useRelatoriosIA = () => {
         },
       };
 
-      console.log("🌐 Enviando para webhook via proxy:", finalWebhookUrl);
-      console.log("📋 Payload:", payload);
-
       // 5. Enviar para webhook (tentando contornar CORS)
-      console.log("🌐 Tentando enviar diretamente para webhook...");
+      console.log("🌐 Tentando enviar para webhook:", finalWebhookUrl);
+      console.log("📦 Payload a ser enviado:", {
+        relatorio_id: payload.relatorio_id,
+        tipo: payload.tipo,
+        arquivos_count: payload.arquivos_urls?.length || 0,
+        webhook_callback: payload.webhook_callback,
+      });
 
       let response;
       try {
         // Tentar envio direto primeiro (POST)
+        console.log("🔄 Tentativa 1: Envio direto...");
         response = await fetch(finalWebhookUrl, {
           method: "POST",
           headers: {
@@ -612,7 +647,7 @@ export const useRelatoriosIA = () => {
           body: JSON.stringify(payload),
         });
         console.log("✅ Envio direto funcionou!");
-        console.log("📊 Status da resposta:", response.status);
+        console.log("📊 Status da resposta:", response.status, response.statusText);
         console.log(
           "📋 Headers da resposta:",
           Object.fromEntries(response.headers.entries())
@@ -623,6 +658,7 @@ export const useRelatoriosIA = () => {
 
         // Se CORS falhar, tentar via proxy
         const proxyUrl = `${window.location.origin}/api/webhook-proxy`;
+        console.log("🔄 Tentativa 2: Envio via proxy...");
         console.log("🔗 URL do proxy:", proxyUrl);
 
         try {
@@ -636,7 +672,7 @@ export const useRelatoriosIA = () => {
               payload: payload,
             }),
           });
-          console.log("✅ Envio via proxy funcionou! Status:", response.status);
+          console.log("✅ Envio via proxy funcionou! Status:", response.status, response.statusText);
         } catch (proxyError) {
           console.error("❌ Erro no proxy:", proxyError);
           throw new Error(
@@ -650,18 +686,61 @@ export const useRelatoriosIA = () => {
       }
 
       if (!response.ok) {
-        const errorData = await response
-          .json()
-          .catch(() => ({ error: "Erro desconhecido" }));
-        console.error("Erro do webhook via proxy:", {
+        let errorData: any = { error: "Erro desconhecido" };
+        let errorMessage = "Erro desconhecido";
+        
+        try {
+          const contentType = response.headers.get("content-type");
+          if (contentType?.includes("application/json")) {
+            errorData = await response.json();
+            errorMessage = errorData.error || errorData.details || errorData.message || "Erro desconhecido";
+          } else {
+            // Tentar obter texto da resposta
+            const textResponse = await response.text();
+            if (textResponse) {
+              errorMessage = textResponse;
+            }
+          }
+        } catch (parseError) {
+          console.error("Erro ao parsear resposta de erro:", parseError);
+          // Se não conseguir parsear, usar mensagem baseada no status
+          if (response.status === 404) {
+            errorMessage = "Webhook não encontrado (404). Verifique se a URL está correta e se o webhook está ativo no N8N.";
+          } else if (response.status === 500) {
+            errorMessage = "Erro interno no servidor do webhook (500)";
+          } else {
+            errorMessage = `Erro HTTP ${response.status}`;
+          }
+        }
+        
+        console.error("Erro do webhook:", {
           status: response.status,
+          statusText: response.statusText,
+          url: finalWebhookUrl,
           error: errorData,
+          message: errorMessage,
         });
-        throw new Error(
-          `Erro do webhook: ${response.status} - ${
-            errorData.error || errorData.details || "Erro desconhecido"
-          }`
-        );
+        
+        // Mensagem de erro mais específica baseada no status
+        if (response.status === 404) {
+          throw new Error(
+            `Webhook não encontrado (404): A URL "${finalWebhookUrl}" não está disponível. Verifique se o webhook está configurado corretamente no N8N e se está ativo.`
+          );
+        } else if (response.status === 500) {
+          // Erro 500 geralmente indica problema no workflow do N8N
+          let errorDetails = errorMessage;
+          if (errorMessage.includes("Workflow could not be started") || 
+              errorMessage.includes("Workflow Webhook Error")) {
+            errorDetails = "O workflow no N8N não pode ser iniciado. Verifique a configuração do webhook no N8N: o parâmetro 'Respond' deve estar configurado como 'Using Respond to Webhook Node' ou o workflow deve conter um nó 'Respond to Webhook'.";
+          }
+          throw new Error(
+            `Erro interno no webhook N8N (500): ${errorDetails}`
+          );
+        } else {
+          throw new Error(
+            `Erro do webhook (${response.status}): ${errorMessage}`
+          );
+        }
       }
 
       // Verificar o tipo de conteúdo da resposta

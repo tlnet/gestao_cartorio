@@ -1251,8 +1251,8 @@ const Relatorios = () => {
               <div className="space-y-2">
                 <Label>Data Início</Label>
                 <DatePicker
-                  selected={dataInicio}
-                  onChange={setDataInicio}
+                  selected={dataInicio || null}
+                  onChange={(date) => setDataInicio(date || undefined)}
                   placeholderText="Selecionar data"
                 />
               </div>
@@ -1261,8 +1261,8 @@ const Relatorios = () => {
               <div className="space-y-2">
                 <Label>Data Fim</Label>
                 <DatePicker
-                  selected={dataFim}
-                  onChange={setDataFim}
+                  selected={dataFim || null}
+                  onChange={(date) => setDataFim(date || undefined)}
                   placeholderText="Selecionar data"
                 />
               </div>

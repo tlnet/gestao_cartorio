@@ -63,13 +63,50 @@ export async function POST(request: NextRequest) {
     console.log("📊 Proxy API: Status da resposta:", response.status);
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("❌ Proxy API: Erro na resposta:", errorText);
+      let errorText = "";
+      let errorData: any = null;
+      
+      try {
+        const contentType = response.headers.get("content-type");
+        if (contentType?.includes("application/json")) {
+          errorData = await response.json();
+          errorText = JSON.stringify(errorData);
+        } else {
+          errorText = await response.text();
+        }
+      } catch (parseError) {
+        errorText = `Erro ao ler resposta: ${response.status} ${response.statusText}`;
+      }
+
+      console.error("❌ Proxy API: Erro na resposta do webhook:", {
+        status: response.status,
+        statusText: response.statusText,
+        url: webhookUrl,
+        errorText,
+        errorData,
+        headers: Object.fromEntries(response.headers.entries()),
+      });
+
+      // Mensagem mais específica para 404
+      if (response.status === 404) {
+        return NextResponse.json(
+          {
+            error: "Webhook não encontrado (404)",
+            status: response.status,
+            details: `A URL "${webhookUrl}" não está disponível. Verifique se o webhook está configurado corretamente no N8N e se está ativo.`,
+            webhookUrl: webhookUrl,
+          },
+          { status: response.status }
+        );
+      }
+
       return NextResponse.json(
         {
           error: "Erro no webhook N8N",
           status: response.status,
-          details: errorText,
+          statusText: response.statusText,
+          details: errorText || errorData || "Erro desconhecido",
+          webhookUrl: webhookUrl,
         },
         { status: response.status }
       );

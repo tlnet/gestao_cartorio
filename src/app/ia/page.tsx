@@ -32,6 +32,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Brain,
   FileText,
   Package,
@@ -40,7 +46,6 @@ import {
   Eye,
   Clock,
   CheckCircle,
-  Webhook,
   BarChart3,
   AlertCircle,
 } from "lucide-react";
@@ -78,9 +83,8 @@ const AnaliseIA = () => {
   const [openDialogs, setOpenDialogs] = useState<Set<string>>(new Set());
   const [metricas, setMetricas] = useState({
     analisesHoje: 0,
-    tempoMedio: "0min",
+    tempoMedio: "N/A",
     taxaSucesso: "0%",
-    webhooksAtivos: 1,
   });
 
   const tiposAnaliseSimples = [
@@ -116,13 +120,13 @@ const AnaliseIA = () => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "concluido":
-        return "bg-green-100 text-green-800";
+        return "bg-green-100 text-green-800 hover:bg-green-100";
       case "processando":
-        return "bg-yellow-100 text-yellow-800";
+        return "bg-yellow-100 text-yellow-800 hover:bg-yellow-100";
       case "erro":
-        return "bg-red-100 text-red-800";
+        return "bg-red-100 text-red-800 hover:bg-red-100";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-gray-100 text-gray-800 hover:bg-gray-100";
     }
   };
 
@@ -210,13 +214,117 @@ const AnaliseIA = () => {
         ? ((concluidos.length / relatorios.length) * 100).toFixed(1)
         : "0";
 
+    // Calcular tempo médio baseado em dados reais
+    let tempoMedio = "N/A";
+    if (concluidos.length > 0) {
+      const tempos = concluidos
+        .map((relatorio) => {
+          const inicio = new Date(relatorio.created_at).getTime();
+          const fim = new Date(relatorio.updated_at).getTime();
+          const diferencaMs = fim - inicio;
+          return diferencaMs / 1000 / 60; // Converter para minutos
+        })
+        .filter((tempo) => tempo > 0 && !isNaN(tempo)); // Filtrar tempos inválidos
+
+      if (tempos.length > 0) {
+        const mediaMinutos = tempos.reduce((acc, tempo) => acc + tempo, 0) / tempos.length;
+        if (mediaMinutos < 1) {
+          // Se for menos de 1 minuto, mostrar em segundos
+          const segundos = Math.round(mediaMinutos * 60);
+          tempoMedio = `${segundos}s`;
+        } else {
+          // Mostrar em minutos com 1 casa decimal
+          tempoMedio = `${mediaMinutos.toFixed(1)}min`;
+        }
+      }
+    }
+
     setMetricas({
       analisesHoje: relatoriosHoje.length,
-      tempoMedio: "2.5min", // TODO: Calcular baseado em dados reais
+      tempoMedio: tempoMedio,
       taxaSucesso: `${taxaSucesso}%`,
-      webhooksAtivos: n8nConfig ? 1 : 0, // Usar configuração real do N8N
     });
-  }, [relatorios, n8nConfig]);
+  }, [relatorios]);
+
+  // Verificar timeout e atualizar status automaticamente
+  useEffect(() => {
+    let timeoutCheckId: NodeJS.Timeout;
+
+    const verificarTimeout = async () => {
+      try {
+        // Buscar relatórios processando diretamente do banco
+        const agora = new Date();
+        const doisMinutosAtras = new Date(agora.getTime() - 2 * 60 * 1000);
+
+        const { data: relatoriosComTimeout, error } = await supabase
+          .from("relatorios_ia")
+          .select("id, nome_arquivo, created_at")
+          .eq("status", "processando")
+          .lt("created_at", doisMinutosAtras.toISOString());
+
+        if (error) {
+          console.error("Erro ao buscar relatórios com timeout:", error);
+          return;
+        }
+
+        if (relatoriosComTimeout && relatoriosComTimeout.length > 0) {
+          console.log(`⏱️ Detectados ${relatoriosComTimeout.length} relatório(s) com timeout (>2min)`);
+
+          await Promise.all(
+            relatoriosComTimeout.map(async (relatorio) => {
+              try {
+                const tempoDecorrido = Math.round(
+                  (agora.getTime() - new Date(relatorio.created_at).getTime()) / 1000 / 60
+                );
+
+                await updateRelatorio(
+                  relatorio.id,
+                  {
+                    status: "erro" as const,
+                    resultado_final: {
+                      erro: "Timeout: A análise demorou mais de 2 minutos para ser concluída e foi cancelada automaticamente.",
+                      motivo: "timeout",
+                      tempo_decorrido: `${tempoDecorrido} minutos`,
+                    },
+                  },
+                  { silent: true } // Atualização silenciosa para não mostrar toast duplicado
+                );
+
+                toast.error(
+                  `Análise "${relatorio.nome_arquivo}" cancelada por timeout (>2min)`,
+                  {
+                    description: "A análise demorou mais de 2 minutos e foi automaticamente marcada como erro.",
+                    duration: 5000,
+                  }
+                );
+              } catch (error) {
+                console.error(`Erro ao atualizar relatório ${relatorio.id} para erro:`, error);
+              }
+            })
+          );
+
+          // Recarregar relatórios após atualizar status
+          await fetchRelatorios();
+        }
+      } catch (error) {
+        console.error("Erro ao verificar timeout:", error);
+      }
+    };
+
+    // Verificar timeout imediatamente ao carregar
+    verificarTimeout();
+
+    // Verificar timeout a cada 30 segundos
+    timeoutCheckId = setInterval(() => {
+      verificarTimeout();
+    }, 30000); // Verificar a cada 30 segundos
+
+    return () => {
+      if (timeoutCheckId) {
+        clearInterval(timeoutCheckId);
+      }
+    };
+  }, [fetchRelatorios, updateRelatorio]);
 
   // Polling otimizado para atualizar status em tempo real
   useEffect(() => {
@@ -235,7 +343,7 @@ const AnaliseIA = () => {
           // Se não há processando, parar o polling
           clearInterval(intervalId);
         }
-      }, 30000); // Verificar a cada 30 segundos (tempo médio da automação é 2min)
+      }, 30000); // Verificar a cada 30 segundos
     };
 
     // Só iniciar polling se há relatórios processando
@@ -318,7 +426,7 @@ const AnaliseIA = () => {
           file,
           user.id,
           userData.cartorio_id,
-          webhookUrl
+          webhookUrl || undefined
         );
         return;
       }
@@ -330,7 +438,7 @@ const AnaliseIA = () => {
           file,
           user.id,
           userData.cartorio_id,
-          webhookUrl
+          webhookUrl || undefined
         );
         return;
       }
@@ -426,17 +534,19 @@ const AnaliseIA = () => {
         type: typeof error,
       });
 
+      const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
+
       // Tratamento específico para erro de webhook não configurado
-      if (error instanceof Error && error.message.includes("Webhook para")) {
+      if (errorMessage.includes("Webhook para") || errorMessage.includes("não configurado")) {
         toast.error(
           <div className="space-y-3 p-2">
             <div className="font-bold text-red-800 text-lg">
               ⚠️ Webhook não configurado
             </div>
-            <div className="text-red-700">{error.message}</div>
+            <div className="text-red-700">{errorMessage}</div>
             <div className="pt-2">
               <p className="text-sm text-gray-600">
-                Execute o script SQL fornecido para configurar os webhooks.
+                Execute o script SQL fornecido para configurar os webhooks ou configure manualmente na página de Configurações.
               </p>
             </div>
           </div>,
@@ -448,8 +558,81 @@ const AnaliseIA = () => {
             },
           }
         );
+      } else if (errorMessage.includes("404") || errorMessage.includes("não encontrado")) {
+        // Tratamento específico para erro 404 (webhook não encontrado)
+        toast.error(
+          <div className="space-y-3 p-2">
+            <div className="font-bold text-red-800 text-lg">
+              ⚠️ Webhook não encontrado (404)
+            </div>
+            <div className="text-red-700">{errorMessage}</div>
+            <div className="pt-2">
+              <p className="text-sm text-gray-600">
+                O webhook configurado não está disponível. Verifique:
+              </p>
+              <ul className="text-sm text-gray-600 list-disc list-inside mt-1 space-y-1">
+                <li>Se a URL está correta</li>
+                <li>Se o webhook está ativo no N8N</li>
+                <li>Se o serviço N8N está funcionando</li>
+              </ul>
+              <a
+                href="/configuracoes"
+                className="inline-block mt-2 bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors text-sm"
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.location.href = "/configuracoes";
+                }}
+              >
+                🔧 Verificar Configurações
+              </a>
+            </div>
+          </div>,
+          {
+            duration: 15000,
+            style: {
+              border: "2px solid #dc2626",
+              backgroundColor: "#fef2f2",
+            },
+          }
+        );
+      } else if (errorMessage.includes("500") || errorMessage.includes("Erro interno no webhook")) {
+        // Tratamento específico para erro 500 (problema no workflow N8N)
+        toast.error(
+          <div className="space-y-3 p-2">
+            <div className="font-bold text-red-800 text-lg">
+              ⚠️ Erro no Workflow N8N (500)
+            </div>
+            <div className="text-red-700">{errorMessage}</div>
+            <div className="pt-2">
+              <p className="text-sm text-gray-600 font-medium mb-2">
+                O workflow no N8N não pode ser iniciado. Verifique a configuração:
+              </p>
+              <ul className="text-sm text-gray-600 list-disc list-inside mt-1 space-y-1">
+                <li>O parâmetro "Respond" do webhook deve estar configurado como "Using Respond to Webhook Node"</li>
+                <li>OU o workflow deve conter um nó "Respond to Webhook"</li>
+                <li>Verifique se o workflow está ativo/publicado no N8N</li>
+                <li>Verifique os logs do N8N para mais detalhes do erro</li>
+              </ul>
+            </div>
+          </div>,
+          {
+            duration: 20000,
+            style: {
+              border: "2px solid #dc2626",
+              backgroundColor: "#fef2f2",
+            },
+          }
+        );
       } else {
-        toast.error("Erro ao enviar arquivo para análise");
+        toast.error(
+          <div className="space-y-2 p-2">
+            <div className="font-bold text-red-800">Erro ao enviar arquivo para análise</div>
+            <div className="text-red-700 text-sm">{errorMessage}</div>
+          </div>,
+          {
+            duration: 8000,
+          }
+        );
       }
     } finally {
       setUploadingFile(null);
@@ -633,19 +816,20 @@ const AnaliseIA = () => {
                 </p>
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Tipo de Análise</TableHead>
-                    <TableHead>Arquivo</TableHead>
-                    <TableHead>Processado em</TableHead>
-                    <TableHead>Usuário</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {relatorios.map((relatorio) => (
+              <TooltipProvider delayDuration={200}>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Tipo de Análise</TableHead>
+                      <TableHead>Arquivo</TableHead>
+                      <TableHead>Processado em</TableHead>
+                      <TableHead>Usuário</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {relatorios.map((relatorio) => (
                     <TableRow key={relatorio.id}>
                       <TableCell>
                         <Badge variant="outline">
@@ -693,19 +877,104 @@ const AnaliseIA = () => {
                           {relatorio.status === "processando" ? (
                             <>
                               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                              <Badge variant="secondary">Processando...</Badge>
+                              <Badge 
+                                variant="secondary" 
+                                className="cursor-default"
+                                style={{ 
+                                  transition: "none",
+                                  backgroundColor: "rgb(254 249 195)",
+                                  color: "rgb(133 77 14)"
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = "rgb(254 249 195)";
+                                }}
+                              >
+                                Processando...
+                              </Badge>
                             </>
+                          ) : relatorio.status === "erro" ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="cursor-default inline-block">
+                                  <Badge 
+                                    className={`${getStatusColor(relatorio.status)} cursor-default`}
+                                    style={{ 
+                                      transition: "none",
+                                      backgroundColor: "rgb(254 226 226)",
+                                      color: "rgb(153 27 27)"
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.backgroundColor = "rgb(254 226 226)";
+                                    }}
+                                  >
+                                    <div className="flex items-center space-x-1">
+                                      {getStatusIcon(relatorio.status)}
+                                      <span>Erro</span>
+                                    </div>
+                                  </Badge>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent 
+                                side="top" 
+                                className="max-w-md bg-white border border-gray-200 shadow-lg z-50 text-gray-900"
+                              >
+                                <div className="space-y-2">
+                                  <p className="font-semibold text-sm text-gray-900">Erro na análise</p>
+                                  <div className="text-sm text-gray-800">
+                                    {(() => {
+                                      // Priorizar erro do resultado_final, depois dados_processamento
+                                      const erro = relatorio.resultado_final?.erro ||
+                                        relatorio.dados_processamento?.erro ||
+                                        relatorio.resultado_final?.mensagem ||
+                                        relatorio.dados_processamento?.mensagem;
+                                      
+                                      if (erro) {
+                                        // Se for string, mostrar diretamente
+                                        if (typeof erro === "string") {
+                                          return erro;
+                                        }
+                                        // Se for objeto, tentar extrair mensagem
+                                        if (typeof erro === "object" && erro.message) {
+                                          return erro.message;
+                                        }
+                                      }
+                                      
+                                      // Mensagem padrão se não houver erro específico
+                                      return "Ocorreu um erro ao processar a análise. Tente novamente ou entre em contato com o suporte.";
+                                    })()}
+                                  </div>
+                                  {(relatorio.resultado_final?.motivo || relatorio.resultado_final?.tempo_decorrido) && (
+                                    <div className="pt-1 border-t border-gray-300 space-y-1">
+                                      {relatorio.resultado_final?.motivo && (
+                                        <p className="text-xs text-gray-600">
+                                          <span className="font-medium text-gray-800">Motivo:</span> {relatorio.resultado_final.motivo}
+                                        </p>
+                                      )}
+                                      {relatorio.resultado_final?.tempo_decorrido && (
+                                        <p className="text-xs text-gray-600">
+                                          <span className="font-medium text-gray-800">Tempo decorrido:</span> {relatorio.resultado_final.tempo_decorrido}
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
                           ) : (
-                            <Badge className={getStatusColor(relatorio.status)}>
+                            <Badge 
+                              className={`${getStatusColor(relatorio.status)} cursor-default`}
+                              style={{ 
+                                transition: "none",
+                                backgroundColor: "rgb(220 252 231)",
+                                color: "rgb(22 101 52)"
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = "rgb(220 252 231)";
+                              }}
+                            >
                               <div className="flex items-center space-x-1">
                                 {getStatusIcon(relatorio.status)}
-                                <span>
-                                  {relatorio.status === "concluido"
-                                    ? "Concluído"
-                                    : relatorio.status === "processando"
-                                    ? "Processando"
-                                    : "Erro"}
-                                </span>
+                                <span>Concluído</span>
                               </div>
                             </Badge>
                           )}
@@ -721,12 +990,15 @@ const AnaliseIA = () => {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() =>
-                                      window.open(
-                                        relatorio.relatorio_pdf,
-                                        "_blank"
-                                      )
-                                    }
+                                    onClick={() => {
+                                      if (relatorio.relatorio_pdf) {
+                                        window.open(
+                                          relatorio.relatorio_pdf,
+                                          "_blank"
+                                        );
+                                      }
+                                    }}
+                                    disabled={!relatorio.relatorio_pdf}
                                     title="Visualizar análise PDF"
                                     className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
                                   >
@@ -736,10 +1008,12 @@ const AnaliseIA = () => {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => {
-                                      downloadFile(
-                                        relatorio.relatorio_pdf,
-                                        `analise_${relatorio.nome_arquivo}.pdf`
-                                      );
+                                      if (relatorio.relatorio_pdf) {
+                                        downloadFile(
+                                          relatorio.relatorio_pdf,
+                                          `analise_${relatorio.nome_arquivo || relatorio.id}.pdf`
+                                        );
+                                      }
                                     }}
                                     title="Download análise PDF"
                                     className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
@@ -754,12 +1028,15 @@ const AnaliseIA = () => {
                                     <Button
                                       variant="ghost"
                                       size="sm"
-                                      onClick={() =>
-                                        window.open(
-                                          relatorio.relatorio_doc,
-                                          "_blank"
-                                        )
-                                      }
+                                      onClick={() => {
+                                        if (relatorio.relatorio_doc) {
+                                          window.open(
+                                            relatorio.relatorio_doc,
+                                            "_blank"
+                                          );
+                                        }
+                                      }}
+                                      disabled={!relatorio.relatorio_doc}
                                       title="Visualizar análise DOC"
                                       className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
                                     >
@@ -769,11 +1046,14 @@ const AnaliseIA = () => {
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => {
-                                        downloadFile(
-                                          relatorio.relatorio_doc,
-                                          `analise_${relatorio.nome_arquivo}.doc`
-                                        );
+                                        if (relatorio.relatorio_doc) {
+                                          downloadFile(
+                                            relatorio.relatorio_doc,
+                                            `analise_${relatorio.nome_arquivo || relatorio.id}.doc`
+                                          );
+                                        }
                                       }}
+                                      disabled={!relatorio.relatorio_doc}
                                       title="Download análise DOC"
                                       className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
                                     >
@@ -803,11 +1083,14 @@ const AnaliseIA = () => {
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => {
-                                        downloadFile(
-                                          relatorio.arquivo_resultado,
-                                          `analise_${relatorio.nome_arquivo}`
-                                        );
+                                        if (relatorio.arquivo_resultado) {
+                                          downloadFile(
+                                            relatorio.arquivo_resultado,
+                                            `analise_${relatorio.nome_arquivo || relatorio.id}`
+                                          );
+                                        }
                                       }}
+                                      disabled={!relatorio.arquivo_resultado}
                                       title="Download análise"
                                       className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
                                     >
@@ -830,15 +1113,16 @@ const AnaliseIA = () => {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TooltipProvider>
             )}
           </CardContent>
         </Card>
 
         {/* Estatísticas de Uso */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
@@ -864,7 +1148,9 @@ const AnaliseIA = () => {
             <CardContent>
               <div className="text-2xl font-bold">{metricas.tempoMedio}</div>
               <p className="text-xs text-muted-foreground">
-                Por documento processado
+                {metricas.tempoMedio === "N/A"
+                  ? "Aguardando análises concluídas"
+                  : "Por documento processado"}
               </p>
             </CardContent>
           </Card>
@@ -881,21 +1167,6 @@ const AnaliseIA = () => {
               <p className="text-xs text-muted-foreground">
                 Análises bem-sucedidas
               </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Webhooks Ativos
-              </CardTitle>
-              <Webhook className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {metricas.webhooksAtivos}
-              </div>
-              <p className="text-xs text-muted-foreground">Integrações N8N</p>
             </CardContent>
           </Card>
         </div>

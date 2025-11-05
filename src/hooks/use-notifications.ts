@@ -274,14 +274,18 @@ export const useNotifications = () => {
       }
 
       // Agrupar por tipo e metadata para identificar duplicatas
-      const grupos = new Map();
+      const grupos = new Map<string, Notificacao[]>();
 
       notificacoesDuplicadas?.forEach((notif) => {
+        if (!notif) return;
         const chave = `${notif.tipo}_${JSON.stringify(notif.metadata)}`;
         if (!grupos.has(chave)) {
           grupos.set(chave, []);
         }
-        grupos.get(chave).push(notif);
+        const grupo = grupos.get(chave);
+        if (grupo) {
+          grupo.push(notif as Notificacao);
+        }
       });
 
       // Remover duplicatas, mantendo apenas a mais recente
@@ -289,14 +293,14 @@ export const useNotifications = () => {
         if (grupo.length > 1) {
           // Ordenar por data de criação (mais recente primeiro)
           grupo.sort(
-            (a, b) =>
-              new Date(b.created_at).getTime() -
-              new Date(a.created_at).getTime()
+            (a: Notificacao, b: Notificacao) =>
+              new Date(b.created_at || 0).getTime() -
+              new Date(a.created_at || 0).getTime()
           );
 
           // Manter apenas a primeira (mais recente) e remover as outras
           const duplicatas = grupo.slice(1);
-          const idsParaRemover = duplicatas.map((d) => d.id);
+          const idsParaRemover = duplicatas.map((d: Notificacao) => d.id);
 
           if (idsParaRemover.length > 0) {
             const { error: deleteError } = await supabase

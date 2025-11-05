@@ -25,9 +25,14 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Search, FileText } from "lucide-react";
+import { Search, FileText, AlertCircle, CheckCircle, XCircle, User, Building2, Calendar, Hash, Shield, ShieldCheck, AlertTriangle } from "lucide-react";
 import { formatCPFCNPJ, isValidCPF, isValidCNPJ } from "@/lib/formatters";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/auth-context";
+import { useCNIBToken } from "@/hooks/use-cnib-token";
+import { supabase } from "@/lib/supabase";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 
 const cnibConsultaSchema = z.object({
   cpfCnpj: z
@@ -46,11 +51,50 @@ const cnibConsultaSchema = z.object({
 
 type CNIBConsultaFormData = z.infer<typeof cnibConsultaSchema>;
 
+interface CNIBResultado {
+  success: boolean;
+  data?: {
+    documento?: string;
+    nomeRazao?: string;
+    nome?: string;
+    razaoSocial?: string;
+    indisponivel?: boolean;
+    qtdOrdens?: number;
+    quantidadeOrdens?: number;
+    protocolos?: any[];
+    hash?: string;
+    identifierRequest?: string;
+    data?: string;
+    dados_usuario?: {
+      hash?: string;
+      data?: string;
+      nome?: string;
+      documento?: string;
+      organizacao?: string;
+      filtros?: any;
+    };
+    dadosUsuario?: {
+      hash?: string;
+      data?: string;
+      nome?: string;
+      documento?: string;
+      organizacao?: string;
+      filtros?: any;
+    };
+    [key: string]: any; // Permite campos adicionais dinâmicos da API
+  };
+  error?: string;
+  details?: string;
+}
+
 const CNIBPage = () => {
+  const { user } = useAuth();
+  const { token, loading: tokenLoading, isTokenValid, error: tokenError } = useCNIBToken();
   const [isConsulting, setIsConsulting] = useState(false);
   const [consultedDocument, setConsultedDocument] = useState<string | null>(
     null
   );
+  const [resultado, setResultado] = useState<CNIBResultado | null>(null);
 
   const form = useForm<CNIBConsultaFormData>({
     resolver: zodResolver(cnibConsultaSchema),
@@ -104,21 +148,172 @@ const CNIBPage = () => {
       return;
     }
 
+    // Verificar se o token está disponível
+    if (!isTokenValid) {
+      toast.error("Token CNIB não disponível", {
+        description: "O token CNIB não está disponível ou expirou. Aguarde alguns instantes ou verifique a configuração do webhook.",
+        duration: 5000,
+      });
+      return;
+    }
+
     setIsConsulting(true);
     setConsultedDocument(data.cpfCnpj);
+    setResultado(null);
 
-    // Simular delay de consulta (será substituído por chamada real à API)
-    setTimeout(() => {
-      setIsConsulting(false);
-      toast.success("Consulta realizada com sucesso", {
-        description: "Resultados carregados (simulação)",
+    try {
+      // Obter token de acesso da sessão do Supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        throw new Error("Sessão não encontrada. Faça login novamente.");
+      }
+
+      // Fazer requisição para a API de consulta CNIB
+      const response = await fetch("/api/cnib/consultar", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`,
+        },
+        credentials: "include", // Incluir cookies na requisição
+        body: JSON.stringify({
+          documento: numbers,
+        }),
       });
-    }, 2000);
+
+      // Ler a resposta como texto primeiro para debug
+      const responseText = await response.text();
+      console.log("📥 Resposta bruta da API:", {
+        status: response.status,
+        statusText: response.statusText,
+        contentType: response.headers.get("content-type"),
+        textLength: responseText.length,
+        textPreview: responseText.substring(0, 200),
+      });
+
+      let result: CNIBResultado;
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("❌ Erro ao parsear JSON da resposta:", parseError);
+        console.error("📄 Resposta completa:", responseText);
+        throw new Error(`Resposta inválida da API: ${responseText.substring(0, 100)}`);
+      }
+
+      if (!response.ok) {
+        // Mensagem de erro mais detalhada
+        const errorMessage = result.error || result.details || "Erro ao consultar CNIB";
+        const solution = (result as any).solution || (result as any).hint || "";
+        
+        // Log detalhado para debug
+        console.error("❌ Erro na resposta da API:", {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorMessage,
+          details: result.details,
+          hint: (result as any).hint,
+          fullResult: result,
+        });
+        
+        if (errorMessage.includes("Configuração incompleta")) {
+          toast.error(errorMessage, {
+            description: solution || "Configure a variável CNIB_CPF_USUARIO no arquivo .env.local",
+            duration: 8000,
+          });
+        } else if (errorMessage.includes("Token CNIB não disponível")) {
+          toast.error(errorMessage, {
+            description: solution || "Verifique se o webhook N8N está configurado e acessível",
+            duration: 8000,
+          });
+        } else if (errorMessage.includes("Erro ao conectar")) {
+          toast.error(errorMessage, {
+            description: solution || "Verifique sua conexão com a internet e se a API CNIB está acessível",
+            duration: 8000,
+          });
+        } else {
+          toast.error(errorMessage, {
+            description: solution || result.details || "Erro desconhecido na consulta CNIB",
+            duration: 8000,
+          });
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      // A API retorna { success: true, data: {...} }
+      // onde data contém a resposta completa da API CNIB
+      // A estrutura da API CNIB é: { data: { documento, nomeRazao, ... }, identifierRequest, success, message, status }
+      console.log("📦 Dados recebidos da API (completo):", JSON.stringify(result, null, 2));
+      
+      // Ajustar estrutura: result.data contém a resposta da API CNIB
+      // A resposta da API CNIB pode ter estrutura: { documento, nomeRazao, dados_usuario, ... } ou { data: { ... } }
+      const cnibResponse = result.data;
+      console.log("📦 Estrutura CNIB:", {
+        hasData: !!cnibResponse,
+        keys: cnibResponse ? Object.keys(cnibResponse) : [],
+        fullObject: cnibResponse,
+      });
+      
+      // A resposta da API CNIB pode ter os dados diretamente ou dentro de um campo 'data'
+      // Se tiver um campo 'data' dentro, usamos ele, senão usamos o objeto diretamente
+      let consultaData: any = cnibResponse;
+      
+      // Se a resposta tem um campo 'data', extrair ele
+      if (cnibResponse && typeof cnibResponse === 'object' && 'data' in cnibResponse && cnibResponse.data && typeof cnibResponse.data === 'object') {
+        consultaData = cnibResponse.data;
+        console.log("📦 Dados extraídos de cnibResponse.data:", consultaData);
+      } else {
+        console.log("📦 Usando cnibResponse diretamente:", consultaData);
+      }
+      
+      // Log detalhado de todos os campos disponíveis
+      const consultaDataAny = consultaData as any;
+      console.log("📦 Campos disponíveis em consultaData:", {
+        documento: consultaDataAny?.documento,
+        nomeRazao: consultaDataAny?.nomeRazao,
+        nome: consultaDataAny?.nome,
+        razaoSocial: consultaDataAny?.razaoSocial,
+        indisponivel: consultaDataAny?.indisponivel,
+        qtdOrdens: consultaDataAny?.qtdOrdens,
+        quantidadeOrdens: consultaDataAny?.quantidadeOrdens,
+        protocolos: consultaDataAny?.protocolos,
+        dados_usuario: consultaDataAny?.dados_usuario,
+        dadosUsuario: consultaDataAny?.dadosUsuario,
+        hash: consultaDataAny?.hash,
+        identifierRequest: consultaDataAny?.identifierRequest,
+        allKeys: consultaDataAny ? Object.keys(consultaDataAny) : [],
+      });
+      
+      setResultado({
+        success: result.success,
+        data: consultaData, // Dados da consulta (documento, nomeRazao, dados_usuario, etc)
+      });
+      toast.success("Consulta realizada com sucesso", {
+        description: "Resultados carregados",
+      });
+    } catch (error) {
+      console.error("Erro ao consultar CNIB:", error);
+      const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
+      
+      setResultado({
+        success: false,
+        error: errorMessage,
+      });
+
+      toast.error("Erro ao consultar CNIB", {
+        description: errorMessage,
+        duration: 5000,
+      });
+    } finally {
+      setIsConsulting(false);
+    }
   };
 
   const handleNovaConsulta = () => {
     form.reset();
     setConsultedDocument(null);
+    setResultado(null);
   };
 
   return (
@@ -230,16 +425,262 @@ const CNIBPage = () => {
                         Consultando CNIB...
                       </p>
                     </div>
+                  ) : resultado ? (
+                    <div className="space-y-6">
+                      {resultado.success && resultado.data ? (
+                        <>
+                          {/* Status Principal */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-green-600">
+                              <CheckCircle className="h-5 w-5" />
+                              <span className="font-medium">Consulta realizada com sucesso</span>
+                            </div>
+                            {resultado.data.indisponivel !== undefined && (
+                              <Badge 
+                                variant={resultado.data.indisponivel ? "destructive" : "default"}
+                                className="text-sm px-3 py-1"
+                              >
+                                {resultado.data.indisponivel ? (
+                                  <>
+                                    <AlertTriangle className="h-4 w-4 mr-1" />
+                                    Indisponível
+                                  </>
+                                ) : (
+                                  <>
+                                    <ShieldCheck className="h-4 w-4 mr-1" />
+                                    Disponível
+                                  </>
+                                )}
+                              </Badge>
+                            )}
+                          </div>
+
+                          <Separator />
+
+                          {/* Informações do Documento Consultado */}
+                          <div className="space-y-4">
+                            <h3 className="text-lg font-semibold flex items-center gap-2">
+                              <FileText className="h-5 w-5 text-blue-600" />
+                              Informações do Documento
+                            </h3>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="bg-muted/50 rounded-lg p-4">
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                                  <FileText className="h-4 w-4" />
+                                  Documento
+                                </div>
+                                <p className="font-semibold text-lg">
+                                  {consultedDocument || resultado.data?.documento || "N/A"}
+                                </p>
+                              </div>
+
+                              <div className="bg-muted/50 rounded-lg p-4">
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                                  <User className="h-4 w-4" />
+                                  Nome / Razão Social
+                                </div>
+                                <p className="font-semibold text-lg">
+                                  {resultado.data?.nomeRazao || resultado.data?.nome || resultado.data?.razaoSocial || "N/A"}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Status de Indisponibilidade e Ordens */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <Card className="bg-muted/30">
+                              <CardContent className="pt-6">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="text-sm text-muted-foreground mb-1">Status</p>
+                                    <p className="text-2xl font-bold">
+                                      {resultado.data?.indisponivel ? (
+                                        <span className="text-red-600">Indisponível</span>
+                                      ) : (
+                                        <span className="text-green-600">Disponível</span>
+                                      )}
+                                    </p>
+                                  </div>
+                                  {resultado.data?.indisponivel ? (
+                                    <Shield className="h-8 w-8 text-red-600" />
+                                  ) : (
+                                    <ShieldCheck className="h-8 w-8 text-green-600" />
+                                  )}
+                                </div>
+                              </CardContent>
+                            </Card>
+
+                            <Card className="bg-muted/30">
+                              <CardContent className="pt-6">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="text-sm text-muted-foreground mb-1">Quantidade de Ordens</p>
+                                    <p className="text-2xl font-bold">
+                                      {resultado.data?.qtdOrdens ?? resultado.data?.quantidadeOrdens ?? 0}
+                                    </p>
+                                  </div>
+                                  <AlertCircle className="h-8 w-8 text-blue-600" />
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </div>
+
+                          {/* Protocolos */}
+                          {resultado.data?.protocolos && resultado.data.protocolos.length > 0 && (
+                            <div className="space-y-4">
+                              <h3 className="text-lg font-semibold flex items-center gap-2">
+                                <FileText className="h-5 w-5 text-orange-600" />
+                                Protocolos ({resultado.data.protocolos.length})
+                              </h3>
+                              <div className="space-y-2">
+                                {resultado.data.protocolos.map((protocolo: any, index: number) => (
+                                  <Card key={index} className="bg-orange-50 border-orange-200">
+                                    <CardContent className="pt-4">
+                                      <pre className="text-sm overflow-auto">
+                                        {JSON.stringify(protocolo, null, 2)}
+                                      </pre>
+                                    </CardContent>
+                                  </Card>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Dados da Consulta */}
+                          <Separator />
+                          <div className="space-y-4">
+                            <h3 className="text-lg font-semibold flex items-center gap-2">
+                              <Building2 className="h-5 w-5 text-purple-600" />
+                              Dados da Consulta
+                            </h3>
+                            
+                            <Card className="bg-muted/30">
+                              <CardContent className="pt-6 space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  {/* Hash da Consulta - Sempre exibir se disponível */}
+                                  {(resultado.data?.dados_usuario?.hash || resultado.data?.hash || resultado.data?.identifierRequest) && (
+                                    <div className="md:col-span-2">
+                                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                                        <Hash className="h-4 w-4" />
+                                        Hash da Consulta
+                                      </div>
+                                      <p className="font-mono text-sm bg-muted p-2 rounded break-all">
+                                        {resultado.data?.dados_usuario?.hash || resultado.data?.hash || resultado.data?.identifierRequest || "N/A"}
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {/* Data, Hora, Minuto e Segundo - Sempre exibir se disponível */}
+                                  {(resultado.data?.dados_usuario?.data || resultado.data?.data) && (
+                                    <div className="md:col-span-2">
+                                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                                        <Calendar className="h-4 w-4" />
+                                        Data e Hora da Consulta
+                                      </div>
+                                      <p className="font-medium text-lg">
+                                        {resultado.data?.dados_usuario?.data || resultado.data?.data || "N/A"}
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {/* Se não houver hash ou data, mostrar mensagem ou dados brutos para debug */}
+                                  {!(resultado.data?.dados_usuario?.hash || resultado.data?.hash || resultado.data?.identifierRequest || resultado.data?.dados_usuario?.data || resultado.data?.data) && (
+                                    <div className="md:col-span-2 space-y-2">
+                                      <p className="text-sm text-muted-foreground italic">
+                                        Dados adicionais da consulta não disponíveis na resposta da API.
+                                      </p>
+                                      {/* Debug: mostrar estrutura completa dos dados */}
+                                      {process.env.NODE_ENV === 'development' && (
+                                        <details className="mt-2">
+                                          <summary className="text-xs text-muted-foreground cursor-pointer">
+                                            Ver estrutura completa dos dados (debug)
+                                          </summary>
+                                          <pre className="mt-2 text-xs bg-muted p-2 rounded overflow-auto max-h-60">
+                                            {JSON.stringify(resultado.data, null, 2)}
+                                          </pre>
+                                        </details>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Nome do Usuário */}
+                                  {(resultado.data?.dados_usuario?.nome || resultado.data?.dadosUsuario?.nome) && (
+                                    <div>
+                                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                                        <User className="h-4 w-4" />
+                                        Usuário
+                                      </div>
+                                      <p className="font-medium">
+                                        {resultado.data?.dados_usuario?.nome || resultado.data?.dadosUsuario?.nome || "N/A"}
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {/* CPF do Usuário */}
+                                  {(resultado.data?.dados_usuario?.documento || resultado.data?.dadosUsuario?.documento) && (
+                                    <div>
+                                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                                        <FileText className="h-4 w-4" />
+                                        CPF do Usuário
+                                      </div>
+                                      <p className="font-medium">
+                                        {resultado.data?.dados_usuario?.documento || resultado.data?.dadosUsuario?.documento || "N/A"}
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {/* Organização */}
+                                  {resultado.data?.dados_usuario?.organizacao && (
+                                    <div className="md:col-span-2">
+                                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                                        <Building2 className="h-4 w-4" />
+                                        Organização
+                                      </div>
+                                      <p className="font-medium">
+                                        {resultado.data.dados_usuario.organizacao}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2 text-red-600">
+                            <XCircle className="h-5 w-5" />
+                            <span className="font-medium">Erro na consulta</span>
+                          </div>
+                          <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                            <p className="text-sm text-red-800">
+                              <strong>Erro:</strong> {resultado.error || "Erro desconhecido"}
+                            </p>
+                            {resultado.details && (
+                              <p className="text-sm text-red-600 mt-2">
+                                {resultado.details}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <div className="text-center py-12">
                       <p className="text-muted-foreground">
-                        Área de resultados será exibida aqui após a integração
-                        com a API do CNIB
+                        Os resultados da consulta aparecerão aqui após a pesquisa
                       </p>
-                      <p className="text-sm text-muted-foreground mt-2">
-                        Estrutura preparada para receber dados de
-                        indisponibilidade de bens
-                      </p>
+                      {!isTokenValid && !tokenLoading && (
+                        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                          <div className="flex items-center gap-2 text-yellow-800">
+                            <AlertCircle className="h-4 w-4" />
+                            <span className="text-sm">
+                              Token CNIB não disponível. {tokenError || "Aguarde alguns instantes ou verifique a configuração do webhook."}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </CardContent>
