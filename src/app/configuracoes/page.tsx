@@ -64,9 +64,10 @@ import { useAuth } from "@/contexts/auth-context";
 import { useState as useStateAuth, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useCategoriasPersonalizadas } from "@/hooks/use-categorias-personalizadas";
-import { formatCurrency, parseCurrency } from "@/lib/formatters";
+import { formatCurrency, parseCurrency, formatPhone } from "@/lib/formatters";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { StaggeredCards, FadeInUp } from "@/components/ui/page-transition";
+import { Smartphone, Receipt, Clipboard } from "lucide-react";
 
 const Configuracoes = () => {
   const [activeTab, setActiveTab] = useState("cartorio");
@@ -151,7 +152,9 @@ const Configuracoes = () => {
     telefone: "(11) 3333-4444",
     email: "contato@cartorio1oficio.com.br",
     diasAlertaVencimento: 3,
-    notificacaoWhatsApp: true,
+    notificacaoWhatsApp: false,
+    whatsappContas: "",
+    whatsappProtocolos: "",
     webhookN8N: "https://webhook.n8n.io/cartorio-123",
   });
 
@@ -682,6 +685,78 @@ const Configuracoes = () => {
                       Habilitar notificações via WhatsApp
                     </Label>
                   </div>
+
+                  {/* Configurações de WhatsApp - Exibido apenas quando habilitado */}
+                  {configCartorio.notificacaoWhatsApp && (
+                    <FadeInUp delay={50}>
+                      <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-4">
+                        <div className="flex items-center space-x-2 mb-3">
+                          <Smartphone className="h-5 w-5 text-green-600" />
+                          <h4 className="text-sm font-semibold">
+                            Configurações de WhatsApp
+                          </h4>
+                        </div>
+                        <p className="text-xs text-gray-600 mb-4">
+                          Configure números de WhatsApp para receber notificações por
+                          categoria. Você pode definir números diferentes para cada tipo
+                          de notificação.
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Campo WhatsApp Contas a Pagar */}
+                          <div className="space-y-2">
+                            <div className="flex items-center space-x-2">
+                              <Receipt className="h-4 w-4 text-red-600" />
+                              <Label className="text-sm font-medium">
+                                WhatsApp para Contas a Pagar
+                              </Label>
+                            </div>
+                            <Input
+                              placeholder="(00) 00000-0000"
+                              value={configCartorio.whatsappContas}
+                              onChange={(e) => {
+                                const formatted = formatPhone(e.target.value);
+                                setConfigCartorio((prev) => ({
+                                  ...prev,
+                                  whatsappContas: formatted,
+                                }));
+                              }}
+                              className="w-full"
+                            />
+                            <p className="text-xs text-gray-500">
+                              Número de WhatsApp para receber notificações sobre contas
+                              a pagar e vencimentos
+                            </p>
+                          </div>
+
+                          {/* Campo WhatsApp Protocolos */}
+                          <div className="space-y-2">
+                            <div className="flex items-center space-x-2">
+                              <Clipboard className="h-4 w-4 text-blue-600" />
+                              <Label className="text-sm font-medium">
+                                WhatsApp para Protocolos
+                              </Label>
+                            </div>
+                            <Input
+                              placeholder="(00) 00000-0000"
+                              value={configCartorio.whatsappProtocolos}
+                              onChange={(e) => {
+                                const formatted = formatPhone(e.target.value);
+                                setConfigCartorio((prev) => ({
+                                  ...prev,
+                                  whatsappProtocolos: formatted,
+                                }));
+                              }}
+                              className="w-full"
+                            />
+                            <p className="text-xs text-gray-500">
+                              Número de WhatsApp para receber notificações sobre
+                              protocolos criados e atualizados
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </FadeInUp>
+                  )}
                 </div>
               </div>
 
