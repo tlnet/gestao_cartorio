@@ -527,10 +527,16 @@ export const useRelatoriosIA = () => {
       // 1. Upload dos arquivos
       const arquivosUrls: string[] = [];
       const arquivosArray = Array.isArray(arquivos) ? arquivos : [arquivos];
+      // Array para armazenar arquivos com nome e URL juntos
+      const arquivosCompletos: Array<{ nome: string; url: string }> = [];
 
       for (const arquivo of arquivosArray) {
         const arquivoUrl = await uploadFile(arquivo);
         arquivosUrls.push(arquivoUrl);
+        arquivosCompletos.push({
+          nome: arquivo.name,
+          url: arquivoUrl,
+        });
         console.log(`Arquivo ${arquivo.name} enviado para:`, arquivoUrl);
       }
 
@@ -607,9 +613,13 @@ export const useRelatoriosIA = () => {
       }
 
       // 4. Preparar payload específico por tipo
+      // Para minuta_documento, enviar arquivos com nome e URL juntos
       const payload = {
         relatorio_id: relatorio.id,
         tipo,
+        // Enviar arquivos com nome e URL juntos para facilitar identificação
+        arquivos: arquivosCompletos,
+        // Manter arquivos_urls e arquivos_originais para compatibilidade com outros tipos
         arquivos_urls: arquivosUrls,
         webhook_callback: `${window.location.origin}/api/ia/webhook`,
         dados_processamento: {
@@ -630,7 +640,8 @@ export const useRelatoriosIA = () => {
       console.log("📦 Payload a ser enviado:", {
         relatorio_id: payload.relatorio_id,
         tipo: payload.tipo,
-        arquivos_count: payload.arquivos_urls?.length || 0,
+        arquivos_count: payload.arquivos?.length || payload.arquivos_urls?.length || 0,
+        arquivos_com_nome: payload.arquivos?.map((a: any) => a.nome) || [],
         webhook_callback: payload.webhook_callback,
       });
 
