@@ -336,9 +336,18 @@ export function useProtocolos(cartorioId?: string) {
                   protocolo_id: id,
                   cartorio_id: cartorioId,
                   fluxo: "status-protocolo",
+                  // Dados adicionais do protocolo
+                  nome_completo_solicitante: protocoloAtual.solicitante,
+                  telefone_solicitante: protocoloAtual.telefone,
+                  servicos_solicitados: protocoloAtual.servicos || [],
+                  numero_demanda: protocoloAtual.demanda,
+                  numero_protocolo: protocoloAtual.protocolo,
                 };
 
-                console.log("📤 Disparando webhook para mudança de status:", payload);
+                console.log("📤 Disparando webhook para mudança de status:", {
+                  ...payload,
+                  servicos_solicitados: payload.servicos_solicitados,
+                });
 
                 // Disparar webhook através da API route (evita CORS)
                 fetch("/api/levontech/webhook", {

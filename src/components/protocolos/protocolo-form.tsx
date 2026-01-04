@@ -318,9 +318,13 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
         return;
       }
 
+      // Buscar o valor do campo "demanda" do formulário
+      const demanda = form.getValues("demanda") || "";
+
       // Preparar payload para webhook
       const payload = {
         numero_protocolo: numeroProtocolo,
+        demanda: demanda,
         cartorio_id: userData.cartorio_id,
         fluxo: "protocolo",
         credenciais_levontech: {
@@ -332,6 +336,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
 
       console.log("📤 Disparando webhook Levontech:", {
         numero_protocolo: numeroProtocolo,
+        demanda: demanda,
         cartorio_id: userData.cartorio_id,
         fluxo: "protocolo",
       });
@@ -435,15 +440,26 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
         try {
           errorData = await response.json();
         } catch {
-          errorData = { error: `Erro ${response.status}: ${response.statusText}` };
+          const errorText = await response.text().catch(() => "Erro desconhecido");
+          errorData = { error: `Erro ${response.status}: ${response.statusText}`, details: errorText };
         }
         
         console.error("Erro na resposta da API:", response.status, errorData);
-        toast.warning(
-          errorData.error 
-            ? `Não foi possível consultar dados no Levontech: ${errorData.error}` 
-            : `Não foi possível consultar dados no Levontech (${response.status}). Preencha os campos manualmente.`
-        );
+        
+        // Mensagem mais específica para erro 404
+        if (response.status === 404) {
+          toast.error(
+            errorData.details 
+              ? `Webhook não encontrado (404): ${errorData.details}. Verifique se a URL está correta.`
+              : "Webhook não encontrado (404). Verifique se a URL do webhook está configurada corretamente."
+          );
+        } else {
+          toast.warning(
+            errorData.error 
+              ? `Não foi possível consultar dados no Levontech: ${errorData.error}` 
+              : `Não foi possível consultar dados no Levontech (${response.status}). Preencha os campos manualmente.`
+          );
+        }
       }
     } catch (error: any) {
       console.error("Erro ao disparar webhook Levontech:", error);
@@ -463,11 +479,11 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Campos Obrigatórios */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-medium">Informações Básicas</h3>
+        {/* Informações Básicas */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium">Informações Básicas</h3>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
               control={form.control}
               name="demanda"
@@ -476,7 +492,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                   <FormLabel>Demanda *</FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="Ex: Certidão de Nascimento"
+                      placeholder="Ex: 000"
                       {...field}
                     />
                   </FormControl>
@@ -546,7 +562,9 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                 </FormItem>
               )}
             />
+          </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
               control={form.control}
               name="status"
@@ -593,11 +611,13 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
               )}
             />
           </div>
+        </div>
 
-          {/* Dados do Solicitante */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-medium">Dados do Solicitante</h3>
+        {/* Dados do Solicitante */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium">Dados do Solicitante</h3>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
               control={form.control}
               name="solicitante"
@@ -635,7 +655,9 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                 </FormItem>
               )}
             />
+          </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
               control={form.control}
               name="telefone"
@@ -677,24 +699,24 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                 </FormItem>
               )}
             />
-
-            <FormField
-              control={form.control}
-              name="apresentante"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Apresentante</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Nome do apresentante (se diferente do solicitante)"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
           </div>
+
+          <FormField
+            control={form.control}
+            name="apresentante"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Apresentante</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="Nome do apresentante (se diferente do solicitante)"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </div>
 
         {/* Serviços */}
