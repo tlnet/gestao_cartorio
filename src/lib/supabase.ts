@@ -58,6 +58,8 @@ export interface Database {
           external_id_zdg: string | null;
           api_token_zdg: string | null;
           channel_id_zdg: string | null;
+          whatsapp_contas: string | null;
+          whatsapp_protocolos: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -80,6 +82,8 @@ export interface Database {
           external_id_zdg?: string | null;
           api_token_zdg?: string | null;
           channel_id_zdg?: string | null;
+          whatsapp_contas?: string | null;
+          whatsapp_protocolos?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -102,6 +106,8 @@ export interface Database {
           external_id_zdg?: string | null;
           api_token_zdg?: string | null;
           channel_id_zdg?: string | null;
+          whatsapp_contas?: string | null;
+          whatsapp_protocolos?: string | null;
           updated_at?: string;
         };
       };
