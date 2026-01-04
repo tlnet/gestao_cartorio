@@ -159,6 +159,41 @@ const Configuracoes = () => {
     fetchUserCartorio();
   }, [user]);
 
+  // Carregar dados do cartório do banco
+  useEffect(() => {
+    const loadCartorioData = async () => {
+      if (!cartorioId) return;
+
+      try {
+        const { data, error } = await supabase
+          .from("cartorios")
+          .select("nome, cnpj, endereco, telefone, email, tenant_id_zdg, dias_alerta_vencimento, notificacao_whatsapp")
+          .eq("id", cartorioId)
+          .single();
+
+        if (error) throw error;
+
+        if (data) {
+          setConfigCartorio((prev) => ({
+            ...prev,
+            nome: data.nome || prev.nome,
+            cnpj: data.cnpj || prev.cnpj,
+            endereco: data.endereco || prev.endereco,
+            telefone: data.telefone || prev.telefone,
+            email: data.email || prev.email,
+            tenantIdZdg: data.tenant_id_zdg || "",
+            diasAlertaVencimento: data.dias_alerta_vencimento || prev.diasAlertaVencimento,
+            notificacaoWhatsApp: data.notificacao_whatsapp || false,
+          }));
+        }
+      } catch (error) {
+        console.error("Erro ao carregar dados do cartório:", error);
+      }
+    };
+
+    loadCartorioData();
+  }, [cartorioId]);
+
   // Carregar configuração do Levontech quando disponível
   useEffect(() => {
     if (!levontechLoading) {
@@ -193,6 +228,7 @@ const Configuracoes = () => {
     endereco: "Rua das Flores, 123 - Centro - São Paulo/SP",
     telefone: "(11) 3333-4444",
     email: "contato@cartorio1oficio.com.br",
+    tenantIdZdg: "",
     diasAlertaVencimento: 3,
     notificacaoWhatsApp: false,
     whatsappContas: "",
@@ -235,8 +271,34 @@ const Configuracoes = () => {
     { id: "integracoes", label: "Integrações", icon: Webhook },
   ];
 
-  const handleSaveCartorio = () => {
-    toast.success("Configurações do cartório salvas com sucesso!");
+  const handleSaveCartorio = async () => {
+    if (!cartorioId) {
+      toast.error("Cartório não identificado");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("cartorios")
+        .update({
+          nome: configCartorio.nome,
+          cnpj: configCartorio.cnpj,
+          endereco: configCartorio.endereco,
+          telefone: configCartorio.telefone,
+          email: configCartorio.email,
+          tenant_id_zdg: configCartorio.tenantIdZdg || null,
+          dias_alerta_vencimento: configCartorio.diasAlertaVencimento,
+          notificacao_whatsapp: configCartorio.notificacaoWhatsApp,
+        })
+        .eq("id", cartorioId);
+
+      if (error) throw error;
+
+      toast.success("Configurações do cartório salvas com sucesso!");
+    } catch (error: any) {
+      console.error("Erro ao salvar configurações do cartório:", error);
+      toast.error("Erro ao salvar configurações: " + (error.message || "Erro desconhecido"));
+    }
   };
 
   const handleAddStatus = async () => {
@@ -723,6 +785,24 @@ const Configuracoes = () => {
                         }))
                       }
                     />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="tenantIdZdg">Tenant ID ZDG</Label>
+                    <Input
+                      id="tenantIdZdg"
+                      value={configCartorio.tenantIdZdg}
+                      onChange={(e) =>
+                        setConfigCartorio((prev) => ({
+                          ...prev,
+                          tenantIdZdg: e.target.value,
+                        }))
+                      }
+                      placeholder="Digite o Tenant ID ZDG"
+                    />
+                    <p className="text-sm text-gray-500 mt-1">
+                      Identificador do tenant para integração com sistema ZDG
+                    </p>
                   </div>
                 </div>
               </div>

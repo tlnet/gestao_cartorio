@@ -54,6 +54,7 @@ export interface Database {
           levontech_url: string | null;
           levontech_username: string | null;
           levontech_password: string | null;
+          tenant_id_zdg: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -72,6 +73,7 @@ export interface Database {
           levontech_url?: string | null;
           levontech_username?: string | null;
           levontech_password?: string | null;
+          tenant_id_zdg?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -90,6 +92,7 @@ export interface Database {
           levontech_url?: string | null;
           levontech_username?: string | null;
           levontech_password?: string | null;
+          tenant_id_zdg?: string | null;
           updated_at?: string;
         };
       };
