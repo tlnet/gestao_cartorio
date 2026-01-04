@@ -787,6 +787,19 @@ const Configuracoes = () => {
                           categoria. Você pode definir números diferentes para cada tipo
                           de notificação.
                         </p>
+                        
+                        {/* Aviso sobre telefone do ChatBot */}
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <AlertCircle className="h-5 w-5 text-yellow-600" />
+                            <span className="font-medium text-yellow-800">
+                              Informação Importante
+                            </span>
+                          </div>
+                          <p className="text-sm text-yellow-700">
+                            O telefone responsável por enviar as mensagens via WhatsApp é o telefone cadastrado dentro do chatbot da IA Cartórios. <strong>Não utilize o telefone cadastrado no chatbot para receber as notificações.</strong>
+                          </p>
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {/* Campo WhatsApp Contas a Pagar */}
                           <div className="space-y-2">
