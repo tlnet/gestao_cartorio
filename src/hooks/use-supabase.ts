@@ -324,6 +324,49 @@ export function useProtocolos(cartorioId?: string) {
             mudancas.push(
               `Status: "${protocoloAtual.status}" → "${updates.status}"`
             );
+
+            // Disparar webhook quando status for alterado
+            try {
+              const cartorioId = protocoloAtual.cartorio_id || data?.cartorio_id;
+              
+              if (cartorioId) {
+                const payload = {
+                  status_anterior: protocoloAtual.status,
+                  status_novo: updates.status,
+                  protocolo_id: id,
+                  cartorio_id: cartorioId,
+                  fluxo: "status-protocolo",
+                };
+
+                console.log("📤 Disparando webhook para mudança de status:", payload);
+
+                // Disparar webhook através da API route (evita CORS)
+                fetch("/api/levontech/webhook", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify(payload),
+                })
+                  .then(async (response) => {
+                    if (response.ok) {
+                      console.log("✅ Webhook de mudança de status disparado com sucesso");
+                    } else {
+                      const errorData = await response.json().catch(() => ({ error: "Erro desconhecido" }));
+                      console.warn("⚠️ Webhook retornou erro:", response.status, errorData);
+                    }
+                  })
+                  .catch((webhookError) => {
+                    // Não bloquear a atualização se o webhook falhar
+                    console.error("❌ Erro ao disparar webhook de mudança de status:", webhookError);
+                  });
+              } else {
+                console.warn("⚠️ Cartório ID não encontrado, webhook não disparado");
+              }
+            } catch (webhookError) {
+              // Não bloquear a atualização se o webhook falhar
+              console.error("Erro ao preparar webhook de mudança de status:", webhookError);
+            }
           }
 
           // Verificar outras mudanças importantes

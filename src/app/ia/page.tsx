@@ -54,6 +54,8 @@ import { useRelatoriosIA, RelatorioIA } from "@/hooks/use-relatorios-ia";
 import { useN8NConfig } from "@/hooks/use-n8n-config";
 import { useAuth } from "@/contexts/auth-context";
 import { supabase } from "@/lib/supabase";
+import { getWebhookUrl as getDefaultWebhookUrl } from "@/lib/webhooks-config";
+import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
 
 const AnaliseIA = () => {
   const { user } = useAuth();
@@ -81,6 +83,7 @@ const AnaliseIA = () => {
     new Set()
   );
   const [openDialogs, setOpenDialogs] = useState<Set<string>>(new Set());
+  const [showConfirmLimparProcessando, setShowConfirmLimparProcessando] = useState(false);
   const [metricas, setMetricas] = useState({
     analisesHoje: 0,
     tempoMedio: "N/A",
@@ -421,24 +424,24 @@ const AnaliseIA = () => {
       // Usar função específica para cada tipo de análise
       if (tipoAnalise === "resumo_matricula") {
         console.log("Processando resumo de matrícula...");
-        const webhookUrl = getWebhookUrl("resumo_matricula");
+        const webhookUrl = getWebhookUrl("resumo_matricula") || getDefaultWebhookUrl("resumo_matricula");
         await processarResumoMatricula(
           file,
           user.id,
           userData.cartorio_id,
-          webhookUrl || undefined
+          webhookUrl
         );
         return;
       }
 
       if (tipoAnalise === "analise_malote") {
         console.log("Processando análise de malote...");
-        const webhookUrl = getWebhookUrl("analise_malote");
+        const webhookUrl = getWebhookUrl("analise_malote") || getDefaultWebhookUrl("analise_malote");
         await processarAnaliseMalote(
           file,
           user.id,
           userData.cartorio_id,
-          webhookUrl || undefined
+          webhookUrl
         );
         return;
       }
@@ -451,41 +454,8 @@ const AnaliseIA = () => {
       const arquivoUrl = await uploadFile(file);
       console.log("Upload concluído, URL:", arquivoUrl);
 
-      // Verificar se o webhook N8N está configurado ANTES de criar o relatório
-      console.log("Verificando configuração do webhook N8N...");
-      if (!n8nConfig?.webhook_url) {
-        toast.error(
-          <div className="space-y-3 p-2">
-            <div className="font-bold text-red-800 text-lg">
-              ⚠️ Webhook N8N não configurado
-            </div>
-            <div className="text-red-700">
-              Para realizar análises de IA, você precisa configurar a URL do
-              webhook N8N primeiro.
-            </div>
-            <div className="pt-2">
-              <a
-                href="/configuracoes"
-                className="inline-block bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors"
-                onClick={(e) => {
-                  e.preventDefault();
-                  window.location.href = "/configuracoes";
-                }}
-              >
-                🔧 Configurar Webhook N8N
-              </a>
-            </div>
-          </div>,
-          {
-            duration: 10000,
-            style: {
-              border: "2px solid #dc2626",
-              backgroundColor: "#fef2f2",
-            },
-          }
-        );
-        return;
-      }
+      // Webhook padrão sempre disponível - não precisa verificar configuração
+      console.log("Usando webhook padrão para análise genérica...");
 
       // Criar relatório no banco APENAS se o webhook estiver configurado
       console.log("Criando relatório no banco...");
@@ -777,13 +747,28 @@ const AnaliseIA = () => {
               </div>
               <div className="flex gap-2">
                 {relatorios.some((r) => r.status === "processando") && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={limparRelatoriosProcessando}
-                  >
-                    🧹 Limpar Processando
-                  </Button>
+                  <>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setShowConfirmLimparProcessando(true)}
+                    >
+                      🧹 Limpar Processando
+                    </Button>
+                    <ConfirmationDialog
+                      open={showConfirmLimparProcessando}
+                      onOpenChange={setShowConfirmLimparProcessando}
+                      onConfirm={async () => {
+                        await limparRelatoriosProcessando();
+                        setShowConfirmLimparProcessando(false);
+                      }}
+                      title="Confirmar Limpeza"
+                      description={`Tem certeza que deseja limpar todos os ${relatorios.filter((r) => r.status === "processando").length} arquivo(s) com status "Processando"? Esta ação não pode ser desfeita.`}
+                      confirmText="Sim, Limpar Todos"
+                      cancelText="Cancelar"
+                      variant="destructive"
+                    />
+                  </>
                 )}
               </div>
             </div>
@@ -875,23 +860,21 @@ const AnaliseIA = () => {
                       <TableCell>
                         <div className="flex items-center space-x-2">
                           {relatorio.status === "processando" ? (
-                            <>
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                              <Badge 
-                                variant="secondary" 
-                                className="cursor-default"
-                                style={{ 
-                                  transition: "none",
-                                  backgroundColor: "rgb(254 249 195)",
-                                  color: "rgb(133 77 14)"
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = "rgb(254 249 195)";
-                                }}
-                              >
-                                Processando...
-                              </Badge>
-                            </>
+                            <Badge 
+                              variant="secondary" 
+                              className="cursor-default flex items-center gap-1.5"
+                              style={{ 
+                                transition: "none",
+                                backgroundColor: "rgb(254 249 195)",
+                                color: "rgb(133 77 14)"
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = "rgb(254 249 195)";
+                              }}
+                            >
+                              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-yellow-700"></div>
+                              Processando...
+                            </Badge>
                           ) : relatorio.status === "erro" ? (
                             <Tooltip>
                               <TooltipTrigger asChild>

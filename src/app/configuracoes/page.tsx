@@ -67,7 +67,8 @@ import { useCategoriasPersonalizadas } from "@/hooks/use-categorias-personalizad
 import { formatCurrency, parseCurrency, formatPhone } from "@/lib/formatters";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { StaggeredCards, FadeInUp } from "@/components/ui/page-transition";
-import { Smartphone, Receipt, Clipboard } from "lucide-react";
+import { Smartphone, Receipt, Clipboard, Database } from "lucide-react";
+import { useLevontechConfig } from "@/hooks/use-levontech-config";
 
 const Configuracoes = () => {
   const [activeTab, setActiveTab] = useState("cartorio");
@@ -98,6 +99,12 @@ const Configuracoes = () => {
     disableConfig,
   } = useN8NConfig();
   const {
+    config: levontechConfig,
+    loading: levontechLoading,
+    saveConfig: saveLevontechConfig,
+    disableConfig: disableLevontechConfig,
+  } = useLevontechConfig();
+  const {
     servicos,
     loading: servicosLoading,
     createServico,
@@ -121,6 +128,14 @@ const Configuracoes = () => {
 
   const [webhookUrl, setWebhookUrl] = useState("");
   const [testingWebhook, setTestingWebhook] = useState(false);
+  
+  // Estados para Levontech
+  const [levontechForm, setLevontechForm] = useState({
+    sistema_levontech: false,
+    levontech_url: "",
+    levontech_username: "",
+    levontech_password: "",
+  });
 
   // Buscar cartório do usuário
   useEffect(() => {
@@ -143,6 +158,33 @@ const Configuracoes = () => {
 
     fetchUserCartorio();
   }, [user]);
+
+  // Carregar configuração do Levontech quando disponível
+  useEffect(() => {
+    if (!levontechLoading) {
+      if (levontechConfig) {
+        console.log("📥 Carregando configuração Levontech no form:", {
+          ...levontechConfig,
+          levontech_password: "***",
+        });
+        setLevontechForm({
+          sistema_levontech: levontechConfig.sistema_levontech === true,
+          levontech_url: levontechConfig.levontech_url || "",
+          levontech_username: levontechConfig.levontech_username || "",
+          levontech_password: levontechConfig.levontech_password || "",
+        });
+      } else {
+        // Se não houver config, resetar form
+        console.log("📥 Nenhuma configuração Levontech encontrada, resetando form");
+        setLevontechForm({
+          sistema_levontech: false,
+          levontech_url: "",
+          levontech_username: "",
+          levontech_password: "",
+        });
+      }
+    }
+  }, [levontechConfig, levontechLoading]);
 
   // Dados mockados
   const [configCartorio, setConfigCartorio] = useState({
@@ -446,6 +488,50 @@ const Configuracoes = () => {
     }
   };
 
+  // Funções para Levontech
+  const handleSaveLevontechConfig = async () => {
+    if (levontechForm.sistema_levontech) {
+      if (!levontechForm.levontech_url.trim()) {
+        toast.error("URL da API é obrigatória");
+        return;
+      }
+      if (!levontechForm.levontech_username.trim()) {
+        toast.error("Username é obrigatório");
+        return;
+      }
+      if (!levontechForm.levontech_password.trim()) {
+        toast.error("Password é obrigatório");
+        return;
+      }
+    }
+
+    try {
+      console.log("💾 Salvando configuração Levontech:", {
+        ...levontechForm,
+        levontech_password: "***",
+      });
+      await saveLevontechConfig(levontechForm);
+      console.log("✅ Configuração salva com sucesso!");
+      // O hook já atualiza o estado, então o useEffect vai recarregar o form
+    } catch (error) {
+      console.error("❌ Erro ao salvar configuração Levontech:", error);
+    }
+  };
+
+  const handleDisableLevontechConfig = async () => {
+    try {
+      await disableLevontechConfig();
+      setLevontechForm({
+        sistema_levontech: false,
+        levontech_url: "",
+        levontech_username: "",
+        levontech_password: "",
+      });
+    } catch (error) {
+      console.error("Erro ao desabilitar configuração Levontech:", error);
+    }
+  };
+
   // Funções para categorias
   const handleAddCategoria = async () => {
     try {
@@ -728,12 +814,12 @@ const Configuracoes = () => {
                             </p>
                           </div>
 
-                          {/* Campo WhatsApp Protocolos */}
+                          {/* Campo WhatsApp Notificação de Prazo */}
                           <div className="space-y-2">
                             <div className="flex items-center space-x-2">
                               <Clipboard className="h-4 w-4 text-blue-600" />
                               <Label className="text-sm font-medium">
-                                WhatsApp para Protocolos
+                                WhatsApp para Notificação de Prazo
                               </Label>
                             </div>
                             <Input
@@ -750,7 +836,7 @@ const Configuracoes = () => {
                             />
                             <p className="text-xs text-gray-500">
                               Número de WhatsApp para receber notificações sobre
-                              protocolos criados e atualizados
+                              prazos de protocolos
                             </p>
                           </div>
                         </div>
@@ -1424,7 +1510,7 @@ const Configuracoes = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Webhook className="h-5 w-5" />
-                Integrações e Webhooks
+                Integrações
               </CardTitle>
               <CardDescription>
                 Configure as integrações com sistemas externos
@@ -1433,10 +1519,10 @@ const Configuracoes = () => {
             <CardContent className="space-y-6">
               <div>
                 <h3 className="text-lg font-medium mb-4">
-                  N8N Webhook - Análise de IA
+                  Sistema Levontech
                 </h3>
 
-                {n8nLoading ? (
+                {levontechLoading ? (
                   <div className="space-y-4">
                     <Skeleton className="h-10 w-full" />
                     <Skeleton className="h-8 w-32" />
@@ -1444,46 +1530,25 @@ const Configuracoes = () => {
                 ) : (
                   <div className="space-y-4">
                     {/* Status da Configuração */}
-                    {n8nConfig ? (
+                    {levontechConfig?.sistema_levontech ? (
                       <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                         <div className="flex items-center gap-2 mb-2">
                           <CheckCircle className="h-5 w-5 text-green-600" />
                           <span className="font-medium text-green-800">
-                            Webhook N8N Configurado
+                            Sistema Levontech Configurado
                           </span>
                         </div>
                         <p className="text-sm text-green-700 mb-2">
-                          <strong>URL:</strong> {n8nConfig.webhook_url}
+                          <strong>URL:</strong> {levontechConfig.levontech_url}
                         </p>
-                        <p className="text-sm text-green-700 mb-3">
-                          <strong>Configurado em:</strong>{" "}
-                          {new Date(n8nConfig.created_at).toLocaleString(
-                            "pt-BR"
-                          )}
+                        <p className="text-sm text-green-700 mb-2">
+                          <strong>Username:</strong> {levontechConfig.levontech_username}
                         </p>
                         <div className="flex gap-2">
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={handleTestN8NWebhook}
-                            disabled={testingWebhook}
-                          >
-                            {testingWebhook ? (
-                              <>
-                                <AlertCircle className="mr-2 h-4 w-4 animate-spin" />
-                                Testando...
-                              </>
-                            ) : (
-                              <>
-                                <CheckCircle className="mr-2 h-4 w-4" />
-                                Testar Conexão
-                              </>
-                            )}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleDisableN8NConfig}
+                            onClick={handleDisableLevontechConfig}
                           >
                             <XCircle className="mr-2 h-4 w-4" />
                             Desabilitar
@@ -1495,98 +1560,111 @@ const Configuracoes = () => {
                         <div className="flex items-center gap-2 mb-2">
                           <AlertCircle className="h-5 w-5 text-yellow-600" />
                           <span className="font-medium text-yellow-800">
-                            Webhook N8N Não Configurado
+                            Sistema Levontech Não Configurado
                           </span>
                         </div>
                         <p className="text-sm text-yellow-700 mb-4">
-                          Configure a URL do webhook N8N para habilitar as
-                          funcionalidades de análise de IA.
+                          Configure as credenciais da API do Levontech para habilitar a integração.
                         </p>
                       </div>
                     )}
 
                     {/* Formulário de Configuração */}
                     <div className="space-y-4">
-                      <div>
-                        <Label htmlFor="webhookN8N">URL do Webhook N8N</Label>
-                        <Input
-                          id="webhookN8N"
-                          value={webhookUrl}
-                          onChange={(e) => setWebhookUrl(e.target.value)}
-                          placeholder="https://webhook.n8n.io/seu-webhook"
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id="sistemaLevontech"
+                          checked={levontechForm.sistema_levontech}
+                          onCheckedChange={(checked) =>
+                            setLevontechForm((prev) => ({
+                              ...prev,
+                              sistema_levontech: checked,
+                            }))
+                          }
                         />
-                        <p className="text-sm text-gray-500 mt-1">
-                          URL para envio de documentos para análise de IA via
-                          N8N
-                        </p>
+                        <Label htmlFor="sistemaLevontech">
+                          Utilizar Sistema Levontech
+                        </Label>
                       </div>
 
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={handleSaveN8NConfig}
-                          disabled={!webhookUrl.trim()}
-                        >
-                          <Save className="mr-2 h-4 w-4" />
-                          {n8nConfig
-                            ? "Atualizar Configuração"
-                            : "Salvar Configuração"}
-                        </Button>
+                      {levontechForm.sistema_levontech && (
+                        <FadeInUp delay={50}>
+                          <div className="space-y-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                            <div>
+                              <Label htmlFor="levontechUrl">URL da API</Label>
+                              <Input
+                                id="levontechUrl"
+                                type="url"
+                                value={levontechForm.levontech_url}
+                                onChange={(e) =>
+                                  setLevontechForm((prev) => ({
+                                    ...prev,
+                                    levontech_url: e.target.value,
+                                  }))
+                                }
+                                placeholder="https://api.levontech.com.br"
+                              />
+                              <p className="text-sm text-gray-500 mt-1">
+                                URL base da API do sistema Levontech
+                              </p>
+                            </div>
 
-                        {webhookUrl && (
-                          <Button
-                            variant="outline"
-                            onClick={handleTestN8NWebhook}
-                            disabled={testingWebhook}
-                          >
-                            {testingWebhook ? (
-                              <>
-                                <AlertCircle className="mr-2 h-4 w-4 animate-spin" />
-                                Testando...
-                              </>
-                            ) : (
-                              <>
-                                <CheckCircle className="mr-2 h-4 w-4" />
-                                Testar Conexão
-                              </>
-                            )}
-                          </Button>
-                        )}
-                      </div>
+                            <div>
+                              <Label htmlFor="levontechUsername">Username</Label>
+                              <Input
+                                id="levontechUsername"
+                                value={levontechForm.levontech_username}
+                                onChange={(e) =>
+                                  setLevontechForm((prev) => ({
+                                    ...prev,
+                                    levontech_username: e.target.value,
+                                  }))
+                                }
+                                placeholder="Seu username"
+                              />
+                              <p className="text-sm text-gray-500 mt-1">
+                                Username para autenticação na API
+                              </p>
+                            </div>
+
+                            <div>
+                              <Label htmlFor="levontechPassword">Password</Label>
+                              <Input
+                                id="levontechPassword"
+                                type="password"
+                                value={levontechForm.levontech_password}
+                                onChange={(e) =>
+                                  setLevontechForm((prev) => ({
+                                    ...prev,
+                                    levontech_password: e.target.value,
+                                  }))
+                                }
+                                placeholder="Sua senha"
+                              />
+                              <p className="text-sm text-gray-500 mt-1">
+                                Password para autenticação na API
+                              </p>
+                            </div>
+
+                            <Button
+                              onClick={handleSaveLevontechConfig}
+                              disabled={
+                                !levontechForm.levontech_url.trim() ||
+                                !levontechForm.levontech_username.trim() ||
+                                !levontechForm.levontech_password.trim()
+                              }
+                            >
+                              <Save className="mr-2 h-4 w-4" />
+                              {levontechConfig?.sistema_levontech
+                                ? "Atualizar Configuração"
+                                : "Salvar Configuração"}
+                            </Button>
+                          </div>
+                        </FadeInUp>
+                      )}
                     </div>
                   </div>
                 )}
-              </div>
-
-              <div className="border-t pt-6">
-                <h3 className="text-lg font-medium mb-4">
-                  Informações do Sistema
-                </h3>
-                <div className="bg-gray-50 p-4 rounded-lg space-y-3">
-                  <div>
-                    <p className="text-sm text-gray-600">
-                      <strong>Endpoint de Callback:</strong>{" "}
-                      {typeof window !== "undefined"
-                        ? `${window.location.origin}/api/ia/webhook`
-                        : "Carregando..."}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Use esta URL no seu workflow N8N para receber os
-                      resultados das análises
-                    </p>
-                  </div>
-
-                  <div>
-                    <div className="text-sm text-gray-600">
-                      <strong>Status da Integração:</strong>
-                      <Badge
-                        variant={n8nConfig ? "default" : "secondary"}
-                        className="ml-2"
-                      >
-                        {n8nConfig ? "Ativo" : "Inativo"}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
               </div>
             </CardContent>
           </Card>

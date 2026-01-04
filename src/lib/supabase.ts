@@ -1,23 +1,32 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "placeholder-key";
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-console.log("Configuração Supabase:", {
-  url: process.env.NEXT_PUBLIC_SUPABASE_URL ? "Configurada" : "FALTANDO",
-  key: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "Configurada" : "FALTANDO",
-});
+// Validação das variáveis de ambiente
+if (!supabaseUrl || !supabaseAnonKey) {
+  const missingVars = [];
+  if (!supabaseUrl) missingVars.push("NEXT_PUBLIC_SUPABASE_URL");
+  if (!supabaseAnonKey) missingVars.push("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
-if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-  console.warn("⚠️ Variáveis de ambiente do Supabase não configuradas!");
-  console.warn("NEXT_PUBLIC_SUPABASE_URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
-  console.warn(
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY:",
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "Presente" : "Ausente"
-  );
+  console.error("❌ ERRO: Variáveis de ambiente do Supabase não configuradas!");
+  console.error(`Variáveis faltando: ${missingVars.join(", ")}`);
+  console.error("Por favor, crie um arquivo .env.local na raiz do projeto com as variáveis necessárias.");
+  console.error("Veja o arquivo env.template para referência.");
+  
+  // Em desenvolvimento, usar valores placeholder para evitar crash
+  // Em produção, isso deve falhar explicitamente
+  if (process.env.NODE_ENV === "development") {
+    console.warn("⚠️ Usando valores placeholder em modo desenvolvimento");
+  }
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+// Criar cliente apenas se as variáveis estiverem configuradas
+// Caso contrário, usar valores placeholder para evitar crash
+const finalUrl = supabaseUrl || "https://placeholder.supabase.co";
+const finalKey = supabaseAnonKey || "placeholder-key";
+
+export const supabase = createClient(finalUrl, finalKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
@@ -41,6 +50,10 @@ export interface Database {
           dias_alerta_vencimento: number;
           notificacao_whatsapp: boolean;
           webhook_n8n: string | null;
+          sistema_levontech: boolean | null;
+          levontech_url: string | null;
+          levontech_username: string | null;
+          levontech_password: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -55,6 +68,10 @@ export interface Database {
           dias_alerta_vencimento?: number;
           notificacao_whatsapp?: boolean;
           webhook_n8n?: string | null;
+          sistema_levontech?: boolean | null;
+          levontech_url?: string | null;
+          levontech_username?: string | null;
+          levontech_password?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -69,6 +86,10 @@ export interface Database {
           dias_alerta_vencimento?: number;
           notificacao_whatsapp?: boolean;
           webhook_n8n?: string | null;
+          sistema_levontech?: boolean | null;
+          levontech_url?: string | null;
+          levontech_username?: string | null;
+          levontech_password?: string | null;
           updated_at?: string;
         };
       };

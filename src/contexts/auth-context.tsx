@@ -29,6 +29,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
+    // Verificar se o Supabase está configurado
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseKey || supabaseUrl.includes("placeholder") || supabaseKey.includes("placeholder")) {
+      console.warn("⚠️ Supabase não configurado. Configure as variáveis de ambiente.");
+      setLoading(false);
+      return;
+    }
+
     // Verificar sessão inicial
     const getInitialSession = async () => {
       try {
@@ -41,8 +51,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
       } catch (error: any) {
+        console.error("Erro ao verificar sessão:", error);
         setError(error);
-        toast.error("Erro ao verificar sessão: " + error.message);
+        // Não mostrar toast em desenvolvimento se for erro de configuração
+        if (!error.message?.includes("placeholder")) {
+          toast.error("Erro ao verificar sessão: " + error.message);
+        }
       } finally {
         setLoading(false);
       }
@@ -51,39 +65,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     getInitialSession();
 
     // Escutar mudanças de autenticação
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      async (event: AuthChangeEvent, session: Session | null) => {
-        console.log("Auth state change:", event, session);
+    try {
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange(
+        async (event: AuthChangeEvent, session: Session | null) => {
+          console.log("Auth state change:", event, session);
 
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
+          setSession(session);
+          setUser(session?.user ?? null);
+          setLoading(false);
 
-        if (event === "SIGNED_IN") {
-          setError(null);
-          // Não fazer redirecionamento aqui para evitar conflitos
-          // O redirecionamento será feito pela função de login
-        }
+          if (event === "SIGNED_IN") {
+            setError(null);
+            // Não fazer redirecionamento aqui para evitar conflitos
+            // O redirecionamento será feito pela função de login
+          }
 
-        if (event === "SIGNED_OUT") {
-          setError(null);
-          toast.info("Logout realizado com sucesso!");
-          router.push("/login");
-        }
+          if (event === "SIGNED_OUT") {
+            setError(null);
+            toast.info("Logout realizado com sucesso!");
+            router.push("/login");
+          }
 
-        if (event === "USER_UPDATED") {
-          const { error } = await supabase.auth.getSession();
-          if (error) {
-            setError(error);
-            toast.error("Erro ao atualizar sessão: " + error.message);
+          if (event === "USER_UPDATED") {
+            const { error } = await supabase.auth.getSession();
+            if (error) {
+              setError(error);
+              toast.error("Erro ao atualizar sessão: " + error.message);
+            }
           }
         }
-      }
-    );
+      );
 
-    return () => subscription.unsubscribe();
+      return () => {
+        subscription.unsubscribe();
+      };
+    } catch (error: any) {
+      console.error("Erro ao configurar listener de autenticação:", error);
+      setLoading(false);
+      return () => {}; // Retornar função vazia se houver erro
+    }
   }, [router]);
 
   const signOut = async () => {

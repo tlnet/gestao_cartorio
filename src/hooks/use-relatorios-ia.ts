@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useN8NConfig } from "./use-n8n-config";
+import { getWebhookUrl as getDefaultWebhookUrl } from "@/lib/webhooks-config";
 
 export interface RelatorioIA {
   id: string;
@@ -561,6 +562,7 @@ export const useRelatoriosIA = () => {
       console.log("Relatório criado:", relatorio);
 
       // 3. Obter webhook específico para o tipo
+      // Prioridade: webhookUrl passado > configuração do banco > webhook padrão interno
       const finalWebhookUrl =
         webhookUrl ||
         (n8nConfig
@@ -571,7 +573,8 @@ export const useRelatoriosIA = () => {
             : tipo === "minuta_documento"
             ? n8nConfig.webhook_minuta_documento || n8nConfig.webhook_url
             : n8nConfig.webhook_url
-          : null);
+          : null) ||
+        getDefaultWebhookUrl(tipo); // Fallback para webhook padrão interno
 
       if (!finalWebhookUrl) {
         console.error("Webhook não configurado:", {
@@ -580,7 +583,7 @@ export const useRelatoriosIA = () => {
           webhookUrl,
         });
         throw new Error(
-          `Webhook para ${tipo} não configurado. Execute o script SQL para configurar os webhooks.`
+          `Webhook para ${tipo} não configurado.`
         );
       }
 

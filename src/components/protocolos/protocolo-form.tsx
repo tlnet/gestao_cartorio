@@ -40,6 +40,10 @@ import {
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
 import { useServicos } from "@/hooks/use-servicos";
 import { LoadingAnimation } from "@/components/ui/loading-spinner";
+import { useLevontechConfig } from "@/hooks/use-levontech-config";
+import { useAuth } from "@/contexts/auth-context";
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
 
 const protocoloSchema = z.object({
   demanda: z.string().min(1, "Demanda é obrigatória"),
@@ -96,6 +100,27 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
 
   const { statusPersonalizados } = useStatusPersonalizados();
   const { servicos, loading: servicosLoading } = useServicos();
+  const { config: levontechConfig, loading: levontechLoading } = useLevontechConfig();
+  const { user } = useAuth();
+  
+  // Estado para controlar loading do webhook
+  const [consultingLevontech, setConsultingLevontech] = React.useState(false);
+  
+  // Estado para armazenar dados recebidos do webhook (preparado para uso futuro)
+  const [levontechData, setLevontechData] = React.useState<any>(null);
+  
+  // Ref para debounce do webhook
+  const webhookTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  
+  // Debug: Log da configuração Levontech
+  React.useEffect(() => {
+    console.log("🔍 Levontech Config:", {
+      config: levontechConfig,
+      loading: levontechLoading,
+      sistema_levontech: levontechConfig?.sistema_levontech,
+      hasCredentials: !!(levontechConfig?.levontech_url && levontechConfig?.levontech_username && levontechConfig?.levontech_password),
+    });
+  }, [levontechConfig, levontechLoading]);
 
   // Combinar status padrão com status personalizados
   const statusOptions = [
@@ -183,11 +208,256 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   const handleProtocolChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatProtocol(e.target.value);
     form.setValue("protocolo", formatted);
+    
+    // Limpar timeout anterior se existir
+    if (webhookTimeoutRef.current) {
+      clearTimeout(webhookTimeoutRef.current);
+    }
+    
+    // Debug: Log do que está acontecendo
+    const shouldTrigger = !isEditing && 
+                          formatted && 
+                          formatted.length >= 3 && 
+                          !levontechLoading &&
+                          levontechConfig?.sistema_levontech === true;
+    
+    console.log("📝 Protocolo alterado:", {
+      formatted,
+      isEditing,
+      levontechLoading,
+      levontechConfig: levontechConfig,
+      sistema_levontech: levontechConfig?.sistema_levontech,
+      length: formatted.length,
+      shouldTrigger,
+    });
+    
+    // Disparar webhook Levontech com debounce (aguardar 500ms após parar de digitar)
+    if (shouldTrigger) {
+      console.log("⏳ Agendando webhook Levontech em 500ms...");
+      webhookTimeoutRef.current = setTimeout(() => {
+        console.log("🚀 Disparando webhook Levontech agora!");
+        dispararWebhookLevontech(formatted);
+      }, 500);
+    } else {
+      // Resetar dados se protocolo for apagado ou muito curto
+      if (formatted.length < 3) {
+        setLevontechData(null);
+        setConsultingLevontech(false);
+      }
+      
+      // Log do motivo de não disparar
+      if (isEditing) {
+        console.log("❌ Não disparando: está editando");
+      } else if (!formatted || formatted.length < 3) {
+        console.log("❌ Não disparando: protocolo muito curto");
+      } else if (levontechLoading) {
+        console.log("❌ Não disparando: ainda carregando configuração");
+      } else if (levontechConfig?.sistema_levontech !== true) {
+        console.log("❌ Não disparando: Levontech não está ativo", {
+          sistema_levontech: levontechConfig?.sistema_levontech,
+          config: levontechConfig,
+        });
+      }
+    }
   };
+  
+  // Limpar timeout ao desmontar componente
+  React.useEffect(() => {
+    return () => {
+      if (webhookTimeoutRef.current) {
+        clearTimeout(webhookTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatEmail(e.target.value);
     form.setValue("email", formatted);
+  };
+
+  // Função para disparar webhook Levontech
+  const dispararWebhookLevontech = async (numeroProtocolo: string) => {
+    console.log("🔧 dispararWebhookLevontech chamado:", {
+      numeroProtocolo,
+      length: numeroProtocolo.length,
+      levontechConfig,
+      sistema_levontech: levontechConfig?.sistema_levontech,
+    });
+    
+    // Só disparar se tiver número de protocolo completo (mínimo de caracteres)
+    if (numeroProtocolo.length < 3) {
+      console.log("❌ Protocolo muito curto, abortando");
+      return;
+    }
+    
+    if (!levontechConfig?.sistema_levontech) {
+      console.log("❌ Levontech não está ativo, abortando");
+      return;
+    }
+    
+    try {
+      setConsultingLevontech(true);
+      setLevontechData(null); // Resetar dados anteriores
+      
+      // Buscar cartorio_id do usuário
+      const { data: userData, error: userError } = await supabase
+        .from("users")
+        .select("cartorio_id")
+        .eq("id", user?.id)
+        .single();
+
+      if (userError || !userData?.cartorio_id) {
+        console.error("Erro ao buscar cartório do usuário:", userError);
+        toast.error("Erro ao consultar dados: cartório não encontrado");
+        return;
+      }
+
+      // Verificar se as credenciais estão configuradas
+      if (!levontechConfig.levontech_url || !levontechConfig.levontech_username || !levontechConfig.levontech_password) {
+        toast.warning("Credenciais do Levontech incompletas. Verifique as configurações.");
+        return;
+      }
+
+      // Preparar payload para webhook
+      const payload = {
+        numero_protocolo: numeroProtocolo,
+        cartorio_id: userData.cartorio_id,
+        fluxo: "protocolo",
+        credenciais_levontech: {
+          url: levontechConfig.levontech_url,
+          username: levontechConfig.levontech_username,
+          password: levontechConfig.levontech_password,
+        },
+      };
+
+      console.log("📤 Disparando webhook Levontech:", {
+        numero_protocolo: numeroProtocolo,
+        cartorio_id: userData.cartorio_id,
+        fluxo: "protocolo",
+      });
+
+      // Disparar webhook através da API route do Next.js (evita CORS)
+      const response = await fetch("/api/levontech/webhook", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        let responseData;
+        try {
+          responseData = await response.json();
+        } catch (parseError) {
+          console.error("❌ Erro ao parsear resposta da API:", parseError);
+          setLevontechData(null);
+          toast.info("Protocolo consultado no Levontech, mas nenhum dado estruturado foi retornado. Preencha os campos manualmente.");
+          return;
+        }
+
+        // A API route retorna { data: ... } ou { error: ... }
+        if (responseData.error) {
+          console.error("❌ Erro retornado pela API:", responseData.error);
+          toast.warning(`Erro ao consultar Levontech: ${responseData.error}`);
+          setLevontechData(null);
+          return;
+        }
+
+        const data = responseData.data;
+        console.log("✅ Resposta do webhook Levontech:", data);
+        
+        // Verificar se o webhook retornou dados úteis
+        // Consideramos que há dados se a resposta contém informações do protocolo
+        // e não é apenas uma mensagem de confirmação do workflow
+        const isOnlyWorkflowMessage = data && 
+          typeof data === 'object' && 
+          Object.keys(data).length === 1 && 
+          (data.message === "Workflow was started" || data.message === "workflow started");
+        
+        const hasUsefulData = data && 
+          typeof data === 'object' && 
+          !isOnlyWorkflowMessage &&
+          Object.keys(data).length > 0 &&
+          (
+            data.solicitante || 
+            data.cpf_cnpj || 
+            data.cpfCnpj ||
+            data.telefone || 
+            data.email || 
+            data.servicos || 
+            data.dados ||
+            data.protocolo ||
+            data.demanda ||
+            // Verificar se há qualquer propriedade que não seja apenas metadados
+            (Object.keys(data).some(key => 
+              !['message', 'status', 'success', 'workflow', 'id'].includes(key.toLowerCase())
+            ))
+          );
+        
+        if (hasUsefulData) {
+          // Armazenar dados recebidos para uso futuro
+          setLevontechData(data);
+          
+          // ============================================================
+          // TODO: PREENCHIMENTO AUTOMÁTICO - Implementação futura
+          // ============================================================
+          // Quando recebermos os dados do webhook, podemos preencher
+          // automaticamente os campos do formulário. Exemplo:
+          //
+          // if (data.solicitante) {
+          //   form.setValue("solicitante", data.solicitante);
+          // }
+          // if (data.cpf_cnpj || data.cpfCnpj) {
+          //   form.setValue("cpfCnpj", formatCPFCNPJ(data.cpf_cnpj || data.cpfCnpj));
+          // }
+          // if (data.telefone) {
+          //   form.setValue("telefone", formatPhone(data.telefone));
+          // }
+          // if (data.email) {
+          //   form.setValue("email", data.email);
+          // }
+          // if (data.servicos && Array.isArray(data.servicos)) {
+          //   setServicosSelecionados(data.servicos);
+          //   form.setValue("servicos", data.servicos);
+          // }
+          // ============================================================
+          
+          toast.success("Dados do protocolo consultados com sucesso no sistema Levontech");
+        } else {
+          // Webhook foi chamado mas não retornou dados úteis
+          setLevontechData(null);
+          toast.info("Protocolo consultado no Levontech, mas nenhum dado foi retornado. Preencha os campos manualmente.");
+        }
+      } else {
+        // Se a resposta não for OK, tentar ler o erro da API route
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch {
+          errorData = { error: `Erro ${response.status}: ${response.statusText}` };
+        }
+        
+        console.error("Erro na resposta da API:", response.status, errorData);
+        toast.warning(
+          errorData.error 
+            ? `Não foi possível consultar dados no Levontech: ${errorData.error}` 
+            : `Não foi possível consultar dados no Levontech (${response.status}). Preencha os campos manualmente.`
+        );
+      }
+    } catch (error: any) {
+      console.error("Erro ao disparar webhook Levontech:", error);
+      
+      if (error.name === 'AbortError') {
+        toast.error("Tempo de espera esgotado ao consultar o Levontech. Tente novamente.");
+      } else if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+        toast.error("Erro de conexão ao consultar o Levontech. Verifique sua internet e tente novamente.");
+      } else {
+        toast.warning("Erro ao consultar dados no Levontech. Preencha os campos manualmente.");
+      }
+    } finally {
+      setConsultingLevontech(false);
+    }
   };
 
   return (
@@ -222,15 +492,56 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                 <FormItem>
                   <FormLabel>Número do Protocolo *</FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="Ex: CERT-2024-001"
-                      {...field}
-                      onChange={(e) => {
-                        field.onChange(e);
-                        handleProtocolChange(e);
-                      }}
-                    />
+                    <div className="relative">
+                      <Input
+                        placeholder="Ex: CERT-2024-001"
+                        {...field}
+                        onChange={(e) => {
+                          field.onChange(e);
+                          handleProtocolChange(e);
+                        }}
+                      />
+                      {consultingLevontech && (
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                        </div>
+                      )}
+                    </div>
                   </FormControl>
+                  {!isEditing && (
+                    <div className="space-y-1">
+                      {levontechLoading ? (
+                        <p className="text-xs text-gray-500">
+                          Carregando configuração Levontech...
+                        </p>
+                      ) : levontechConfig?.sistema_levontech ? (
+                        <>
+                          {consultingLevontech ? (
+                            <p className="text-xs text-blue-600 flex items-center gap-1">
+                              <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600 inline-block"></span>
+                              Consultando dados no sistema Levontech...
+                            </p>
+                          ) : levontechData ? (
+                            <p className="text-xs text-green-600">
+                              ✓ Dados consultados com sucesso no Levontech
+                            </p>
+                          ) : form.watch("protocolo") && form.watch("protocolo").length >= 3 ? (
+                            <p className="text-xs text-amber-600">
+                              ⓘ Nenhum dado retornado do Levontech. Preencha os campos manualmente.
+                            </p>
+                          ) : (
+                            <p className="text-xs text-blue-600">
+                              Sistema Levontech ativo - dados serão consultados automaticamente ao preencher o protocolo
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-xs text-gray-500">
+                          Sistema Levontech não configurado
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}

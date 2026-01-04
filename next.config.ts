@@ -94,7 +94,7 @@ const nextConfig: NextConfig = {
   ...(process.env.NODE_ENV === "development" && {
     // Configurações otimizadas para desenvolvimento
     reactStrictMode: false, // Para compatibilidade com preview
-    swcMinify: false, // Desabilitar minify em dev para melhor debugging
+    // swcMinify removido: no Next.js 15+ o SWC minify é sempre habilitado e não pode ser desabilitado
   }),
 };
 
