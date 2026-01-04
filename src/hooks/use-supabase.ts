@@ -330,6 +330,17 @@ export function useProtocolos(cartorioId?: string) {
               const cartorioId = protocoloAtual.cartorio_id || data?.cartorio_id;
               
               if (cartorioId) {
+                // Buscar dados ZDG do cartório
+                const { data: cartorioData, error: cartorioError } = await supabase
+                  .from("cartorios")
+                  .select("tenant_id_zdg, external_id_zdg, api_token_zdg, channel_id_zdg")
+                  .eq("id", cartorioId)
+                  .maybeSingle();
+
+                if (cartorioError) {
+                  console.warn("⚠️ Erro ao buscar dados ZDG:", cartorioError);
+                }
+
                 const payload = {
                   status_anterior: protocoloAtual.status,
                   status_novo: updates.status,
@@ -342,6 +353,11 @@ export function useProtocolos(cartorioId?: string) {
                   servicos_solicitados: protocoloAtual.servicos || [],
                   numero_demanda: protocoloAtual.demanda,
                   numero_protocolo: protocoloAtual.protocolo,
+                  // Dados ZDG do cartório
+                  tenant_id_zdg: cartorioData?.tenant_id_zdg || null,
+                  external_id_zdg: cartorioData?.external_id_zdg || null,
+                  api_token_zdg: cartorioData?.api_token_zdg || null,
+                  channel_id_zdg: cartorioData?.channel_id_zdg || null,
                 };
 
                 console.log("📤 Disparando webhook para mudança de status:", {

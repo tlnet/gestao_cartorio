@@ -62,6 +62,7 @@ import {
   CheckCircle,
   ChevronDown,
   ChevronUp,
+  MoreHorizontal,
 } from "lucide-react";
 
 const ProtocolosContent = () => {
@@ -85,6 +86,11 @@ const ProtocolosContent = () => {
   const [editingProtocolo, setEditingProtocolo] = useState<any>(null);
   const [localProtocolos, setLocalProtocolos] = useState<any[]>([]);
   const [showConcluidos, setShowConcluidos] = useState(false);
+  const [showServicosModal, setShowServicosModal] = useState(false);
+  const [servicosModalData, setServicosModalData] = useState<{
+    protocolo: string;
+    servicos: string[];
+  } | null>(null);
 
   // Sincronizar estado local com estado global
   React.useEffect(() => {
@@ -607,6 +613,7 @@ const ProtocolosContent = () => {
                   <TableRow>
                     <TableHead>Protocolo</TableHead>
                     <TableHead>Solicitante</TableHead>
+                    <TableHead>Demanda</TableHead>
                     <TableHead>Serviço</TableHead>
                     <TableHead>Data Abertura</TableHead>
                     <TableHead>Prazo</TableHead>
@@ -629,6 +636,39 @@ const ProtocolosContent = () => {
                         </div>
                       </TableCell>
                       <TableCell>{protocolo.demanda}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {Array.isArray(protocolo.servicos) && protocolo.servicos.length > 0 ? (
+                            <>
+                              {protocolo.servicos.slice(0, 2).map((servico: string, index: number) => (
+                                <Badge key={index} variant="secondary" className="text-xs">
+                                  {servico}
+                                </Badge>
+                              ))}
+                              {protocolo.servicos.length > 2 && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-5 px-1.5"
+                                  onClick={() => {
+                                    setServicosModalData({
+                                      protocolo: protocolo.protocolo,
+                                      servicos: protocolo.servicos,
+                                    });
+                                    setShowServicosModal(true);
+                                  }}
+                                >
+                                  <span className="text-xs text-gray-500">
+                                    +{protocolo.servicos.length - 2}
+                                  </span>
+                                </Button>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-sm text-gray-400">-</span>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         {formatDateForDisplay(protocolo.created_at)}
                       </TableCell>
@@ -728,6 +768,7 @@ const ProtocolosContent = () => {
                     <TableRow>
                       <TableHead>Protocolo</TableHead>
                       <TableHead>Solicitante</TableHead>
+                      <TableHead>Demanda</TableHead>
                       <TableHead>Serviço</TableHead>
                       <TableHead>Data Abertura</TableHead>
                       <TableHead>Data Conclusão</TableHead>
@@ -755,6 +796,40 @@ const ProtocolosContent = () => {
                           </div>
                         </TableCell>
                         <TableCell>{protocolo.demanda}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap items-center gap-1">
+                            {Array.isArray(protocolo.servicos) && protocolo.servicos.length > 0 ? (
+                              <>
+                                {protocolo.servicos.slice(0, 2).map((servico: string, index: number) => (
+                                  <Badge key={index} variant="secondary" className="text-xs">
+                                    {servico}
+                                  </Badge>
+                                ))}
+                                {protocolo.servicos.length > 2 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-5 px-1.5"
+                                    onClick={() => {
+                                      setServicosModalData({
+                                        protocolo: protocolo.protocolo,
+                                        servicos: protocolo.servicos,
+                                      });
+                                      setShowServicosModal(true);
+                                    }}
+                                  >
+                                    <MoreHorizontal className="h-3 w-3 text-gray-500" />
+                                    <span className="text-xs text-gray-500 ml-0.5">
+                                      +{protocolo.servicos.length - 2}
+                                    </span>
+                                  </Button>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-sm text-gray-400">-</span>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           {formatDateForDisplay(protocolo.created_at)}
                         </TableCell>
@@ -846,6 +921,31 @@ const ProtocolosContent = () => {
             }}
           />
         )}
+
+        {/* Modal de Serviços */}
+        <Dialog open={showServicosModal} onOpenChange={setShowServicosModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Serviços do Protocolo</DialogTitle>
+              <DialogDescription>
+                {servicosModalData && `Protocolo: ${servicosModalData.protocolo}`}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              {servicosModalData && servicosModalData.servicos.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {servicosModalData.servicos.map((servico: string, index: number) => (
+                    <Badge key={index} variant="secondary" className="text-sm">
+                      {servico}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">Nenhum serviço encontrado</p>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   );

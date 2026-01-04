@@ -167,7 +167,7 @@ const Configuracoes = () => {
       try {
         const { data, error } = await supabase
           .from("cartorios")
-          .select("nome, cnpj, endereco, telefone, email, tenant_id_zdg, dias_alerta_vencimento, notificacao_whatsapp")
+          .select("nome, cnpj, endereco, telefone, email, tenant_id_zdg, external_id_zdg, api_token_zdg, channel_id_zdg, dias_alerta_vencimento, notificacao_whatsapp")
           .eq("id", cartorioId)
           .single();
 
@@ -182,6 +182,9 @@ const Configuracoes = () => {
             telefone: data.telefone || prev.telefone,
             email: data.email || prev.email,
             tenantIdZdg: data.tenant_id_zdg || "",
+            externalIdZdg: data.external_id_zdg || "",
+            apiTokenZdg: data.api_token_zdg || "",
+            channelIdZdg: data.channel_id_zdg || "",
             diasAlertaVencimento: data.dias_alerta_vencimento || prev.diasAlertaVencimento,
             notificacaoWhatsApp: data.notificacao_whatsapp || false,
           }));
@@ -229,6 +232,9 @@ const Configuracoes = () => {
     telefone: "(11) 3333-4444",
     email: "contato@cartorio1oficio.com.br",
     tenantIdZdg: "",
+    externalIdZdg: "",
+    apiTokenZdg: "",
+    channelIdZdg: "",
     diasAlertaVencimento: 3,
     notificacaoWhatsApp: false,
     whatsappContas: "",
@@ -287,6 +293,9 @@ const Configuracoes = () => {
           telefone: configCartorio.telefone,
           email: configCartorio.email,
           tenant_id_zdg: configCartorio.tenantIdZdg || null,
+          external_id_zdg: configCartorio.externalIdZdg || null,
+          api_token_zdg: configCartorio.apiTokenZdg || null,
+          channel_id_zdg: configCartorio.channelIdZdg || null,
           dias_alerta_vencimento: configCartorio.diasAlertaVencimento,
           notificacao_whatsapp: configCartorio.notificacaoWhatsApp,
         })
@@ -786,24 +795,6 @@ const Configuracoes = () => {
                       }
                     />
                   </div>
-
-                  <div>
-                    <Label htmlFor="tenantIdZdg">Tenant ID ZDG</Label>
-                    <Input
-                      id="tenantIdZdg"
-                      value={configCartorio.tenantIdZdg}
-                      onChange={(e) =>
-                        setConfigCartorio((prev) => ({
-                          ...prev,
-                          tenantIdZdg: e.target.value,
-                        }))
-                      }
-                      placeholder="Digite o Tenant ID ZDG"
-                    />
-                    <p className="text-sm text-gray-500 mt-1">
-                      Identificador do tenant para integração com sistema ZDG
-                    </p>
-                  </div>
                 </div>
               </div>
 
@@ -936,6 +927,89 @@ const Configuracoes = () => {
                       </div>
                     </FadeInUp>
                   )}
+                </div>
+              </div>
+
+              {/* Seção Testes ZDG */}
+              <div className="border-t pt-6">
+                <h3 className="text-lg font-medium mb-4">
+                  Testes ZDG
+                </h3>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="tenantIdZdg">Tenant ID ZDG</Label>
+                      <Input
+                        id="tenantIdZdg"
+                        value={configCartorio.tenantIdZdg}
+                        onChange={(e) =>
+                          setConfigCartorio((prev) => ({
+                            ...prev,
+                            tenantIdZdg: e.target.value,
+                          }))
+                        }
+                        placeholder="Digite o Tenant ID ZDG"
+                      />
+                      <p className="text-sm text-gray-500 mt-1">
+                        Identificador do tenant para integração com sistema ZDG
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="externalIdZdg">External ID ZDG</Label>
+                      <Input
+                        id="externalIdZdg"
+                        value={configCartorio.externalIdZdg}
+                        onChange={(e) =>
+                          setConfigCartorio((prev) => ({
+                            ...prev,
+                            externalIdZdg: e.target.value,
+                          }))
+                        }
+                        placeholder="Digite o External ID ZDG"
+                      />
+                      <p className="text-sm text-gray-500 mt-1">
+                        External ID para integração com sistema ZDG
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="apiTokenZdg">API Token ZDG</Label>
+                      <Input
+                        id="apiTokenZdg"
+                        type="password"
+                        value={configCartorio.apiTokenZdg}
+                        onChange={(e) =>
+                          setConfigCartorio((prev) => ({
+                            ...prev,
+                            apiTokenZdg: e.target.value,
+                          }))
+                        }
+                        placeholder="Digite o API Token ZDG"
+                      />
+                      <p className="text-sm text-gray-500 mt-1">
+                        Token de autenticação para API do sistema ZDG
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="channelIdZdg">Channel ID ZDG</Label>
+                      <Input
+                        id="channelIdZdg"
+                        value={configCartorio.channelIdZdg}
+                        onChange={(e) =>
+                          setConfigCartorio((prev) => ({
+                            ...prev,
+                            channelIdZdg: e.target.value,
+                          }))
+                        }
+                        placeholder="Digite o Channel ID ZDG"
+                      />
+                      <p className="text-sm text-gray-500 mt-1">
+                        Identificador do canal para integração com sistema ZDG
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
