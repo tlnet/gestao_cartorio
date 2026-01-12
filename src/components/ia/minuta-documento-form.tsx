@@ -347,6 +347,31 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
     toast.success("Arquivo adicionado");
   };
 
+  const handleFileUploadRgCpfComprador = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    
+    const fileArray = Array.from(files);
+    
+    // Validar todos os arquivos
+    for (const file of fileArray) {
+      if (!validateFileType(file)) {
+        toast.error("Apenas arquivos PDF, JPG e PNG são permitidos");
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("Arquivo muito grande. Máximo: 10MB");
+        return;
+      }
+    }
+    
+    // Primeiro arquivo é RG, segundo é CPF
+    setTempCompradorData(prev => ({
+      ...prev,
+      rg: fileArray[0] || null,
+      cpf: fileArray[1] || null,
+    }));
+  };
+
   const handleFileUploadConjuge = (file: File | null, field: 'rg' | 'cpf' | 'certidaoCasamento') => {
     if (!file) return;
     
@@ -988,43 +1013,59 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
               <div className="space-y-4">
                 <h3 className="font-semibold text-lg border-b pb-2">Dados do Comprador</h3>
                 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                    <Label htmlFor="comprador-rg">RG *</Label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="comprador-rg-cpf">RG e CPF *</Label>
                     <Input
-                      id="comprador-rg"
+                      id="comprador-rg-cpf"
                       type="file"
                       accept=".pdf,.jpg,.jpeg,.png"
-                      onChange={(e) => handleFileUploadComprador(e.target.files?.[0] || null, 'rg')}
+                      multiple
+                      onChange={(e) => handleFileUploadRgCpfComprador(e.target.files)}
                     />
-                    {tempCompradorData.rg && (
+                    {(tempCompradorData.rg || tempCompradorData.cpf) && (
+                      <div className="mt-2 space-y-2">
+                        {tempCompradorData.rg && (
+                          <div className="p-2 bg-green-50 border border-green-200 rounded">
+                            <p className="text-sm text-green-800 flex items-center gap-1">
+                              <CheckCircle2 className="h-4 w-4" />
+                              RG: {tempCompradorData.rg.name}
+                            </p>
+                          </div>
+                        )}
+                        {tempCompradorData.cpf && (
+                          <div className="p-2 bg-green-50 border border-green-200 rounded">
+                            <p className="text-sm text-green-800 flex items-center gap-1">
+                              <CheckCircle2 className="h-4 w-4" />
+                              CPF: {tempCompradorData.cpf.name}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500">Selecione os arquivos de RG e CPF</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="comprador-comprovante">Comprovante de Endereço *</Label>
+                    <Input
+                      id="comprador-comprovante"
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={(e) => handleFileUploadComprador(e.target.files?.[0] || null, 'comprovanteEndereco')}
+                    />
+                    {tempCompradorData.comprovanteEndereco && (
                       <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
                         <p className="text-sm text-green-800 flex items-center gap-1">
                           <CheckCircle2 className="h-4 w-4" />
-                          Arquivo selecionado: {tempCompradorData.rg.name}
+                          Arquivo selecionado: {tempCompradorData.comprovanteEndereco.name}
                         </p>
                       </div>
                     )}
-                    </div>
+                  </div>
+                </div>
 
-                    <div className="space-y-2">
-                    <Label htmlFor="comprador-cpf">CPF *</Label>
-                    <Input
-                      id="comprador-cpf"
-                      type="file"
-                      accept=".pdf,.jpg,.jpeg,.png"
-                      onChange={(e) => handleFileUploadComprador(e.target.files?.[0] || null, 'cpf')}
-                    />
-                    {tempCompradorData.cpf && (
-                      <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
-                        <p className="text-sm text-green-800 flex items-center gap-1">
-                          <CheckCircle2 className="h-4 w-4" />
-                          Arquivo selecionado: {tempCompradorData.cpf.name}
-                        </p>
-                      </div>
-                    )}
-                    </div>
-
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="comprador-email">E-mail *</Label>
                     <Input
@@ -1045,24 +1086,6 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
                       placeholder="Ex: Engenheiro, Comerciante"
                     />
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="comprador-comprovante">Comprovante de Endereço *</Label>
-                  <Input
-                    id="comprador-comprovante"
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    onChange={(e) => handleFileUploadComprador(e.target.files?.[0] || null, 'comprovanteEndereco')}
-                  />
-                  {tempCompradorData.comprovanteEndereco && (
-                    <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
-                      <p className="text-sm text-green-800 flex items-center gap-1">
-                        <CheckCircle2 className="h-4 w-4" />
-                        Arquivo selecionado: {tempCompradorData.comprovanteEndereco.name}
-                      </p>
-                    </div>
-                  )}
                 </div>
 
                 {/* Checkbox Casado */}
@@ -1242,31 +1265,64 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label>RG *</Label>
+                        <Label>RG e CPF *</Label>
                         <Input
                           type="file"
                           accept=".pdf,.jpg,.jpeg,.png"
+                          multiple
                           onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file && validateFileType(file)) {
-                              setTempVendedoresData(prev => prev.map((v, i) =>
-                                i === index ? { ...v, rg: file } : v
-                              ));
+                            const files = e.target.files;
+                            if (!files || files.length === 0) return;
+                            
+                            const fileArray = Array.from(files);
+                            
+                            // Validar todos os arquivos
+                            for (const file of fileArray) {
+                              if (!validateFileType(file)) {
+                                toast.error("Apenas arquivos PDF, JPG e PNG são permitidos");
+                                return;
+                              }
+                              if (file.size > 10 * 1024 * 1024) {
+                                toast.error("Arquivo muito grande. Máximo: 10MB");
+                                return;
+                              }
                             }
+                            
+                            // Primeiro arquivo é RG, segundo é CPF
+                            setTempVendedoresData(prev => prev.map((v, i) =>
+                              i === index ? {
+                                ...v,
+                                rg: fileArray[0] || null,
+                                cpf: fileArray[1] || null,
+                              } : v
+                            ));
                           }}
                         />
-                        {vendedor.rg && (
-                          <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
-                            <p className="text-sm text-green-800 flex items-center gap-1">
-                              <CheckCircle2 className="h-4 w-4" />
-                              Arquivo selecionado: {vendedor.rg.name}
-                            </p>
+                        {(vendedor.rg || vendedor.cpf) && (
+                          <div className="mt-2 space-y-2">
+                            {vendedor.rg && (
+                              <div className="p-2 bg-green-50 border border-green-200 rounded">
+                                <p className="text-sm text-green-800 flex items-center gap-1">
+                                  <CheckCircle2 className="h-4 w-4" />
+                                  RG: {vendedor.rg.name}
+                                </p>
+                              </div>
+                            )}
+                            {vendedor.cpf && (
+                              <div className="p-2 bg-green-50 border border-green-200 rounded">
+                                <p className="text-sm text-green-800 flex items-center gap-1">
+                                  <CheckCircle2 className="h-4 w-4" />
+                                  CPF: {vendedor.cpf.name}
+                                </p>
+                              </div>
+                            )}
                           </div>
                         )}
+                        <p className="text-xs text-gray-500">Selecione os arquivos de RG e CPF</p>
                       </div>
 
                       <div className="space-y-2">
-                        <Label>CPF *</Label>
+                        <Label>Comprovante de Endereço *</Label>
                         <Input
                           type="file"
                           accept=".pdf,.jpg,.jpeg,.png"
@@ -1274,16 +1330,16 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
                             const file = e.target.files?.[0];
                             if (file && validateFileType(file)) {
                               setTempVendedoresData(prev => prev.map((v, i) =>
-                                i === index ? { ...v, cpf: file } : v
+                                i === index ? { ...v, comprovanteEndereco: file } : v
                               ));
                             }
                           }}
                         />
-                        {vendedor.cpf && (
+                        {vendedor.comprovanteEndereco && (
                           <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
                             <p className="text-sm text-green-800 flex items-center gap-1">
                               <CheckCircle2 className="h-4 w-4" />
-                              Arquivo selecionado: {vendedor.cpf.name}
+                              Arquivo selecionado: {vendedor.comprovanteEndereco.name}
                             </p>
                           </div>
                         )}
@@ -1311,30 +1367,6 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
                           placeholder="Ex: Engenheiro, Comerciante"
                         />
                       </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Comprovante de Endereço *</Label>
-                      <Input
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file && validateFileType(file)) {
-                            setTempVendedoresData(prev => prev.map((v, i) =>
-                              i === index ? { ...v, comprovanteEndereco: file } : v
-                            ));
-                          }
-                        }}
-                      />
-                      {vendedor.comprovanteEndereco && (
-                        <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
-                          <p className="text-sm text-green-800 flex items-center gap-1">
-                            <CheckCircle2 className="h-4 w-4" />
-                            Arquivo selecionado: {vendedor.comprovanteEndereco.name}
-                          </p>
-                        </div>
-                      )}
                     </div>
 
                     <div className="flex items-center space-x-2">
