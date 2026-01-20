@@ -755,40 +755,17 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
 
       console.log("Total de arquivos coletados:", todosArquivos.length);
 
-      // Preparar metadados estruturados
-      const metadados = {
-        compradores: formData.compradores ? {
-          email: formData.compradores.comprador.email,
-          qualificacao: formData.compradores.comprador.qualificacaoProfissional,
-          casado: formData.compradores.comprador.casado,
-          conjuge: formData.compradores.comprador.conjuge ? {
-            email: formData.compradores.comprador.conjuge.email,
-            qualificacao: formData.compradores.comprador.conjuge.qualificacaoProfissional,
-          } : null,
-        } : null,
-        vendedores: formData.vendedores ? formData.vendedores.vendedores.map((v) => ({
-          email: v.email,
-          qualificacao: v.qualificacaoProfissional,
-          casado: v.casado,
-          conjuge: v.conjuge ? {
-            email: v.conjuge.email,
-            qualificacao: v.conjuge.qualificacaoProfissional,
-          } : null,
-        })) : [],
-        totalVendedores: formData.vendedores?.vendedores.length || 0,
-      };
-
       // Webhook URL - usar padrão interno se não estiver configurado
       const webhookUrl = getWebhookUrl("minuta_documento") || getDefaultWebhookUrl("minuta_documento");
       
       console.log("Webhook URL para minuta:", webhookUrl);
 
-      // Chamar processamento
+      // Chamar processamento passando os dados completos do formulário
       const relatorio = await processarMinutaDocumento(
         todosArquivos,
         user.id,
         userData.cartorio_id,
-        metadados,
+        formData,
         webhookUrl
       );
 

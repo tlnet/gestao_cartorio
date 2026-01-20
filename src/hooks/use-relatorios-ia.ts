@@ -616,27 +616,116 @@ export const useRelatoriosIA = () => {
       }
 
       // 4. Preparar payload específico por tipo
-      // Para minuta_documento, enviar arquivos com nome e URL juntos
-      const payload = {
-        relatorio_id: relatorio.id,
-        tipo,
-        // Enviar arquivos com nome e URL juntos para facilitar identificação
-        arquivos: arquivosCompletos,
-        // Manter arquivos_urls e arquivos_originais para compatibilidade com outros tipos
-        arquivos_urls: arquivosUrls,
-        webhook_callback: `${window.location.origin}/api/ia/webhook`,
-        dados_processamento: {
-          arquivos_originais: arquivosArray.map((f) => f.name),
-          tipo_documento: tipo,
-          timestamp: new Date().toISOString(),
-          ...dadosAdicionais,
-        },
-        metadata: {
-          usuario_id: usuarioId,
-          cartorio_id: cartorioId,
-          origem: "gestao_cartorio_app",
-        },
-      };
+      let payload: any;
+
+      if (tipo === "minuta_documento" && dadosAdicionais?.dadosFormulario) {
+        // Nova estrutura para minuta_documento
+        const dadosFormulario = dadosAdicionais.dadosFormulario;
+        
+        // Criar mapa de arquivos para URLs
+        const arquivoUrlMap = new Map<string, string>();
+        arquivosArray.forEach((arquivo, index) => {
+          arquivoUrlMap.set(arquivo.name, arquivosUrls[index]);
+        });
+
+        // Função auxiliar para obter URL do arquivo
+        const getFileUrl = (file: File | null): string | null => {
+          if (!file) return null;
+          return arquivoUrlMap.get(file.name) || null;
+        };
+
+        // Construir estrutura de compradores
+        const compradores = dadosFormulario.compradores ? [{
+          nome_referencia: "Comprador Principal", // Valor padrão, pode ser ajustado se necessário
+          email: dadosFormulario.compradores.comprador.email,
+          qualificacao_profissional: dadosFormulario.compradores.comprador.qualificacaoProfissional,
+          estado_civil_casado: dadosFormulario.compradores.comprador.casado,
+          documentos: {
+            url_rg_cpf: getFileUrl(dadosFormulario.compradores.comprador.rg) || getFileUrl(dadosFormulario.compradores.comprador.cpf) || null,
+            url_comprovante_endereco: getFileUrl(dadosFormulario.compradores.comprador.comprovanteEndereco),
+          },
+          conjuge: dadosFormulario.compradores.comprador.casado && dadosFormulario.compradores.comprador.conjuge ? {
+            email: dadosFormulario.compradores.comprador.conjuge.email,
+            qualificacao_profissional: dadosFormulario.compradores.comprador.conjuge.qualificacaoProfissional,
+            documentos: {
+              url_rg: getFileUrl(dadosFormulario.compradores.comprador.conjuge.rg),
+              url_cpf: getFileUrl(dadosFormulario.compradores.comprador.conjuge.cpf),
+              url_certidao_casamento: getFileUrl(dadosFormulario.compradores.comprador.conjuge.certidaoCasamento),
+            },
+          } : null,
+        }] : [];
+
+        // Construir estrutura de vendedores
+        const vendedores = dadosFormulario.vendedores?.vendedores.map((vendedor, index) => ({
+          id: index + 1,
+          email: vendedor.email,
+          qualificacao_profissional: vendedor.qualificacaoProfissional,
+          estado_civil_casado: vendedor.casado,
+          documentos: {
+            url_rg_cpf: getFileUrl(vendedor.rg) || getFileUrl(vendedor.cpf) || null,
+            url_comprovante_endereco: getFileUrl(vendedor.comprovanteEndereco),
+          },
+          conjuge: vendedor.casado && vendedor.conjuge ? {
+            email: vendedor.conjuge.email,
+            qualificacao_profissional: vendedor.conjuge.qualificacaoProfissional,
+            documentos: {
+              url_rg: getFileUrl(vendedor.conjuge.rg),
+              url_cpf: getFileUrl(vendedor.conjuge.cpf),
+              url_certidao_casamento: getFileUrl(vendedor.conjuge.certidaoCasamento),
+            },
+          } : null,
+        })) || [];
+
+        // Construir estrutura de certidões fiscais
+        const certidoes_fiscais = dadosFormulario.certidoes ? {
+          url_cndt: getFileUrl(dadosFormulario.certidoes.cndt),
+          url_cnd_federal: getFileUrl(dadosFormulario.certidoes.cndFederal),
+        } : null;
+
+        // Construir estrutura de imóvel
+        const imovel = dadosFormulario.documentosImovel ? {
+          documentos: {
+            url_matricula: getFileUrl(dadosFormulario.documentosImovel.matricula),
+            url_guia_itbi: getFileUrl(dadosFormulario.documentosImovel.guiaITBI),
+            url_certidao_onus: getFileUrl(dadosFormulario.documentosImovel.certidaoOnus),
+          },
+        } : null;
+
+        // Construir payload na nova estrutura
+        payload = {
+          relatorio_id: relatorio.id,
+          tipo_solicitacao: "minuta_compra_e_venda",
+          data_envio: new Date().toISOString(),
+          dados: {
+            compradores,
+            vendedores,
+            certidoes_fiscais,
+            imovel,
+          },
+        };
+      } else {
+        // Estrutura padrão para outros tipos
+        payload = {
+          relatorio_id: relatorio.id,
+          tipo,
+          // Enviar arquivos com nome e URL juntos para facilitar identificação
+          arquivos: arquivosCompletos,
+          // Manter arquivos_urls e arquivos_originais para compatibilidade com outros tipos
+          arquivos_urls: arquivosUrls,
+          webhook_callback: `${window.location.origin}/api/ia/webhook`,
+          dados_processamento: {
+            arquivos_originais: arquivosArray.map((f) => f.name),
+            tipo_documento: tipo,
+            timestamp: new Date().toISOString(),
+            ...dadosAdicionais,
+          },
+          metadata: {
+            usuario_id: usuarioId,
+            cartorio_id: cartorioId,
+            origem: "gestao_cartorio_app",
+          },
+        };
+      }
 
       // 5. Enviar para webhook (tentando contornar CORS)
       console.log("🌐 Tentando enviar para webhook:", finalWebhookUrl);
@@ -950,11 +1039,52 @@ export const useRelatoriosIA = () => {
     files: File[],
     usuarioId: string,
     cartorioId: string,
-    documentos: {
-      compradores: string[];
-      vendedores: string[];
-      matricula: string[];
-      outros: string[];
+    dadosFormulario: {
+      compradores?: {
+        comprador: {
+          rg: File | null;
+          cpf: File | null;
+          comprovanteEndereco: File | null;
+          email: string;
+          qualificacaoProfissional: string;
+          casado: boolean;
+          conjuge: {
+            rg: File | null;
+            cpf: File | null;
+            certidaoCasamento: File | null;
+            email: string;
+            qualificacaoProfissional: string;
+          } | null;
+        };
+      } | null;
+      vendedores?: {
+        vendedores: Array<{
+          id: string;
+          rg: File | null;
+          cpf: File | null;
+          comprovanteEndereco: File | null;
+          email: string;
+          qualificacaoProfissional: string;
+          casado: boolean;
+          conjuge: {
+            rg: File | null;
+            cpf: File | null;
+            certidaoCasamento: File | null;
+            email: string;
+            qualificacaoProfissional: string;
+          } | null;
+        }>;
+        multiplosVendedores: boolean;
+      } | null;
+      certidoes?: {
+        cndt: File | null;
+        cndFederal: File | null;
+      } | null;
+      documentosImovel?: {
+        matricula: File | null;
+        guiaITBI: File | null;
+        certidaoOnus: File | null;
+      } | null;
     },
     webhookUrl?: string
   ) => {
@@ -965,7 +1095,7 @@ export const useRelatoriosIA = () => {
       cartorioId,
       {
         tipo_documento: "escritura_compra_venda",
-        documentos,
+        dadosFormulario,
         total_documentos: files.length,
       },
       webhookUrl

@@ -480,8 +480,8 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
         {/* Informações Básicas */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium">Informações Básicas</h3>
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium">Informações Básicas</h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
@@ -509,14 +509,14 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                   <FormLabel>Número do Protocolo *</FormLabel>
                   <FormControl>
                     <div className="relative">
-                      <Input
-                        placeholder="Ex: CERT-2024-001"
-                        {...field}
-                        onChange={(e) => {
-                          field.onChange(e);
-                          handleProtocolChange(e);
-                        }}
-                      />
+                    <Input
+                      placeholder="Ex: CERT-2024-001"
+                      {...field}
+                      onChange={(e) => {
+                        field.onChange(e);
+                        handleProtocolChange(e);
+                      }}
+                    />
                       {consultingLevontech && (
                         <div className="absolute right-2 top-1/2 -translate-y-1/2">
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
@@ -611,11 +611,11 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
               )}
             />
           </div>
-        </div>
+          </div>
 
-        {/* Dados do Solicitante */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium">Dados do Solicitante</h3>
+          {/* Dados do Solicitante */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium">Dados do Solicitante</h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
@@ -701,22 +701,22 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
             />
           </div>
 
-          <FormField
-            control={form.control}
-            name="apresentante"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Apresentante</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder="Nome do apresentante (se diferente do solicitante)"
-                    {...field}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+            <FormField
+              control={form.control}
+              name="apresentante"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Apresentante</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="Nome do apresentante (se diferente do solicitante)"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
         </div>
 
         {/* Serviços */}
