@@ -364,11 +364,15 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
       }
     }
     
-    // Primeiro arquivo é RG, segundo é CPF
+    // Se apenas 1 arquivo foi selecionado, usar o mesmo arquivo para RG e CPF
+    // Se 2 arquivos foram selecionados, primeiro é RG e segundo é CPF
+    const rgFile = fileArray[0] || null;
+    const cpfFile = fileArray[1] || fileArray[0] || null; // Se não houver segundo arquivo, usa o primeiro
+    
     setTempCompradorData(prev => ({
       ...prev,
-      rg: fileArray[0] || null,
-      cpf: fileArray[1] || null,
+      rg: rgFile,
+      cpf: cpfFile,
     }));
   };
 
@@ -1001,21 +1005,34 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
                       onChange={(e) => handleFileUploadRgCpfComprador(e.target.files)}
                     />
                     {(tempCompradorData.rg || tempCompradorData.cpf) && (
-                      <div className="mt-2 space-y-2">
-                        {tempCompradorData.rg && (
+                      <div className="mt-2">
+                        {tempCompradorData.rg && tempCompradorData.cpf && tempCompradorData.rg.name === tempCompradorData.cpf.name ? (
+                          // Mesmo arquivo para RG e CPF - mostrar apenas um card
                           <div className="p-2 bg-green-50 border border-green-200 rounded">
                             <p className="text-sm text-green-800 flex items-center gap-1">
                               <CheckCircle2 className="h-4 w-4" />
-                              RG: {tempCompradorData.rg.name}
+                              Arquivo selecionado: {tempCompradorData.rg.name}
                             </p>
                           </div>
-                        )}
-                        {tempCompradorData.cpf && (
-                          <div className="p-2 bg-green-50 border border-green-200 rounded">
-                            <p className="text-sm text-green-800 flex items-center gap-1">
-                              <CheckCircle2 className="h-4 w-4" />
-                              CPF: {tempCompradorData.cpf.name}
-                            </p>
+                        ) : (
+                          // Arquivos diferentes - mostrar ambos
+                          <div className="space-y-2">
+                            {tempCompradorData.rg && (
+                              <div className="p-2 bg-green-50 border border-green-200 rounded">
+                                <p className="text-sm text-green-800 flex items-center gap-1">
+                                  <CheckCircle2 className="h-4 w-4" />
+                                  RG: {tempCompradorData.rg.name}
+                                </p>
+                              </div>
+                            )}
+                            {tempCompradorData.cpf && (
+                              <div className="p-2 bg-green-50 border border-green-200 rounded">
+                                <p className="text-sm text-green-800 flex items-center gap-1">
+                                  <CheckCircle2 className="h-4 w-4" />
+                                  CPF: {tempCompradorData.cpf.name}
+                                </p>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1265,32 +1282,49 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
                               }
                             }
                             
-                            // Primeiro arquivo é RG, segundo é CPF
+                            // Se apenas 1 arquivo foi selecionado, usar o mesmo arquivo para RG e CPF
+                            // Se 2 arquivos foram selecionados, primeiro é RG e segundo é CPF
+                            const rgFile = fileArray[0] || null;
+                            const cpfFile = fileArray[1] || fileArray[0] || null; // Se não houver segundo arquivo, usa o primeiro
+                            
                             setTempVendedoresData(prev => prev.map((v, i) =>
                               i === index ? {
                                 ...v,
-                                rg: fileArray[0] || null,
-                                cpf: fileArray[1] || null,
+                                rg: rgFile,
+                                cpf: cpfFile,
                               } : v
                             ));
                           }}
                         />
                         {(vendedor.rg || vendedor.cpf) && (
-                          <div className="mt-2 space-y-2">
-                            {vendedor.rg && (
+                          <div className="mt-2">
+                            {vendedor.rg && vendedor.cpf && vendedor.rg.name === vendedor.cpf.name ? (
+                              // Mesmo arquivo para RG e CPF - mostrar apenas um card
                               <div className="p-2 bg-green-50 border border-green-200 rounded">
                                 <p className="text-sm text-green-800 flex items-center gap-1">
                                   <CheckCircle2 className="h-4 w-4" />
-                                  RG: {vendedor.rg.name}
+                                  Arquivo selecionado: {vendedor.rg.name}
                                 </p>
                               </div>
-                            )}
-                            {vendedor.cpf && (
-                              <div className="p-2 bg-green-50 border border-green-200 rounded">
-                                <p className="text-sm text-green-800 flex items-center gap-1">
-                                  <CheckCircle2 className="h-4 w-4" />
-                                  CPF: {vendedor.cpf.name}
-                                </p>
+                            ) : (
+                              // Arquivos diferentes - mostrar ambos
+                              <div className="space-y-2">
+                                {vendedor.rg && (
+                                  <div className="p-2 bg-green-50 border border-green-200 rounded">
+                                    <p className="text-sm text-green-800 flex items-center gap-1">
+                                      <CheckCircle2 className="h-4 w-4" />
+                                      RG: {vendedor.rg.name}
+                                    </p>
+                                  </div>
+                                )}
+                                {vendedor.cpf && (
+                                  <div className="p-2 bg-green-50 border border-green-200 rounded">
+                                    <p className="text-sm text-green-800 flex items-center gap-1">
+                                      <CheckCircle2 className="h-4 w-4" />
+                                      CPF: {vendedor.cpf.name}
+                                    </p>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
