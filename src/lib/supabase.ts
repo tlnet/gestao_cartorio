@@ -60,6 +60,10 @@ export interface Database {
           channel_id_zdg: string | null;
           whatsapp_contas: string | null;
           whatsapp_protocolos: string | null;
+          cidade: string | null;
+          estado: string | null;
+          numero_oficio: string | null;
+          tabeliao_responsavel: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -84,6 +88,10 @@ export interface Database {
           channel_id_zdg?: string | null;
           whatsapp_contas?: string | null;
           whatsapp_protocolos?: string | null;
+          cidade?: string | null;
+          estado?: string | null;
+          numero_oficio?: string | null;
+          tabeliao_responsavel?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -108,6 +116,10 @@ export interface Database {
           channel_id_zdg?: string | null;
           whatsapp_contas?: string | null;
           whatsapp_protocolos?: string | null;
+          cidade?: string | null;
+          estado?: string | null;
+          numero_oficio?: string | null;
+          tabeliao_responsavel?: string | null;
           updated_at?: string;
         };
       };

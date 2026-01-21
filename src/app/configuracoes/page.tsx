@@ -69,11 +69,13 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { StaggeredCards, FadeInUp } from "@/components/ui/page-transition";
 import { Smartphone, Receipt, Clipboard, Database } from "lucide-react";
 import { useLevontechConfig } from "@/hooks/use-levontech-config";
+import { useCartorioValidation } from "@/hooks/use-cartorio-validation";
 
 const Configuracoes = () => {
   const [activeTab, setActiveTab] = useState("cartorio");
   const { user } = useAuth();
   const [cartorioId, setCartorioId] = useStateAuth<string | undefined>();
+  const { isValid: isCartorioValid, missingFields, revalidate: revalidateCartorio } = useCartorioValidation();
   const [showStatusDialog, setShowStatusDialog] = useState(false);
   const [showServicoDialog, setShowServicoDialog] = useState(false);
   const [showEditStatusDialog, setShowEditStatusDialog] = useState(false);
@@ -167,7 +169,7 @@ const Configuracoes = () => {
       try {
         const { data, error } = await supabase
           .from("cartorios")
-          .select("nome, cnpj, endereco, telefone, email, tenant_id_zdg, external_id_zdg, api_token_zdg, channel_id_zdg, notificacao_whatsapp, whatsapp_contas, whatsapp_protocolos")
+          .select("nome, cnpj, endereco, telefone, email, tenant_id_zdg, external_id_zdg, api_token_zdg, channel_id_zdg, notificacao_whatsapp, whatsapp_contas, whatsapp_protocolos, cidade, estado, numero_oficio, tabeliao_responsavel")
           .eq("id", cartorioId)
           .single();
 
@@ -188,6 +190,10 @@ const Configuracoes = () => {
             notificacaoWhatsApp: data.notificacao_whatsapp || false,
             whatsappContas: data.whatsapp_contas || "",
             whatsappProtocolos: data.whatsapp_protocolos || "",
+            cidade: data.cidade || "",
+            estado: data.estado || "",
+            numeroOficio: data.numero_oficio || "",
+            tabeliaoResponsavel: data.tabeliao_responsavel || "",
           }));
         }
       } catch (error) {
@@ -240,6 +246,10 @@ const Configuracoes = () => {
     whatsappContas: "",
     whatsappProtocolos: "",
     webhookN8N: "https://webhook.n8n.io/cartorio-123",
+    cidade: "",
+    estado: "",
+    numeroOficio: "",
+    tabeliaoResponsavel: "",
   });
 
   // Estados para formulários
@@ -299,12 +309,22 @@ const Configuracoes = () => {
           notificacao_whatsapp: configCartorio.notificacaoWhatsApp,
           whatsapp_contas: configCartorio.whatsappContas || null,
           whatsapp_protocolos: configCartorio.whatsappProtocolos || null,
+          cidade: configCartorio.cidade || null,
+          estado: configCartorio.estado || null,
+          numero_oficio: configCartorio.numeroOficio || null,
+          tabeliao_responsavel: configCartorio.tabeliaoResponsavel || null,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", cartorioId);
 
       if (error) throw error;
 
       toast.success("Configurações do cartório salvas com sucesso!");
+      
+      // Revalidar imediatamente após salvar
+      setTimeout(() => {
+        revalidateCartorio();
+      }, 500);
     } catch (error: any) {
       console.error("Erro ao salvar configurações do cartório:", error);
       toast.error("Erro ao salvar configurações: " + (error.message || "Erro desconhecido"));
@@ -686,6 +706,31 @@ const Configuracoes = () => {
       subtitle="Gerencie as configurações do cartório e do sistema"
     >
       <div className="space-y-6">
+        {/* Aviso de dados faltantes */}
+        {!isCartorioValid && missingFields.length > 0 && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-yellow-800 mb-1">
+                  Dados do Cartório Incompletos
+                </h3>
+                <p className="text-sm text-yellow-700 mb-2">
+                  Para garantir o funcionamento adequado do sistema, especialmente na geração de minutas de documento, é necessário preencher os seguintes campos:
+                </p>
+                <ul className="list-disc list-inside text-sm text-yellow-700 space-y-1">
+                  {missingFields.map((field, index) => (
+                    <li key={index}>{field}</li>
+                  ))}
+                </ul>
+                <p className="text-sm text-yellow-700 mt-3">
+                  Por favor, preencha os campos faltantes na seção <strong>"Dados do Cartório"</strong> abaixo.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Tabs */}
         <div className="border-b border-gray-200">
           <nav className="-mb-px flex space-x-8">
@@ -753,6 +798,54 @@ const Configuracoes = () => {
                   </div>
 
                   <div>
+                    <Label htmlFor="cidade">Cidade</Label>
+                    <Input
+                      id="cidade"
+                      value={configCartorio.cidade}
+                      onChange={(e) =>
+                        setConfigCartorio((prev) => ({
+                          ...prev,
+                          cidade: e.target.value,
+                        }))
+                      }
+                      placeholder="Ex: São Paulo"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="estado">Estado (UF)</Label>
+                    <Input
+                      id="estado"
+                      value={configCartorio.estado}
+                      onChange={(e) =>
+                        setConfigCartorio((prev) => ({
+                          ...prev,
+                          estado: e.target.value.toUpperCase(),
+                        }))
+                      }
+                      placeholder="Ex: SP"
+                      maxLength={2}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="endereco">Endereço</Label>
+                    <Textarea
+                      id="endereco"
+                      value={configCartorio.endereco}
+                      onChange={(e) =>
+                        setConfigCartorio((prev) => ({
+                          ...prev,
+                          endereco: e.target.value,
+                        }))
+                      }
+                      rows={3}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
                     <Label htmlFor="telefone">Telefone</Label>
                     <Input
                       id="telefone"
@@ -765,9 +858,7 @@ const Configuracoes = () => {
                       }
                     />
                   </div>
-                </div>
 
-                <div className="space-y-4">
                   <div>
                     <Label htmlFor="email">E-mail</Label>
                     <Input
@@ -784,16 +875,32 @@ const Configuracoes = () => {
                   </div>
 
                   <div>
-                    <Label htmlFor="endereco">Endereço</Label>
-                    <Textarea
-                      id="endereco"
-                      value={configCartorio.endereco}
+                    <Label htmlFor="numeroOficio">Número do Ofício</Label>
+                    <Input
+                      id="numeroOficio"
+                      value={configCartorio.numeroOficio}
                       onChange={(e) =>
                         setConfigCartorio((prev) => ({
                           ...prev,
-                          endereco: e.target.value,
+                          numeroOficio: e.target.value,
                         }))
                       }
+                      placeholder="Ex: 1º Ofício"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="tabeliaoResponsavel">Tabelião Responsável</Label>
+                    <Input
+                      id="tabeliaoResponsavel"
+                      value={configCartorio.tabeliaoResponsavel}
+                      onChange={(e) =>
+                        setConfigCartorio((prev) => ({
+                          ...prev,
+                          tabeliaoResponsavel: e.target.value,
+                        }))
+                      }
+                      placeholder="Ex: João Silva"
                     />
                   </div>
                 </div>

@@ -26,6 +26,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { supabase } from "@/lib/supabase";
 import { UserSkeleton } from "@/components/ui/user-skeleton";
 import { useEffect, useState } from "react";
+import { useCartorioValidation } from "@/hooks/use-cartorio-validation";
 
 interface SidebarProps {
   userType?: "admin" | "supervisor" | "atendente";
@@ -36,6 +37,7 @@ const Sidebar: React.FC<SidebarProps> = ({ userType = "supervisor" }) => {
   const { user, signOut } = useAuth();
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const { isValid: isCartorioValid } = useCartorioValidation();
 
   // Buscar dados do usuário
   useEffect(() => {
@@ -198,18 +200,22 @@ const Sidebar: React.FC<SidebarProps> = ({ userType = "supervisor" }) => {
         {filteredMenuItems.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
+          const showWarning = item.href === "/configuracoes" && !isCartorioValid;
 
           return (
             <Link key={item.href} href={item.href}>
               <Button
                 variant={isActive ? "default" : "ghost"}
                 className={cn(
-                  "w-full justify-start",
+                  "w-full justify-start relative",
                   isActive && "bg-blue-600 text-white hover:bg-blue-700"
                 )}
               >
                 <Icon className="mr-3 h-4 w-4" />
                 {item.title}
+                {showWarning && (
+                  <span className="ml-auto h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
+                )}
               </Button>
             </Link>
           );

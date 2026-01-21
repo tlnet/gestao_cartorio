@@ -691,6 +691,35 @@ export const useRelatoriosIA = () => {
           },
         } : null;
 
+        // Buscar dados do cartório para incluir no payload
+        let cartorioData = {
+          cidade: "",
+          estado: "",
+          endereco_completo: "",
+          numero_oficio: "",
+          tabeliao_responsavel: "",
+        };
+
+        try {
+          const { data: cartorioInfo, error: cartorioError } = await supabase
+            .from("cartorios")
+            .select("cidade, estado, endereco, numero_oficio, tabeliao_responsavel")
+            .eq("id", cartorioId)
+            .single();
+
+          if (!cartorioError && cartorioInfo) {
+            cartorioData = {
+              cidade: cartorioInfo.cidade || "",
+              estado: cartorioInfo.estado || "",
+              endereco_completo: cartorioInfo.endereco || "",
+              numero_oficio: cartorioInfo.numero_oficio || "",
+              tabeliao_responsavel: cartorioInfo.tabeliao_responsavel || "",
+            };
+          }
+        } catch (error) {
+          console.error("Erro ao buscar dados do cartório:", error);
+        }
+
         // Construir payload na nova estrutura
         payload = {
           relatorio_id: relatorio.id,
@@ -702,6 +731,7 @@ export const useRelatoriosIA = () => {
             certidoes_fiscais,
             imovel,
           },
+          cartorio: cartorioData,
         };
       } else {
         // Estrutura padrão para outros tipos
