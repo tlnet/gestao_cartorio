@@ -183,72 +183,72 @@ export async function POST(request: NextRequest) {
               hojeTimestamp >= dataNotificacaoTimestamp &&
               hojeTimestamp < dataVencimentoTimestamp
             ) {
-            // Preparar payload do webhook com a mesma estrutura do webhook de status
-            const payload = {
-              status_anterior: protocolo.status,
-              status_novo: protocolo.status, // Mantém o mesmo status, pois é apenas notificação de vencimento
-              protocolo_id: protocolo.id,
-              cartorio_id: cartorio.id,
-              fluxo: "vencimento-protocolo",
-              // Dados adicionais do protocolo
-              nome_completo_solicitante: protocolo.solicitante,
-              telefone_solicitante: protocolo.telefone,
-              servicos_solicitados: protocolo.servicos || [],
-              numero_demanda: protocolo.demanda,
-              numero_protocolo: protocolo.protocolo,
-              // Dados ZDG do cartório
-              tenant_id_zdg: cartorio.tenant_id_zdg || null,
-              external_id_zdg: cartorio.external_id_zdg || null,
-              api_token_zdg: cartorio.api_token_zdg || null,
-              channel_id_zdg: cartorio.channel_id_zdg || null,
-              // Dados adicionais de vencimento
-              telefone: cartorio.whatsapp_protocolos,
-              servico: {
-                nome: servico.nome,
-                prazo_execucao: servico.prazo_execucao,
-                dias_notificacao_antes_vencimento: servico.dias_notificacao_antes_vencimento,
-              },
-              vencimento: {
-                data_vencimento: dataVencimento.toISOString().split("T")[0],
-                data_notificacao: dataNotificacao.toISOString().split("T")[0],
-                dias_restantes: Math.ceil((dataVencimentoTimestamp - hojeTimestamp) / (1000 * 60 * 60 * 24)),
-              },
-            };
-
-            // Disparar webhook
-            try {
-              const webhookUrl = "https://webhook.cartorio.app.br/webhook/api/webhooks/protocolos/vencimento";
-              
-              const response = await fetch(webhookUrl, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
+              // Preparar payload do webhook com a mesma estrutura do webhook de status
+              const payload = {
+                status_anterior: protocolo.status,
+                status_novo: protocolo.status, // Mantém o mesmo status, pois é apenas notificação de vencimento
+                protocolo_id: protocolo.id,
+                cartorio_id: cartorio.id,
+                fluxo: "vencimento-protocolo",
+                // Dados adicionais do protocolo
+                nome_completo_solicitante: protocolo.solicitante,
+                telefone_solicitante: protocolo.telefone,
+                servicos_solicitados: protocolo.servicos || [],
+                numero_demanda: protocolo.demanda,
+                numero_protocolo: protocolo.protocolo,
+                // Dados ZDG do cartório
+                tenant_id_zdg: cartorio.tenant_id_zdg || null,
+                external_id_zdg: cartorio.external_id_zdg || null,
+                api_token_zdg: cartorio.api_token_zdg || null,
+                channel_id_zdg: cartorio.channel_id_zdg || null,
+                // Dados adicionais de vencimento
+                telefone: cartorio.whatsapp_protocolos,
+                servico: {
+                  nome: servico.nome,
+                  prazo_execucao: servico.prazo_execucao,
+                  dias_notificacao_antes_vencimento: servico.dias_notificacao_antes_vencimento,
                 },
-                body: JSON.stringify(payload),
-              });
-
-              if (response.ok) {
-                console.log(`✅ Webhook disparado para protocolo ${protocolo.protocolo}, serviço ${servico.nome}`);
-                notificacoesEnviadas.push({
-                  protocolo: protocolo.protocolo,
-                  servico: servico.nome,
+                vencimento: {
                   data_vencimento: dataVencimento.toISOString().split("T")[0],
+                  data_notificacao: dataNotificacao.toISOString().split("T")[0],
+                  dias_restantes: Math.ceil((dataVencimentoTimestamp - hojeTimestamp) / (1000 * 60 * 60 * 24)),
+                },
+              };
+
+              // Disparar webhook
+              try {
+                const webhookUrl = "https://webhook.cartorio.app.br/webhook/api/webhooks/protocolos/vencimento";
+                
+                const response = await fetch(webhookUrl, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify(payload),
                 });
-              } else {
-                const errorText = await response.text();
+
+                if (response.ok) {
+                  console.log(`✅ Webhook disparado para protocolo ${protocolo.protocolo}, serviço ${servico.nome}`);
+                  notificacoesEnviadas.push({
+                    protocolo: protocolo.protocolo,
+                    servico: servico.nome,
+                    data_vencimento: dataVencimento.toISOString().split("T")[0],
+                  });
+                } else {
+                  const errorText = await response.text();
+                  console.error(
+                    `❌ Erro ao disparar webhook para protocolo ${protocolo.protocolo}, serviço ${servico.nome}:`,
+                    response.status,
+                    errorText
+                  );
+                }
+              } catch (webhookError: any) {
                 console.error(
                   `❌ Erro ao disparar webhook para protocolo ${protocolo.protocolo}, serviço ${servico.nome}:`,
-                  response.status,
-                  errorText
+                  webhookError.message
                 );
               }
-            } catch (webhookError: any) {
-              console.error(
-                `❌ Erro ao disparar webhook para protocolo ${protocolo.protocolo}, serviço ${servico.nome}:`,
-                webhookError.message
-              );
             }
-          }
         }
       }
     }
