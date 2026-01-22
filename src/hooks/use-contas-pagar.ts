@@ -277,6 +277,160 @@ export const useContasPagar = (cartorioId?: string) => {
       setContas((prev) => [novaConta, ...prev]);
       calcularResumo([novaConta, ...contas]);
 
+      // Verificar se o vencimento está nos próximos 2 dias e criar notificação + disparar webhook
+      const dataVencimento = new Date(contaData.dataVencimento);
+      dataVencimento.setHours(0, 0, 0, 0);
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      const proximos2Dias = new Date();
+      proximos2Dias.setDate(hoje.getDate() + 2);
+      proximos2Dias.setHours(0, 0, 0, 0);
+
+      const hojeTimestamp = hoje.getTime();
+      const dataVencimentoTimestamp = dataVencimento.getTime();
+      const proximos2DiasTimestamp = proximos2Dias.getTime();
+
+      // Verificar se o vencimento está nos próximos 2 dias
+      if (
+        dataVencimentoTimestamp >= hojeTimestamp &&
+        dataVencimentoTimestamp <= proximos2DiasTimestamp
+      ) {
+        try {
+          // Buscar dados do cartório (incluindo ZDG e WhatsApp)
+          const { data: cartorioData, error: cartorioError } = await supabase
+            .from("cartorios")
+            .select("id, notificacao_whatsapp, whatsapp_contas, tenant_id_zdg, external_id_zdg, api_token_zdg, channel_id_zdg")
+            .eq("id", cartorioId)
+            .single();
+
+          if (!cartorioError && cartorioData) {
+            const diasRestantes = Math.ceil((dataVencimentoTimestamp - hojeTimestamp) / (1000 * 60 * 60 * 24));
+
+            // Criar notificação no sistema imediatamente
+            if (user?.id) {
+              try {
+                const { error: notificacaoError } = await supabase
+                  .from("notificacoes")
+                  .insert([
+                    {
+                      usuario_id: user.id,
+                      cartorio_id: cartorioId,
+                      tipo: "conta_pagar",
+                      titulo:
+                        diasRestantes === 0
+                          ? "Conta vence hoje!"
+                          : diasRestantes === 1
+                          ? "Conta vence amanhã!"
+                          : `Conta vence em ${diasRestantes} dias`,
+                      mensagem: `A conta "${
+                        contaData.descricao
+                      }" no valor de R$ ${contaData.valor
+                        .toFixed(2)
+                        .replace(".", ",")} vence em ${
+                        diasRestantes === 0
+                          ? "hoje"
+                          : diasRestantes === 1
+                          ? "amanhã"
+                          : `${diasRestantes} dias`
+                      }.`,
+                      prioridade:
+                        diasRestantes <= 1
+                          ? "urgente"
+                          : diasRestantes <= 3
+                          ? "alta"
+                          : "normal",
+                      data_vencimento: dataVencimento.toISOString().split("T")[0],
+                      data_notificacao: new Date().toISOString(),
+                      metadata: {
+                        conta_id: novaConta.id,
+                        descricao: contaData.descricao,
+                        valor: contaData.valor,
+                        dias_para_vencer: diasRestantes,
+                      },
+                      action_url: "/contas",
+                      lida: false,
+                    },
+                  ]);
+
+                if (notificacaoError) {
+                  console.error("❌ Erro ao criar notificação:", notificacaoError);
+                } else {
+                  console.log(`✅ Notificação criada imediatamente para conta ${contaData.descricao} (vencimento em ${diasRestantes} dias)`);
+                }
+              } catch (notificacaoError: any) {
+                console.error("❌ Erro ao criar notificação imediata:", notificacaoError.message);
+              }
+            }
+
+            // Disparar webhook se WhatsApp estiver habilitado e número configurado
+            if (
+              cartorioData.notificacao_whatsapp &&
+              cartorioData.whatsapp_contas &&
+              cartorioData.whatsapp_contas.trim() !== ""
+            ) {
+              // Preparar payload do webhook com a mesma estrutura do webhook de status de protocolos
+              const payload = {
+                status_anterior: contaData.status || "A_PAGAR",
+                status_novo: contaData.status || "A_PAGAR",
+                conta_id: novaConta.id,
+                cartorio_id: cartorioId,
+                fluxo: "vencimento-conta-pagar",
+                // Dados adicionais da conta
+                nome_completo_solicitante: contaData.fornecedor || "Fornecedor não informado",
+                telefone_solicitante: null,
+                servicos_solicitados: [],
+                numero_demanda: null,
+                numero_protocolo: null,
+                // Dados ZDG do cartório
+                tenant_id_zdg: cartorioData.tenant_id_zdg || null,
+                external_id_zdg: cartorioData.external_id_zdg || null,
+                api_token_zdg: cartorioData.api_token_zdg || null,
+                channel_id_zdg: cartorioData.channel_id_zdg || null,
+                // Dados adicionais da conta
+                telefone: cartorioData.whatsapp_contas,
+                conta: {
+                  id: novaConta.id,
+                  descricao: contaData.descricao,
+                  valor: contaData.valor,
+                  categoria: contaData.categoria,
+                  fornecedor: contaData.fornecedor,
+                  observacoes: contaData.observacoes,
+                  status: contaData.status || "A_PAGAR",
+                },
+                vencimento: {
+                  data_vencimento: dataVencimento.toISOString().split("T")[0],
+                  dias_restantes: diasRestantes,
+                  vencida: diasRestantes < 0,
+                },
+              };
+
+              // Disparar webhook
+              const webhookResponse = await fetch("https://webhook.cartorio.app.br/webhook/api/webhooks/financeiro/contas-pagar", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(payload),
+              });
+
+              if (webhookResponse.ok) {
+                console.log(`✅ Webhook disparado imediatamente para conta ${contaData.descricao} (vencimento em ${diasRestantes} dias)`);
+              } else {
+                const errorText = await webhookResponse.text();
+                console.error(
+                  `❌ Erro ao disparar webhook para conta ${contaData.descricao}:`,
+                  webhookResponse.status,
+                  errorText
+                );
+              }
+            }
+          }
+        } catch (webhookError: any) {
+          // Não bloquear a criação da conta se o webhook falhar
+          console.error("❌ Erro ao disparar webhook imediato para conta:", webhookError.message);
+        }
+      }
+
       toast.success("Conta criada com sucesso!");
       return novaConta;
     } catch (err) {

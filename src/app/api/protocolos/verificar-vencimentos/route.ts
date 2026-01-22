@@ -75,40 +75,114 @@ export async function POST(request: NextRequest) {
 
       // Processar cada protocolo
       for (const protocolo of protocolos) {
-        if (!protocolo.servicos || !Array.isArray(protocolo.servicos)) {
-          continue;
-        }
-
         const dataCriacaoProtocolo = new Date(protocolo.created_at);
         dataCriacaoProtocolo.setHours(0, 0, 0, 0);
 
-        // Processar cada serviço do protocolo
-        for (const nomeServico of protocolo.servicos) {
-          const servico = servicosMap.get(nomeServico.toLowerCase().trim());
-
-          if (!servico || !servico.prazo_execucao || !servico.dias_notificacao_antes_vencimento) {
-            continue;
-          }
-
-          // Calcular data de vencimento do serviço
-          const dataVencimento = new Date(dataCriacaoProtocolo);
-          dataVencimento.setDate(dataVencimento.getDate() + servico.prazo_execucao);
-          dataVencimento.setHours(0, 0, 0, 0);
-
-          // Calcular data de notificação (vencimento - dias_notificacao)
-          const dataNotificacao = new Date(dataVencimento);
-          dataNotificacao.setDate(dataNotificacao.getDate() - servico.dias_notificacao_antes_vencimento);
-          dataNotificacao.setHours(0, 0, 0, 0);
-
-          // Verificar se hoje é a data de notificação ou já passou (mas ainda não venceu)
+        // Verificar notificação do prazo de execução do protocolo (se definido)
+        if (protocolo.prazo_execucao) {
+          const dataVencimentoProtocolo = new Date(protocolo.prazo_execucao);
+          dataVencimentoProtocolo.setHours(0, 0, 0, 0);
+          
           const hojeTimestamp = hoje.getTime();
-          const dataNotificacaoTimestamp = dataNotificacao.getTime();
-          const dataVencimentoTimestamp = dataVencimento.getTime();
+          const dataVencimentoProtocoloTimestamp = dataVencimentoProtocolo.getTime();
+          
+          // Verificar se o prazo do protocolo está próximo (próximos 7 dias) ou vencido
+          const diasRestantesProtocolo = Math.ceil((dataVencimentoProtocoloTimestamp - hojeTimestamp) / (1000 * 60 * 60 * 24));
+          
+          if (diasRestantesProtocolo <= 7 && diasRestantesProtocolo >= -1) {
+            // Preparar payload do webhook para prazo do protocolo
+            const payloadProtocolo = {
+              status_anterior: protocolo.status,
+              status_novo: protocolo.status,
+              protocolo_id: protocolo.id,
+              cartorio_id: cartorio.id,
+              fluxo: "vencimento-protocolo",
+              nome_completo_solicitante: protocolo.solicitante,
+              telefone_solicitante: protocolo.telefone,
+              servicos_solicitados: protocolo.servicos || [],
+              numero_demanda: protocolo.demanda,
+              numero_protocolo: protocolo.protocolo,
+              tenant_id_zdg: cartorio.tenant_id_zdg || null,
+              external_id_zdg: cartorio.external_id_zdg || null,
+              api_token_zdg: cartorio.api_token_zdg || null,
+              channel_id_zdg: cartorio.channel_id_zdg || null,
+              telefone: cartorio.whatsapp_protocolos,
+              servico: {
+                nome: "Prazo de Execução do Protocolo",
+                prazo_execucao: null,
+                dias_notificacao_antes_vencimento: null,
+              },
+              vencimento: {
+                data_vencimento: dataVencimentoProtocolo.toISOString().split("T")[0],
+                data_notificacao: dataVencimentoProtocolo.toISOString().split("T")[0],
+                dias_restantes: diasRestantesProtocolo,
+              },
+            };
 
-          if (
-            hojeTimestamp >= dataNotificacaoTimestamp &&
-            hojeTimestamp < dataVencimentoTimestamp
-          ) {
+            // Disparar webhook para prazo do protocolo
+            try {
+              const webhookUrl = "https://webhook.cartorio.app.br/webhook/api/webhooks/protocolos/vencimento";
+              
+              const response = await fetch(webhookUrl, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(payloadProtocolo),
+              });
+
+              if (response.ok) {
+                console.log(`✅ Webhook disparado para prazo do protocolo ${protocolo.protocolo}`);
+                notificacoesEnviadas.push({
+                  protocolo: protocolo.protocolo,
+                  servico: "Prazo de Execução do Protocolo",
+                  data_vencimento: dataVencimentoProtocolo.toISOString().split("T")[0],
+                });
+              } else {
+                const errorText = await response.text();
+                console.error(
+                  `❌ Erro ao disparar webhook para prazo do protocolo ${protocolo.protocolo}:`,
+                  response.status,
+                  errorText
+                );
+              }
+            } catch (webhookError: any) {
+              console.error(
+                `❌ Erro ao disparar webhook para prazo do protocolo ${protocolo.protocolo}:`,
+                webhookError.message
+              );
+            }
+          }
+        }
+
+        // Processar cada serviço do protocolo
+        if (protocolo.servicos && Array.isArray(protocolo.servicos)) {
+          for (const nomeServico of protocolo.servicos) {
+            const servico = servicosMap.get(nomeServico.toLowerCase().trim());
+
+            if (!servico || !servico.prazo_execucao || !servico.dias_notificacao_antes_vencimento) {
+              continue;
+            }
+
+            // Calcular data de vencimento do serviço
+            const dataVencimento = new Date(dataCriacaoProtocolo);
+            dataVencimento.setDate(dataVencimento.getDate() + servico.prazo_execucao);
+            dataVencimento.setHours(0, 0, 0, 0);
+
+            // Calcular data de notificação (vencimento - dias_notificacao)
+            const dataNotificacao = new Date(dataVencimento);
+            dataNotificacao.setDate(dataNotificacao.getDate() - servico.dias_notificacao_antes_vencimento);
+            dataNotificacao.setHours(0, 0, 0, 0);
+
+            // Verificar se hoje é a data de notificação ou já passou (mas ainda não venceu)
+            const hojeTimestamp = hoje.getTime();
+            const dataNotificacaoTimestamp = dataNotificacao.getTime();
+            const dataVencimentoTimestamp = dataVencimento.getTime();
+
+            if (
+              hojeTimestamp >= dataNotificacaoTimestamp &&
+              hojeTimestamp < dataVencimentoTimestamp
+            ) {
             // Preparar payload do webhook com a mesma estrutura do webhook de status
             const payload = {
               status_anterior: protocolo.status,

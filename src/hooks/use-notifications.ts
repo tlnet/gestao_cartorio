@@ -549,79 +549,198 @@ export const useNotifications = () => {
         return;
       }
 
-      // Buscar protocolos próximos do vencimento (7 dias)
+      // Buscar protocolos não concluídos do cartório
       const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
       const proximos7Dias = new Date();
       proximos7Dias.setDate(hoje.getDate() + 7);
+      proximos7Dias.setHours(0, 0, 0, 0);
 
       const { data: protocolos, error } = await supabase
         .from("protocolos")
-        .select("id, protocolo, solicitante, prazo_execucao, status")
+        .select("id, protocolo, solicitante, prazo_execucao, status, servicos, created_at, demanda, telefone, email")
         .eq("cartorio_id", userData.cartorio_id)
-        .not("prazo_execucao", "is", null)
-        .neq("status", "Concluído") // Excluir protocolos concluídos
-        .gte("prazo_execucao", hoje.toISOString().split("T")[0])
-        .lte("prazo_execucao", proximos7Dias.toISOString().split("T")[0]);
+        .neq("status", "Concluído")
+        .not("servicos", "is", null);
 
       if (error) {
         console.error("Erro ao buscar protocolos:", error);
         return;
       }
 
+      if (!protocolos || protocolos.length === 0) {
+        return;
+      }
+
+      // Buscar serviços do cartório
+      const { data: servicos, error: servicosError } = await supabase
+        .from("servicos")
+        .select("id, nome, prazo_execucao, dias_notificacao_antes_vencimento, ativo")
+        .eq("cartorio_id", userData.cartorio_id)
+        .eq("ativo", true);
+
+      if (servicosError) {
+        console.error("Erro ao buscar serviços:", servicosError);
+        return;
+      }
+
+      if (!servicos || servicos.length === 0) {
+        return;
+      }
+
+      // Criar mapa de serviços por nome para busca rápida
+      const servicosMap = new Map(
+        servicos.map((s) => [s.nome.toLowerCase().trim(), s])
+      );
+
       // Criar notificações para protocolos próximos do vencimento
       for (const protocolo of protocolos || []) {
         try {
-          const dataVencimento = new Date(protocolo.prazo_execucao);
-          const diasParaVencer = Math.ceil(
-            (dataVencimento.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)
-          );
+          const dataCriacaoProtocolo = new Date(protocolo.created_at);
+          dataCriacaoProtocolo.setHours(0, 0, 0, 0);
+          const hojeTimestamp = hoje.getTime();
 
-          // Verificar se já existe notificação para este protocolo nas últimas 24 horas
-          const vinteQuatroHorasAtras = new Date();
-          vinteQuatroHorasAtras.setHours(vinteQuatroHorasAtras.getHours() - 24);
+          // Verificar prazo de execução do protocolo (se definido)
+          if (protocolo.prazo_execucao) {
+            const dataVencimentoProtocolo = new Date(protocolo.prazo_execucao);
+            dataVencimentoProtocolo.setHours(0, 0, 0, 0);
+            const dataVencimentoProtocoloTimestamp = dataVencimentoProtocolo.getTime();
+            const diasParaVencerProtocolo = Math.ceil((dataVencimentoProtocoloTimestamp - hojeTimestamp) / (1000 * 60 * 60 * 24));
 
-          const { data: notificacaoExistente } = await supabase
-            .from("notificacoes")
-            .select("id, created_at")
-            .eq("protocolo_id", protocolo.id)
-            .eq("tipo", "prazo_vencimento")
-            .eq("usuario_id", user.id)
-            .gte("created_at", vinteQuatroHorasAtras.toISOString())
-            .single();
+            if (diasParaVencerProtocolo <= 7 && diasParaVencerProtocolo >= -1) {
+              // Verificar se já existe notificação para este protocolo nas últimas 24 horas
+              const vinteQuatroHorasAtras = new Date();
+              vinteQuatroHorasAtras.setHours(vinteQuatroHorasAtras.getHours() - 24);
 
-          if (!notificacaoExistente) {
-            await createNotificacao({
-              cartorio_id: userData.cartorio_id,
-              protocolo_id: protocolo.id,
-              tipo: "prazo_vencimento",
-              titulo:
-                diasParaVencer === 0
-                  ? "Protocolo vence hoje!"
-                  : diasParaVencer === 1
-                  ? "Protocolo vence amanhã!"
-                  : `Protocolo vence em ${diasParaVencer} dias`,
-              mensagem: `O protocolo ${protocolo.protocolo} (${
-                protocolo.solicitante
-              }) vence em ${
-                diasParaVencer === 0
-                  ? "hoje"
-                  : diasParaVencer === 1
-                  ? "amanhã"
-                  : `${diasParaVencer} dias`
-              }.`,
-              prioridade:
-                diasParaVencer <= 1
-                  ? "urgente"
-                  : diasParaVencer <= 3
-                  ? "alta"
-                  : "normal",
-              data_vencimento: protocolo.prazo_execucao,
-              metadata: {
-                protocolo: protocolo.protocolo,
-                solicitante: protocolo.solicitante,
-                dias_para_vencer: diasParaVencer,
-              },
-            });
+              const { data: notificacaoExistente } = await supabase
+                .from("notificacoes")
+                .select("id, created_at")
+                .eq("protocolo_id", protocolo.id)
+                .eq("tipo", "prazo_vencimento")
+                .eq("usuario_id", user.id)
+                .eq("metadata->>tipo_vencimento", "protocolo")
+                .gte("created_at", vinteQuatroHorasAtras.toISOString())
+                .single();
+
+              if (!notificacaoExistente) {
+                await createNotificacao({
+                  cartorio_id: userData.cartorio_id,
+                  protocolo_id: protocolo.id,
+                  tipo: "prazo_vencimento",
+                  titulo:
+                    diasParaVencerProtocolo === 0
+                      ? "Prazo do protocolo vence hoje!"
+                      : diasParaVencerProtocolo === 1
+                      ? "Prazo do protocolo vence amanhã!"
+                      : `Prazo do protocolo vence em ${diasParaVencerProtocolo} dias`,
+                  mensagem: `O prazo de execução do protocolo ${protocolo.protocolo} (${
+                    protocolo.solicitante
+                  }) vence em ${
+                    diasParaVencerProtocolo === 0
+                      ? "hoje"
+                      : diasParaVencerProtocolo === 1
+                      ? "amanhã"
+                      : `${diasParaVencerProtocolo} dias`
+                  }.`,
+                  prioridade:
+                    diasParaVencerProtocolo <= 1
+                      ? "urgente"
+                      : diasParaVencerProtocolo <= 3
+                      ? "alta"
+                      : "normal",
+                  data_vencimento: protocolo.prazo_execucao,
+                  metadata: {
+                    protocolo: protocolo.protocolo,
+                    solicitante: protocolo.solicitante,
+                    dias_para_vencer: diasParaVencerProtocolo,
+                    tipo_vencimento: "protocolo",
+                  },
+                });
+              }
+            }
+          }
+
+          // Verificar prazos dos serviços do protocolo
+          if (protocolo.servicos && Array.isArray(protocolo.servicos)) {
+            for (const nomeServico of protocolo.servicos) {
+              const servico = servicosMap.get(nomeServico.toLowerCase().trim());
+
+              if (!servico || !servico.prazo_execucao || !servico.dias_notificacao_antes_vencimento) {
+                continue;
+              }
+
+              // Calcular data de vencimento do serviço
+              const dataVencimentoServico = new Date(dataCriacaoProtocolo);
+              dataVencimentoServico.setDate(dataVencimentoServico.getDate() + servico.prazo_execucao);
+              dataVencimentoServico.setHours(0, 0, 0, 0);
+
+              // Calcular data de notificação (vencimento - dias_notificacao)
+              const dataNotificacao = new Date(dataVencimentoServico);
+              dataNotificacao.setDate(dataNotificacao.getDate() - servico.dias_notificacao_antes_vencimento);
+              dataNotificacao.setHours(0, 0, 0, 0);
+
+              const dataNotificacaoTimestamp = dataNotificacao.getTime();
+              const dataVencimentoServicoTimestamp = dataVencimentoServico.getTime();
+
+              // Verificar se hoje é a data de notificação ou já passou (mas ainda não venceu)
+              if (
+                hojeTimestamp >= dataNotificacaoTimestamp &&
+                hojeTimestamp < dataVencimentoServicoTimestamp
+              ) {
+                const diasRestantes = Math.ceil((dataVencimentoServicoTimestamp - hojeTimestamp) / (1000 * 60 * 60 * 24));
+
+                // Verificar se já existe notificação para este serviço nas últimas 24 horas
+                const vinteQuatroHorasAtras = new Date();
+                vinteQuatroHorasAtras.setHours(vinteQuatroHorasAtras.getHours() - 24);
+
+                const { data: notificacaoExistente } = await supabase
+                  .from("notificacoes")
+                  .select("id, created_at")
+                  .eq("protocolo_id", protocolo.id)
+                  .eq("tipo", "prazo_vencimento")
+                  .eq("usuario_id", user.id)
+                  .eq("metadata->>servico", servico.nome)
+                  .gte("created_at", vinteQuatroHorasAtras.toISOString())
+                  .single();
+
+                if (!notificacaoExistente) {
+                  await createNotificacao({
+                    cartorio_id: userData.cartorio_id,
+                    protocolo_id: protocolo.id,
+                    tipo: "prazo_vencimento",
+                    titulo:
+                      diasRestantes === 0
+                        ? `Serviço "${servico.nome}" vence hoje!`
+                        : diasRestantes === 1
+                        ? `Serviço "${servico.nome}" vence amanhã!`
+                        : `Serviço "${servico.nome}" vence em ${diasRestantes} dias`,
+                    mensagem: `O serviço "${servico.nome}" do protocolo ${protocolo.protocolo} (${
+                      protocolo.solicitante
+                    }) vence em ${
+                      diasRestantes === 0
+                        ? "hoje"
+                        : diasRestantes === 1
+                        ? "amanhã"
+                        : `${diasRestantes} dias`
+                    }.`,
+                    prioridade:
+                      diasRestantes <= 1
+                        ? "urgente"
+                        : diasRestantes <= 3
+                        ? "alta"
+                        : "normal",
+                    data_vencimento: dataVencimentoServico.toISOString().split("T")[0],
+                    metadata: {
+                      protocolo: protocolo.protocolo,
+                      solicitante: protocolo.solicitante,
+                      servico: servico.nome,
+                      dias_para_vencer: diasRestantes,
+                      tipo_vencimento: "servico",
+                    },
+                  });
+                }
+              }
+            }
           }
         } catch (protocoloError) {
           console.error(

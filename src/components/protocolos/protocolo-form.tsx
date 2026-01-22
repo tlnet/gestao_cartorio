@@ -97,6 +97,15 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   const [servicosSelecionados, setServicosSelecionados] = React.useState<
     string[]
   >(initialData?.servicos || []);
+  
+  // Estado para armazenar avisos de prazos
+  const [avisosPrazos, setAvisosPrazos] = React.useState<
+    Array<{
+      servico: string;
+      tipo: "warning" | "info" | "success";
+      mensagem: string;
+    }>
+  >([]);
 
   const { statusPersonalizados } = useStatusPersonalizados();
   const { servicos, loading: servicosLoading, createServico } = useServicos();
@@ -173,11 +182,68 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     },
   });
 
+  // Função para atualizar avisos de prazos
+  const atualizarAvisosPrazos = React.useCallback((servicosParaVerificar: string[]) => {
+    const prazoExecucaoProtocolo = form.getValues("prazoExecucao");
+    const novosAvisos: Array<{
+      servico: string;
+      tipo: "warning" | "info" | "success";
+      mensagem: string;
+    }> = [];
+    
+    if (prazoExecucaoProtocolo && servicosParaVerificar.length > 0) {
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      const dataVencimentoProtocolo = new Date(prazoExecucaoProtocolo);
+      dataVencimentoProtocolo.setHours(0, 0, 0, 0);
+      
+      servicosParaVerificar.forEach((nomeServico) => {
+        const servicoInfo = servicos.find((s) => s.nome === nomeServico);
+        
+        if (servicoInfo && servicoInfo.prazo_execucao) {
+          // Calcular data de vencimento do serviço (hoje + prazo do serviço)
+          const dataVencimentoServico = new Date(hoje);
+          dataVencimentoServico.setDate(dataVencimentoServico.getDate() + servicoInfo.prazo_execucao);
+          dataVencimentoServico.setHours(0, 0, 0, 0);
+          
+          // Comparar prazos
+          if (dataVencimentoServico > dataVencimentoProtocolo) {
+            novosAvisos.push({
+              servico: nomeServico,
+              tipo: "warning",
+              mensagem: `O prazo do serviço "${nomeServico}" (${servicoInfo.prazo_execucao} dias) ultrapassa o prazo de execução do protocolo (${prazoExecucaoProtocolo.toLocaleDateString("pt-BR")}).`,
+            });
+          } else if (dataVencimentoServico <= dataVencimentoProtocolo) {
+            const diasDiferenca = Math.ceil((dataVencimentoProtocolo.getTime() - dataVencimentoServico.getTime()) / (1000 * 60 * 60 * 24));
+            if (diasDiferenca > 0) {
+              novosAvisos.push({
+                servico: nomeServico,
+                tipo: "info",
+                mensagem: `O prazo do serviço "${nomeServico}" (${servicoInfo.prazo_execucao} dias) está dentro do prazo do protocolo. Há ${diasDiferenca} dia(s) de margem.`,
+              });
+            } else {
+              novosAvisos.push({
+                servico: nomeServico,
+                tipo: "success",
+                mensagem: `O prazo do serviço "${nomeServico}" (${servicoInfo.prazo_execucao} dias) coincide com o prazo do protocolo.`,
+              });
+            }
+          }
+        }
+      });
+    }
+    
+    setAvisosPrazos(novosAvisos);
+  }, [form, servicos]);
+
   const adicionarServico = (servico: string) => {
     if (!servicosSelecionados.includes(servico)) {
       const novosServicos = [...servicosSelecionados, servico];
       setServicosSelecionados(novosServicos);
       form.setValue("servicos", novosServicos);
+      
+      // Atualizar avisos de prazos
+      atualizarAvisosPrazos(novosServicos);
     }
   };
 
@@ -185,6 +251,9 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     const novosServicos = servicosSelecionados.filter((s) => s !== servico);
     setServicosSelecionados(novosServicos);
     form.setValue("servicos", novosServicos);
+    
+    // Atualizar avisos de prazos
+    atualizarAvisosPrazos(novosServicos);
   };
 
   const handleSubmit = (data: ProtocoloFormData) => {
@@ -269,6 +338,12 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
       }
     };
   }, []);
+
+  // Validar prazos quando o prazo de execução do protocolo for alterado
+  const prazoExecucaoProtocolo = form.watch("prazoExecucao");
+  React.useEffect(() => {
+    atualizarAvisosPrazos(servicosSelecionados);
+  }, [prazoExecucaoProtocolo, servicosSelecionados, atualizarAvisosPrazos]);
 
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatEmail(e.target.value);
@@ -913,6 +988,31 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
               </div>
             )}
           </div>
+
+          {/* Avisos de prazos */}
+          {avisosPrazos.length > 0 && (
+            <div className="space-y-2 mt-2">
+              {avisosPrazos.map((aviso, index) => (
+                <div
+                  key={`${aviso.servico}-${index}`}
+                  className={`p-3 rounded-md text-sm ${
+                    aviso.tipo === "warning"
+                      ? "bg-yellow-50 border border-yellow-200 text-yellow-800"
+                      : aviso.tipo === "info"
+                      ? "bg-blue-50 border border-blue-200 text-blue-800"
+                      : "bg-green-50 border border-green-200 text-green-800"
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="font-medium">
+                      {aviso.tipo === "warning" ? "⚠️" : aviso.tipo === "info" ? "ℹ️" : "✅"}
+                    </span>
+                    <span>{aviso.mensagem}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {form.formState.errors.servicos && (
             <p className="text-sm text-red-500">

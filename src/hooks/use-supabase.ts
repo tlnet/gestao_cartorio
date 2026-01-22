@@ -281,6 +281,328 @@ export function useProtocolos(cartorioId?: string) {
 
       console.log("Protocolo criado com sucesso:", data);
       setProtocolos((prev) => [data, ...prev]);
+
+      // Verificar se algum serviço tem vencimento nos próximos 2 dias e disparar webhook
+      try {
+        // Buscar dados do cartório (incluindo ZDG e WhatsApp)
+        const { data: cartorioData, error: cartorioError } = await supabase
+          .from("cartorios")
+          .select("id, notificacao_whatsapp, whatsapp_protocolos, tenant_id_zdg, external_id_zdg, api_token_zdg, channel_id_zdg")
+          .eq("id", protocolo.cartorio_id)
+          .single();
+
+        if (!cartorioError && cartorioData) {
+          // Disparar webhook se WhatsApp estiver habilitado e número configurado
+          if (
+            cartorioData.notificacao_whatsapp &&
+            cartorioData.whatsapp_protocolos &&
+            cartorioData.whatsapp_protocolos.trim() !== ""
+          ) {
+            // Buscar serviços do cartório para obter prazo de execução
+            const { data: servicos, error: servicosError } = await supabase
+              .from("servicos")
+              .select("id, nome, prazo_execucao, dias_notificacao_antes_vencimento, ativo")
+              .eq("cartorio_id", protocolo.cartorio_id)
+              .eq("ativo", true);
+
+            if (!servicosError && servicos && servicos.length > 0) {
+              // Criar mapa de serviços por nome para busca rápida
+              const servicosMap = new Map(
+                servicos.map((s) => [s.nome.toLowerCase().trim(), s])
+              );
+
+              const hoje = new Date();
+              hoje.setHours(0, 0, 0, 0);
+              const proximos2Dias = new Date();
+              proximos2Dias.setDate(hoje.getDate() + 2);
+              proximos2Dias.setHours(0, 0, 0, 0);
+
+              const hojeTimestamp = hoje.getTime();
+              const proximos2DiasTimestamp = proximos2Dias.getTime();
+              const dataCriacaoProtocolo = new Date(data.created_at);
+              dataCriacaoProtocolo.setHours(0, 0, 0, 0);
+
+              // Processar cada serviço do protocolo
+              if (protocolo.servicos && Array.isArray(protocolo.servicos)) {
+                for (const nomeServico of protocolo.servicos) {
+                  const servico = servicosMap.get(nomeServico.toLowerCase().trim());
+
+                  if (!servico || !servico.prazo_execucao) {
+                    continue;
+                  }
+
+                  // Calcular data de vencimento do serviço
+                  const dataVencimento = new Date(dataCriacaoProtocolo);
+                  dataVencimento.setDate(dataVencimento.getDate() + servico.prazo_execucao);
+                  dataVencimento.setHours(0, 0, 0, 0);
+
+                  const dataVencimentoTimestamp = dataVencimento.getTime();
+
+                  // Verificar se o vencimento está nos próximos 2 dias
+                  if (
+                    dataVencimentoTimestamp >= hojeTimestamp &&
+                    dataVencimentoTimestamp <= proximos2DiasTimestamp
+                  ) {
+                    // Calcular data de notificação (vencimento - dias_notificacao)
+                    const dataNotificacao = new Date(dataVencimento);
+                    if (servico.dias_notificacao_antes_vencimento) {
+                      dataNotificacao.setDate(dataNotificacao.getDate() - servico.dias_notificacao_antes_vencimento);
+                    }
+                    dataNotificacao.setHours(0, 0, 0, 0);
+
+                    const diasRestantes = Math.ceil((dataVencimentoTimestamp - hojeTimestamp) / (1000 * 60 * 60 * 24));
+
+                    // Criar notificação no sistema imediatamente
+                    if (user?.id) {
+                      try {
+                        const { error: notificacaoError } = await supabase
+                          .from("notificacoes")
+                          .insert([
+                            {
+                              usuario_id: user.id,
+                              cartorio_id: protocolo.cartorio_id,
+                              protocolo_id: data.id,
+                              tipo: "prazo_vencimento",
+                              titulo:
+                                diasRestantes === 0
+                                  ? `Serviço "${servico.nome}" vence hoje!`
+                                  : diasRestantes === 1
+                                  ? `Serviço "${servico.nome}" vence amanhã!`
+                                  : `Serviço "${servico.nome}" vence em ${diasRestantes} dias`,
+                              mensagem: `O serviço "${servico.nome}" do protocolo ${protocolo.protocolo} (${
+                                protocolo.solicitante
+                              }) vence em ${
+                                diasRestantes === 0
+                                  ? "hoje"
+                                  : diasRestantes === 1
+                                  ? "amanhã"
+                                  : `${diasRestantes} dias`
+                              }.`,
+                              prioridade:
+                                diasRestantes <= 1
+                                  ? "urgente"
+                                  : diasRestantes <= 3
+                                  ? "alta"
+                                  : "normal",
+                              data_vencimento: dataVencimento.toISOString().split("T")[0],
+                              data_notificacao: new Date().toISOString(),
+                              metadata: {
+                                protocolo: protocolo.protocolo,
+                                solicitante: protocolo.solicitante,
+                                servico: servico.nome,
+                                dias_para_vencer: diasRestantes,
+                                tipo_vencimento: "servico",
+                              },
+                              action_url: "/protocolos",
+                              lida: false,
+                            },
+                          ]);
+
+                        if (notificacaoError) {
+                          console.error(`❌ Erro ao criar notificação para serviço ${servico.nome}:`, notificacaoError);
+                        } else {
+                          console.log(`✅ Notificação criada imediatamente para protocolo ${protocolo.protocolo}, serviço ${servico.nome} (vencimento em ${diasRestantes} dias)`);
+                        }
+                      } catch (notificacaoError: any) {
+                        console.error(`❌ Erro ao criar notificação imediata para serviço ${servico.nome}:`, notificacaoError.message);
+                      }
+                    }
+
+                    // Preparar payload do webhook com a mesma estrutura do webhook de status de protocolos
+                    const payload = {
+                      status_anterior: protocolo.status,
+                      status_novo: protocolo.status,
+                      protocolo_id: data.id,
+                      cartorio_id: protocolo.cartorio_id,
+                      fluxo: "vencimento-protocolo",
+                      // Dados adicionais do protocolo
+                      nome_completo_solicitante: protocolo.solicitante,
+                      telefone_solicitante: protocolo.telefone,
+                      servicos_solicitados: protocolo.servicos || [],
+                      numero_demanda: protocolo.demanda,
+                      numero_protocolo: protocolo.protocolo,
+                      // Dados ZDG do cartório
+                      tenant_id_zdg: cartorioData.tenant_id_zdg || null,
+                      external_id_zdg: cartorioData.external_id_zdg || null,
+                      api_token_zdg: cartorioData.api_token_zdg || null,
+                      channel_id_zdg: cartorioData.channel_id_zdg || null,
+                      // Dados adicionais de vencimento
+                      telefone: cartorioData.whatsapp_protocolos,
+                      servico: {
+                        nome: servico.nome,
+                        prazo_execucao: servico.prazo_execucao,
+                        dias_notificacao_antes_vencimento: servico.dias_notificacao_antes_vencimento || 0,
+                      },
+                      vencimento: {
+                        data_vencimento: dataVencimento.toISOString().split("T")[0],
+                        data_notificacao: dataNotificacao.toISOString().split("T")[0],
+                        dias_restantes: diasRestantes,
+                      },
+                    };
+
+                    // Disparar webhook
+                    try {
+                      const webhookResponse = await fetch("https://webhook.cartorio.app.br/webhook/api/webhooks/protocolos/vencimento", {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify(payload),
+                      });
+
+                      if (webhookResponse.ok) {
+                        console.log(`✅ Webhook disparado imediatamente para protocolo ${protocolo.protocolo}, serviço ${servico.nome} (vencimento em ${diasRestantes} dias)`);
+                      } else {
+                        const errorText = await webhookResponse.text();
+                        console.error(
+                          `❌ Erro ao disparar webhook para protocolo ${protocolo.protocolo}, serviço ${servico.nome}:`,
+                          webhookResponse.status,
+                          errorText
+                        );
+                      }
+                    } catch (webhookError: any) {
+                      console.error(
+                        `❌ Erro ao disparar webhook para protocolo ${protocolo.protocolo}, serviço ${servico.nome}:`,
+                        webhookError.message
+                      );
+                    }
+                  }
+                }
+              }
+
+              // Verificar também o prazo de execução do protocolo (se definido)
+              if (protocolo.prazo_execucao) {
+                const dataVencimentoProtocolo = new Date(protocolo.prazo_execucao);
+                dataVencimentoProtocolo.setHours(0, 0, 0, 0);
+                const dataVencimentoProtocoloTimestamp = dataVencimentoProtocolo.getTime();
+
+                // Verificar se o vencimento do protocolo está nos próximos 2 dias
+                if (
+                  dataVencimentoProtocoloTimestamp >= hojeTimestamp &&
+                  dataVencimentoProtocoloTimestamp <= proximos2DiasTimestamp
+                ) {
+                  const diasRestantesProtocolo = Math.ceil((dataVencimentoProtocoloTimestamp - hojeTimestamp) / (1000 * 60 * 60 * 24));
+
+                  // Criar notificação no sistema imediatamente para prazo do protocolo
+                  if (user?.id) {
+                    try {
+                      const { error: notificacaoError } = await supabase
+                        .from("notificacoes")
+                        .insert([
+                          {
+                            usuario_id: user.id,
+                            cartorio_id: protocolo.cartorio_id,
+                            protocolo_id: data.id,
+                            tipo: "prazo_vencimento",
+                            titulo:
+                              diasRestantesProtocolo === 0
+                                ? "Prazo do protocolo vence hoje!"
+                                : diasRestantesProtocolo === 1
+                                ? "Prazo do protocolo vence amanhã!"
+                                : `Prazo do protocolo vence em ${diasRestantesProtocolo} dias`,
+                            mensagem: `O prazo de execução do protocolo ${protocolo.protocolo} (${
+                              protocolo.solicitante
+                            }) vence em ${
+                              diasRestantesProtocolo === 0
+                                ? "hoje"
+                                : diasRestantesProtocolo === 1
+                                ? "amanhã"
+                                : `${diasRestantesProtocolo} dias`
+                            }.`,
+                            prioridade:
+                              diasRestantesProtocolo <= 1
+                                ? "urgente"
+                                : diasRestantesProtocolo <= 3
+                                ? "alta"
+                                : "normal",
+                            data_vencimento: dataVencimentoProtocolo.toISOString().split("T")[0],
+                            data_notificacao: new Date().toISOString(),
+                            metadata: {
+                              protocolo: protocolo.protocolo,
+                              solicitante: protocolo.solicitante,
+                              dias_para_vencer: diasRestantesProtocolo,
+                              tipo_vencimento: "protocolo",
+                            },
+                            action_url: "/protocolos",
+                            lida: false,
+                          },
+                        ]);
+
+                      if (notificacaoError) {
+                        console.error(`❌ Erro ao criar notificação para prazo do protocolo:`, notificacaoError);
+                      } else {
+                        console.log(`✅ Notificação criada imediatamente para prazo do protocolo ${protocolo.protocolo} (vencimento em ${diasRestantesProtocolo} dias)`);
+                      }
+                    } catch (notificacaoError: any) {
+                      console.error(`❌ Erro ao criar notificação imediata para prazo do protocolo:`, notificacaoError.message);
+                    }
+                  }
+
+                  // Preparar payload do webhook para prazo do protocolo
+                  const payloadProtocolo = {
+                    status_anterior: protocolo.status,
+                    status_novo: protocolo.status,
+                    protocolo_id: data.id,
+                    cartorio_id: protocolo.cartorio_id,
+                    fluxo: "vencimento-protocolo",
+                    nome_completo_solicitante: protocolo.solicitante,
+                    telefone_solicitante: protocolo.telefone,
+                    servicos_solicitados: protocolo.servicos || [],
+                    numero_demanda: protocolo.demanda,
+                    numero_protocolo: protocolo.protocolo,
+                    tenant_id_zdg: cartorioData.tenant_id_zdg || null,
+                    external_id_zdg: cartorioData.external_id_zdg || null,
+                    api_token_zdg: cartorioData.api_token_zdg || null,
+                    channel_id_zdg: cartorioData.channel_id_zdg || null,
+                    telefone: cartorioData.whatsapp_protocolos,
+                    servico: {
+                      nome: "Prazo de Execução do Protocolo",
+                      prazo_execucao: null,
+                      dias_notificacao_antes_vencimento: null,
+                    },
+                    vencimento: {
+                      data_vencimento: dataVencimentoProtocolo.toISOString().split("T")[0],
+                      data_notificacao: dataVencimentoProtocolo.toISOString().split("T")[0],
+                      dias_restantes: diasRestantesProtocolo,
+                    },
+                  };
+
+                  // Disparar webhook para prazo do protocolo
+                  try {
+                    const webhookResponseProtocolo = await fetch("https://webhook.cartorio.app.br/webhook/api/webhooks/protocolos/vencimento", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify(payloadProtocolo),
+                    });
+
+                    if (webhookResponseProtocolo.ok) {
+                      console.log(`✅ Webhook disparado imediatamente para prazo do protocolo ${protocolo.protocolo} (vencimento em ${diasRestantesProtocolo} dias)`);
+                    } else {
+                      const errorText = await webhookResponseProtocolo.text();
+                      console.error(
+                        `❌ Erro ao disparar webhook para prazo do protocolo ${protocolo.protocolo}:`,
+                        webhookResponseProtocolo.status,
+                        errorText
+                      );
+                    }
+                  } catch (webhookError: any) {
+                    console.error(
+                      `❌ Erro ao disparar webhook para prazo do protocolo ${protocolo.protocolo}:`,
+                      webhookError.message
+                    );
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (webhookError: any) {
+        // Não bloquear a criação do protocolo se o webhook falhar
+        console.error("❌ Erro ao disparar webhook imediato para protocolo:", webhookError.message);
+      }
+
       toast.success("Protocolo criado com sucesso!");
       return data;
     } catch (error: any) {
