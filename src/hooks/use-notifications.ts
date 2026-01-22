@@ -354,25 +354,39 @@ export const useNotifications = () => {
         return;
       }
 
-      // Buscar contas próximas do vencimento (7 dias)
+      // Buscar dados do cartório (incluindo ZDG e WhatsApp)
+      const { data: cartorioData, error: cartorioError } = await supabase
+        .from("cartorios")
+        .select("id, notificacao_whatsapp, whatsapp_contas, tenant_id_zdg, external_id_zdg, api_token_zdg, channel_id_zdg")
+        .eq("id", userData.cartorio_id)
+        .single();
+
+      if (cartorioError) {
+        console.error("Erro ao buscar dados do cartório:", cartorioError);
+        return;
+      }
+
+      // Buscar contas próximas do vencimento (7 dias) ou vencidas
       const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
       const proximos7Dias = new Date();
       proximos7Dias.setDate(hoje.getDate() + 7);
+      proximos7Dias.setHours(0, 0, 0, 0);
 
       const { data: contas, error } = await supabase
         .from("contas_pagar")
-        .select("id, descricao, valor, data_vencimento, status")
+        .select("id, descricao, valor, data_vencimento, status, fornecedor, categoria, observacoes")
         .eq("cartorio_id", userData.cartorio_id)
-        .eq("status", "A_PAGAR")
-        .gte("data_vencimento", hoje.toISOString().split("T")[0])
-        .lte("data_vencimento", proximos7Dias.toISOString().split("T")[0]);
+        .in("status", ["A_PAGAR", "AGENDADA", "VENCIDA"])
+        .lte("data_vencimento", proximos7Dias.toISOString().split("T")[0])
+        .gte("data_vencimento", hoje.toISOString().split("T")[0]);
 
       if (error) {
         console.error("Erro ao buscar contas a pagar:", error);
         return;
       }
 
-      // Criar notificações para contas próximas do vencimento
+      // Criar notificações e disparar webhooks para contas próximas do vencimento
       for (const conta of contas || []) {
         try {
           const dataVencimento = new Date(conta.data_vencimento);
@@ -429,6 +443,74 @@ export const useNotifications = () => {
               },
               action_url: "/contas",
             });
+          }
+
+          // Disparar webhook se WhatsApp estiver habilitado e número configurado
+          if (
+            cartorioData?.notificacao_whatsapp &&
+            cartorioData?.whatsapp_contas &&
+            cartorioData.whatsapp_contas.trim() !== ""
+          ) {
+            try {
+              // Preparar payload do webhook com a mesma estrutura do webhook de status de protocolos
+              const payload = {
+                status_anterior: conta.status,
+                status_novo: conta.status, // Mantém o mesmo status, pois é apenas notificação de vencimento
+                conta_id: conta.id,
+                cartorio_id: userData.cartorio_id,
+                fluxo: "vencimento-conta-pagar",
+                // Dados adicionais da conta
+                nome_completo_solicitante: conta.fornecedor || "Fornecedor não informado",
+                telefone_solicitante: null, // Contas a pagar não têm telefone do solicitante
+                servicos_solicitados: [], // Contas a pagar não têm serviços
+                numero_demanda: null, // Contas a pagar não têm demanda
+                numero_protocolo: null, // Contas a pagar não têm protocolo
+                // Dados ZDG do cartório
+                tenant_id_zdg: cartorioData.tenant_id_zdg || null,
+                external_id_zdg: cartorioData.external_id_zdg || null,
+                api_token_zdg: cartorioData.api_token_zdg || null,
+                channel_id_zdg: cartorioData.channel_id_zdg || null,
+                // Dados adicionais da conta
+                telefone: cartorioData.whatsapp_contas,
+                conta: {
+                  id: conta.id,
+                  descricao: conta.descricao,
+                  valor: conta.valor,
+                  categoria: conta.categoria,
+                  fornecedor: conta.fornecedor,
+                  observacoes: conta.observacoes,
+                  status: conta.status,
+                },
+                vencimento: {
+                  data_vencimento: dataVencimento.toISOString().split("T")[0],
+                  dias_restantes: diasParaVencer,
+                  vencida: diasParaVencer < 0,
+                },
+              };
+
+              // Disparar webhook diretamente
+              const webhookResponse = await fetch("https://webhook.cartorio.app.br/webhook/api/webhooks/financeiro/contas-pagar", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(payload),
+              });
+
+              if (webhookResponse.ok) {
+                console.log(`✅ Webhook disparado para conta ${conta.descricao}`);
+              } else {
+                const errorText = await webhookResponse.text();
+                console.error(
+                  `❌ Erro ao disparar webhook para conta ${conta.descricao}:`,
+                  webhookResponse.status,
+                  errorText
+                );
+              }
+            } catch (webhookError: any) {
+              // Não bloquear a criação da notificação se o webhook falhar
+              console.error(`❌ Erro ao disparar webhook para conta ${conta.descricao}:`, webhookError.message);
+            }
           }
         } catch (contaError) {
           console.error(`Erro ao processar conta ${conta.id}:`, contaError);

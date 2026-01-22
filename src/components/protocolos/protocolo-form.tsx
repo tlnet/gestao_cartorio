@@ -99,7 +99,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   >(initialData?.servicos || []);
 
   const { statusPersonalizados } = useStatusPersonalizados();
-  const { servicos, loading: servicosLoading } = useServicos();
+  const { servicos, loading: servicosLoading, createServico } = useServicos();
   const { config: levontechConfig, loading: levontechLoading } = useLevontechConfig();
   const { user } = useAuth();
   
@@ -373,62 +373,197 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
         console.log("✅ Resposta do webhook Levontech:", data);
         
         // Verificar se o webhook retornou dados úteis
-        // Consideramos que há dados se a resposta contém informações do protocolo
-        // e não é apenas uma mensagem de confirmação do workflow
-        const isOnlyWorkflowMessage = data && 
-          typeof data === 'object' && 
-          Object.keys(data).length === 1 && 
-          (data.message === "Workflow was started" || data.message === "workflow started");
+        // A resposta pode ser um array ou um objeto
+        let hasUsefulData = false;
         
-        const hasUsefulData = data && 
-          typeof data === 'object' && 
-          !isOnlyWorkflowMessage &&
-          Object.keys(data).length > 0 &&
-          (
-            data.solicitante || 
-            data.cpf_cnpj || 
-            data.cpfCnpj ||
-            data.telefone || 
-            data.email || 
-            data.servicos || 
-            data.dados ||
-            data.protocolo ||
-            data.demanda ||
-            // Verificar se há qualquer propriedade que não seja apenas metadados
-            (Object.keys(data).some(key => 
-              !['message', 'status', 'success', 'workflow', 'id'].includes(key.toLowerCase())
-            ))
-          );
+        if (Array.isArray(data) && data.length > 0) {
+          // Se for array, verificar se o primeiro elemento tem dados úteis
+          const primeiroItem = data[0];
+          hasUsefulData = primeiroItem && 
+            typeof primeiroItem === 'object' &&
+            (
+              primeiroItem.solicitante ||
+              primeiroItem.status ||
+              primeiroItem.tipoDeServico ||
+              primeiroItem.prazoExecucao ||
+              primeiroItem.observacoes
+            );
+        } else if (data && typeof data === 'object') {
+          // Se for objeto, verificar se não é apenas mensagem de confirmação
+          const isOnlyWorkflowMessage = 
+            Object.keys(data).length === 1 && 
+            (data.message === "Workflow was started" || data.message === "workflow started");
+          
+          hasUsefulData = !isOnlyWorkflowMessage &&
+            Object.keys(data).length > 0 &&
+            (
+              data.solicitante || 
+              data.cpf_cnpj || 
+              data.cpfCnpj ||
+              data.telefone || 
+              data.email || 
+              data.servicos || 
+              data.dados ||
+              data.protocolo ||
+              data.demanda ||
+              data.status ||
+              data.tipoDeServico ||
+              // Verificar se há qualquer propriedade que não seja apenas metadados
+              (Object.keys(data).some(key => 
+                !['message', 'status', 'success', 'workflow', 'id'].includes(key.toLowerCase())
+              ))
+            );
+        }
         
         if (hasUsefulData) {
           // Armazenar dados recebidos para uso futuro
           setLevontechData(data);
           
           // ============================================================
-          // TODO: PREENCHIMENTO AUTOMÁTICO - Implementação futura
+          // PREENCHIMENTO AUTOMÁTICO DOS CAMPOS
           // ============================================================
-          // Quando recebermos os dados do webhook, podemos preencher
-          // automaticamente os campos do formulário. Exemplo:
-          //
-          // if (data.solicitante) {
-          //   form.setValue("solicitante", data.solicitante);
-          // }
-          // if (data.cpf_cnpj || data.cpfCnpj) {
-          //   form.setValue("cpfCnpj", formatCPFCNPJ(data.cpf_cnpj || data.cpfCnpj));
-          // }
-          // if (data.telefone) {
-          //   form.setValue("telefone", formatPhone(data.telefone));
-          // }
-          // if (data.email) {
-          //   form.setValue("email", data.email);
-          // }
-          // if (data.servicos && Array.isArray(data.servicos)) {
-          //   setServicosSelecionados(data.servicos);
-          //   form.setValue("servicos", data.servicos);
-          // }
+          try {
+            // O webhook retorna um array, então pegamos o primeiro elemento
+            const protocoloData = Array.isArray(data) ? data[0] : data;
+            
+            if (protocoloData) {
+              // Preencher Status
+              if (protocoloData.status) {
+                // Normalizar o status para corresponder às opções disponíveis
+                const statusNormalizado = protocoloData.status
+                  .toUpperCase()
+                  .trim();
+                
+                // Mapear status do Levontech para os status do sistema
+                const statusMap: Record<string, string> = {
+                  "CONCLUIDO": "Concluído",
+                  "CONCLUÍDO": "Concluído",
+                  "EM ANDAMENTO": "Em Andamento",
+                  "AGUARDANDO ANÁLISE": "Aguardando Análise",
+                  "PENDENTE": "Pendente",
+                  "CANCELADO": "Cancelado",
+                };
+                
+                const statusMapeado = statusMap[statusNormalizado] || statusNormalizado;
+                
+                // Verificar se o status existe nas opções disponíveis
+                if (statusOptionsUnicos.includes(statusMapeado)) {
+                  form.setValue("status", statusMapeado);
+                } else if (statusOptionsUnicos.some(s => s.toUpperCase() === statusNormalizado)) {
+                  // Tentar encontrar por comparação case-insensitive
+                  const statusEncontrado = statusOptionsUnicos.find(
+                    s => s.toUpperCase() === statusNormalizado
+                  );
+                  if (statusEncontrado) {
+                    form.setValue("status", statusEncontrado);
+                  }
+                }
+              }
+              
+              // Preencher Prazo de Execução
+              if (protocoloData.prazoExecucao) {
+                try {
+                  const dataPrazo = new Date(protocoloData.prazoExecucao);
+                  if (!isNaN(dataPrazo.getTime())) {
+                    form.setValue("prazoExecucao", dataPrazo);
+                  }
+                } catch (error) {
+                  console.error("Erro ao converter data do prazo:", error);
+                }
+              }
+              
+              // Preencher dados do Solicitante
+              if (protocoloData.solicitante) {
+                const solicitante = protocoloData.solicitante;
+                
+                // Nome do Solicitante
+                if (solicitante.nome) {
+                  form.setValue("solicitante", solicitante.nome.trim());
+                }
+                
+                // CPF/CNPJ
+                if (solicitante.documento) {
+                  const documentoFormatado = formatCPFCNPJ(solicitante.documento);
+                  form.setValue("cpfCnpj", documentoFormatado);
+                }
+                
+                // Telefone (pegar o primeiro telefone da lista)
+                if (solicitante.telefones && Array.isArray(solicitante.telefones) && solicitante.telefones.length > 0) {
+                  const telefoneFormatado = formatPhone(solicitante.telefones[0]);
+                  form.setValue("telefone", telefoneFormatado);
+                }
+                
+                // Email (pegar o primeiro email da lista)
+                if (solicitante.emails && Array.isArray(solicitante.emails) && solicitante.emails.length > 0) {
+                  form.setValue("email", solicitante.emails[0].trim());
+                }
+              }
+              
+              // Preencher Apresentante
+              if (protocoloData.apresentante && protocoloData.apresentante.trim() !== "") {
+                form.setValue("apresentante", protocoloData.apresentante.trim());
+              }
+              
+              // Preencher Serviço
+              if (protocoloData.tipoDeServico) {
+                const servicoNome = protocoloData.tipoDeServico.trim();
+                
+                // Verificar se o serviço existe na lista de serviços disponíveis
+                const servicoExiste = servicosDisponiveis.includes(servicoNome);
+                
+                if (servicoExiste) {
+                  // Se o serviço existe, apenas adicionar se não estiver já selecionado
+                  if (!servicosSelecionados.includes(servicoNome)) {
+                    const novosServicos = [...servicosSelecionados, servicoNome];
+                    setServicosSelecionados(novosServicos);
+                    form.setValue("servicos", novosServicos);
+                  }
+                } else {
+                  // Se o serviço não existir, criar automaticamente
+                  try {
+                    await createServico({
+                      nome: servicoNome,
+                      prazo_execucao: 3, // Valor padrão
+                      dias_notificacao_antes_vencimento: 1, // Valor padrão
+                      ativo: true,
+                    });
+                    
+                    // Após criar, adicionar o serviço à lista de selecionados
+                    if (!servicosSelecionados.includes(servicoNome)) {
+                      const novosServicos = [...servicosSelecionados, servicoNome];
+                      setServicosSelecionados(novosServicos);
+                      form.setValue("servicos", novosServicos);
+                    }
+                    
+                    // Mostrar mensagem informando que o serviço foi criado
+                    toast.info(`Serviço "${servicoNome}" foi criado automaticamente e adicionado ao protocolo.`);
+                  } catch (error) {
+                    console.error("Erro ao criar serviço automaticamente:", error);
+                    // Mesmo com erro, tentar adicionar o serviço ao formulário
+                    if (!servicosSelecionados.includes(servicoNome)) {
+                      const novosServicos = [...servicosSelecionados, servicoNome];
+                      setServicosSelecionados(novosServicos);
+                      form.setValue("servicos", novosServicos);
+                    }
+                    toast.warning(`Não foi possível criar o serviço "${servicoNome}" automaticamente, mas ele foi adicionado ao protocolo.`);
+                  }
+                }
+              }
+              
+              // Preencher Observações
+              if (protocoloData.observacoes) {
+                form.setValue("observacao", protocoloData.observacoes.trim());
+              }
+              
+              console.log("✅ Campos preenchidos automaticamente com dados do Levontech");
+            }
+          } catch (error) {
+            console.error("Erro ao preencher campos automaticamente:", error);
+            toast.warning("Dados recebidos, mas houve erro ao preencher alguns campos. Verifique manualmente.");
+          }
           // ============================================================
           
-          toast.success("Dados do protocolo consultados com sucesso no sistema Levontech");
+          toast.success("Dados do protocolo consultados e preenchidos automaticamente no sistema Levontech");
         } else {
           // Webhook foi chamado mas não retornou dados úteis
           setLevontechData(null);
@@ -504,26 +639,31 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
             <FormField
               control={form.control}
               name="protocolo"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Número do Protocolo *</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                    <Input
-                      placeholder="Ex: CERT-2024-001"
-                      {...field}
-                      onChange={(e) => {
-                        field.onChange(e);
-                        handleProtocolChange(e);
-                      }}
-                    />
-                      {consultingLevontech && (
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                        </div>
-                      )}
-                    </div>
-                  </FormControl>
+              render={({ field }) => {
+                const demandaValue = form.watch("demanda");
+                const isDemandaFilled = demandaValue && demandaValue.trim() !== "";
+                
+                return (
+                  <FormItem>
+                    <FormLabel>Número do Protocolo *</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Input
+                          placeholder="Ex: CERT-2024-001"
+                          {...field}
+                          disabled={!isDemandaFilled}
+                          onChange={(e) => {
+                            field.onChange(e);
+                            handleProtocolChange(e);
+                          }}
+                        />
+                        {consultingLevontech && (
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                          </div>
+                        )}
+                      </div>
+                    </FormControl>
                   {!isEditing && (
                     <div className="space-y-1">
                       {levontechLoading ? (
@@ -560,7 +700,8 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                   )}
                   <FormMessage />
                 </FormItem>
-              )}
+                );
+              }}
             />
           </div>
 
