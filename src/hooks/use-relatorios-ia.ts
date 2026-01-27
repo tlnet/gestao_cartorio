@@ -678,8 +678,17 @@ export const useRelatoriosIA = () => {
 
         // Construir estrutura de certidões fiscais
         const certidoes_fiscais = dadosFormulario.certidoes ? {
-          url_cndt: getFileUrl(dadosFormulario.certidoes.cndt),
-          url_cnd_federal: getFileUrl(dadosFormulario.certidoes.cndFederal),
+          estado_civil_casado: dadosFormulario.certidoes.casado,
+          documentos: {
+            url_cndt: getFileUrl(dadosFormulario.certidoes.cndt),
+            url_cnd_federal: getFileUrl(dadosFormulario.certidoes.cndFederal),
+          },
+          conjuge: dadosFormulario.certidoes.casado && dadosFormulario.certidoes.conjuge ? {
+            documentos: {
+              url_cndt: getFileUrl(dadosFormulario.certidoes.conjuge.cndt),
+              url_cnd_federal: getFileUrl(dadosFormulario.certidoes.conjuge.cndFederal),
+            },
+          } : null,
         } : null;
 
         // Construir estrutura de imóvel

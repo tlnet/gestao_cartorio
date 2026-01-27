@@ -29,12 +29,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
+    // Verificar se estamos no cliente
+    if (typeof window === "undefined") {
+      return;
+    }
+
     // Verificar se o Supabase está configurado
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseKey || supabaseUrl.includes("placeholder") || supabaseKey.includes("placeholder")) {
       console.warn("⚠️ Supabase não configurado. Configure as variáveis de ambiente.");
+      setLoading(false);
+      return;
+    }
+
+    // Verificar se supabase está disponível
+    if (!supabase || !supabase.auth) {
+      console.warn("⚠️ Supabase client não está disponível.");
       setLoading(false);
       return;
     }
@@ -54,8 +66,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error("Erro ao verificar sessão:", error);
         setError(error);
         // Não mostrar toast em desenvolvimento se for erro de configuração
-        if (!error.message?.includes("placeholder")) {
-          toast.error("Erro ao verificar sessão: " + error.message);
+        if (!error?.message?.includes("placeholder")) {
+          try {
+            toast.error("Erro ao verificar sessão: " + (error?.message || "Erro desconhecido"));
+          } catch (toastError) {
+            console.error("Erro ao exibir toast:", toastError);
+          }
         }
       } finally {
         setLoading(false);
@@ -84,22 +100,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           if (event === "SIGNED_OUT") {
             setError(null);
-            toast.info("Logout realizado com sucesso!");
-            router.push("/login");
+            try {
+              toast.info("Logout realizado com sucesso!");
+              if (router) {
+                router.push("/login");
+              }
+            } catch (routerError) {
+              console.error("Erro ao redirecionar após logout:", routerError);
+            }
           }
 
           if (event === "USER_UPDATED") {
-            const { error } = await supabase.auth.getSession();
-            if (error) {
-              setError(error);
-              toast.error("Erro ao atualizar sessão: " + error.message);
+            try {
+              const { error } = await supabase.auth.getSession();
+              if (error) {
+                setError(error);
+                toast.error("Erro ao atualizar sessão: " + error.message);
+              }
+            } catch (sessionError) {
+              console.error("Erro ao atualizar sessão:", sessionError);
             }
           }
         }
       );
 
       return () => {
-        subscription.unsubscribe();
+        if (subscription) {
+          try {
+            subscription.unsubscribe();
+          } catch (unsubscribeError) {
+            console.error("Erro ao fazer unsubscribe:", unsubscribeError);
+          }
+        }
       };
     } catch (error: any) {
       console.error("Erro ao configurar listener de autenticação:", error);

@@ -92,10 +92,18 @@ interface DadosVendedores {
   multiplosVendedores: boolean;
 }
 
+// Dados das Certidões Fiscais do Cônjuge
+interface DadosCertidoesConjuge {
+  cndt: File | null;
+  cndFederal: File | null;
+}
+
 // Dados das Certidões Fiscais
 interface DadosCertidoes {
   cndt: File | null;
   cndFederal: File | null;
+  casado: boolean;
+  conjuge: DadosCertidoesConjuge | null;
 }
 
 // Dados dos Documentos do Imóvel
@@ -182,6 +190,13 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
 
   // Estados para certidões
   const [tempCertidoesData, setTempCertidoesData] = useState<DadosCertidoes>({
+    cndt: null,
+    cndFederal: null,
+    casado: false,
+    conjuge: null,
+  });
+
+  const [tempCertidoesConjugeData, setTempCertidoesConjugeData] = useState<DadosCertidoesConjuge>({
     cndt: null,
     cndFederal: null,
   });
@@ -376,7 +391,41 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
     }));
   };
 
-  const handleFileUploadConjuge = (file: File | null, field: 'rg' | 'cpf' | 'certidaoCasamento') => {
+  const handleFileUploadRgCpfConjuge = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    
+    const fileArray = Array.from(files);
+    
+    // Validar todos os arquivos
+    for (const file of fileArray) {
+      if (!validateFileType(file)) {
+        toast.error("Apenas arquivos PDF, JPG e PNG são permitidos");
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("Arquivo muito grande. Máximo: 10MB");
+        return;
+      }
+    }
+    
+    // Se apenas 1 arquivo foi selecionado, usar o mesmo arquivo para RG e CPF
+    // Se 2 arquivos foram selecionados, primeiro é RG e segundo é CPF
+    const rgFile = fileArray[0] || null;
+    const cpfFile = fileArray[1] || fileArray[0] || null; // Se não houver segundo arquivo, usa o primeiro
+    
+    const updatedConjuge = { ...tempConjugeData, rg: rgFile, cpf: cpfFile };
+    setTempConjugeData(updatedConjuge);
+    
+    // Sincronizar com tempCompradorData.conjuge
+    if (tempCompradorData.casado) {
+      setTempCompradorData(prev => ({
+        ...prev,
+        conjuge: updatedConjuge
+      }));
+    }
+  };
+
+  const handleFileUploadConjuge = (file: File | null, field: 'certidaoCasamento') => {
     if (!file) return;
     
     if (!validateFileType(file)) {
@@ -524,13 +573,30 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
       toast.error("CND Federal é obrigatória");
       return false;
     }
+
+    if (tempCertidoesData.casado) {
+      if (!tempCertidoesConjugeData.cndt) {
+        toast.error("CNDT do cônjuge é obrigatória");
+        return false;
+      }
+      if (!tempCertidoesConjugeData.cndFederal) {
+        toast.error("CND Federal do cônjuge é obrigatória");
+        return false;
+      }
+    }
+
     return true;
   };
 
   const handleSaveCertidoes = () => {
     if (!validateCertidoesForm()) return;
 
-    setFormData(prev => ({ ...prev, certidoes: tempCertidoesData }));
+    const certidoesData: DadosCertidoes = {
+      ...tempCertidoesData,
+      conjuge: tempCertidoesData.casado ? tempCertidoesConjugeData : null,
+    };
+
+    setFormData(prev => ({ ...prev, certidoes: certidoesData }));
     setCardStatus(prev => ({ ...prev, certidoes: "complete" }));
     toast.success("Certidões salvas com sucesso!");
     handleCloseModal();
@@ -553,6 +619,11 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
   React.useEffect(() => {
     if (activeModal === "certidoes" && formData.certidoes) {
       setTempCertidoesData(formData.certidoes);
+      if (formData.certidoes.conjuge) {
+        setTempCertidoesConjugeData(formData.certidoes.conjuge);
+      } else {
+        setTempCertidoesConjugeData({ cndt: null, cndFederal: null });
+      }
     }
   }, [activeModal]);
 
@@ -748,6 +819,12 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
       if (formData.certidoes) {
         if (formData.certidoes.cndt) todosArquivos.push(formData.certidoes.cndt);
         if (formData.certidoes.cndFederal) todosArquivos.push(formData.certidoes.cndFederal);
+        
+        // Certidões do cônjuge (se casado)
+        if (formData.certidoes.casado && formData.certidoes.conjuge) {
+          if (formData.certidoes.conjuge.cndt) todosArquivos.push(formData.certidoes.conjuge.cndt);
+          if (formData.certidoes.conjuge.cndFederal) todosArquivos.push(formData.certidoes.conjuge.cndFederal);
+        }
       }
 
       // Documentos do imóvel
@@ -1108,39 +1185,82 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="conjuge-rg">RG do Cônjuge *</Label>
+                      <Label htmlFor="conjuge-rg-cpf">RG e CPF do Cônjuge *</Label>
                       <Input
-                        id="conjuge-rg"
+                        id="conjuge-rg-cpf"
                         type="file"
                         accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={(e) => handleFileUploadConjuge(e.target.files?.[0] || null, 'rg')}
+                        multiple
+                        onChange={(e) => handleFileUploadRgCpfConjuge(e.target.files)}
                       />
-                      {tempConjugeData.rg && (
+                      {(tempConjugeData.rg || tempConjugeData.cpf) && (
+                        <div className="mt-2">
+                          {tempConjugeData.rg && tempConjugeData.cpf && tempConjugeData.rg.name === tempConjugeData.cpf.name ? (
+                            // Mesmo arquivo para RG e CPF - mostrar apenas um card
+                            <div className="p-2 bg-green-50 border border-green-200 rounded">
+                              <p className="text-sm text-green-800 flex items-center gap-1">
+                                <CheckCircle2 className="h-4 w-4" />
+                                Arquivo selecionado: {tempConjugeData.rg.name}
+                              </p>
+                            </div>
+                          ) : (
+                            // Arquivos diferentes - mostrar ambos
+                            <div className="space-y-2">
+                              {tempConjugeData.rg && (
+                                <div className="p-2 bg-green-50 border border-green-200 rounded">
+                                  <p className="text-sm text-green-800 flex items-center gap-1">
+                                    <CheckCircle2 className="h-4 w-4" />
+                                    RG: {tempConjugeData.rg.name}
+                                  </p>
+                                </div>
+                              )}
+                              {tempConjugeData.cpf && (
+                                <div className="p-2 bg-green-50 border border-green-200 rounded">
+                                  <p className="text-sm text-green-800 flex items-center gap-1">
+                                    <CheckCircle2 className="h-4 w-4" />
+                                    CPF: {tempConjugeData.cpf.name}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <p className="text-xs text-gray-500">Selecione os arquivos de RG e CPF</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="conjuge-certidao">Certidão de Casamento *</Label>
+                      <Input
+                        id="conjuge-certidao"
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => handleFileUploadConjuge(e.target.files?.[0] || null, 'certidaoCasamento')}
+                      />
+                      {tempConjugeData.certidaoCasamento && (
                         <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
                           <p className="text-sm text-green-800 flex items-center gap-1">
                             <CheckCircle2 className="h-4 w-4" />
-                            Arquivo selecionado: {tempConjugeData.rg.name}
+                            Arquivo selecionado: {tempConjugeData.certidaoCasamento.name}
                           </p>
                         </div>
                       )}
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="conjuge-cpf">CPF do Cônjuge *</Label>
+                      <Label htmlFor="conjuge-qualificacao">Qualificação Profissional do Cônjuge *</Label>
                       <Input
-                        id="conjuge-cpf"
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={(e) => handleFileUploadConjuge(e.target.files?.[0] || null, 'cpf')}
+                        id="conjuge-qualificacao"
+                        value={tempConjugeData.qualificacaoProfissional}
+                        onChange={(e) => {
+                          const updatedConjuge = { ...tempConjugeData, qualificacaoProfissional: e.target.value };
+                          setTempConjugeData(updatedConjuge);
+                          if (tempCompradorData.casado) {
+                            setTempCompradorData(prev => ({ ...prev, conjuge: updatedConjuge }));
+                          }
+                        }}
+                        placeholder="Ex: Engenheiro, Comerciante"
                       />
-                      {tempConjugeData.cpf && (
-                        <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
-                          <p className="text-sm text-green-800 flex items-center gap-1">
-                            <CheckCircle2 className="h-4 w-4" />
-                            Arquivo selecionado: {tempConjugeData.cpf.name}
-                          </p>
-                        </div>
-                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -1159,40 +1279,6 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
                         placeholder="email@exemplo.com"
                       />
                     </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="conjuge-qualificacao">Qualificação Profissional do Cônjuge *</Label>
-                      <Input
-                        id="conjuge-qualificacao"
-                        value={tempConjugeData.qualificacaoProfissional}
-                        onChange={(e) => {
-                          const updatedConjuge = { ...tempConjugeData, qualificacaoProfissional: e.target.value };
-                          setTempConjugeData(updatedConjuge);
-                          if (tempCompradorData.casado) {
-                            setTempCompradorData(prev => ({ ...prev, conjuge: updatedConjuge }));
-                          }
-                        }}
-                        placeholder="Ex: Engenheiro, Comerciante"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="conjuge-certidao">Certidão de Casamento *</Label>
-                    <Input
-                      id="conjuge-certidao"
-                      type="file"
-                      accept=".pdf,.jpg,.jpeg,.png"
-                      onChange={(e) => handleFileUploadConjuge(e.target.files?.[0] || null, 'certidaoCasamento')}
-                    />
-                    {tempConjugeData.certidaoCasamento && (
-                      <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
-                        <p className="text-sm text-green-800 flex items-center gap-1">
-                          <CheckCircle2 className="h-4 w-4" />
-                          Arquivo selecionado: {tempConjugeData.certidaoCasamento.name}
-                        </p>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
@@ -1404,39 +1490,82 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
                       <div className="border-t pt-4 space-y-3">
                         <p className="text-sm font-medium">Dados do Cônjuge</p>
                         <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <Label className="text-xs">RG Cônjuge *</Label>
-                            <Input type="file" accept=".pdf,.jpg,.jpeg,.png" className="text-xs h-9" onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) setTempVendedoresData(prev => prev.map((v, i) =>
-                                i === index && v.conjuge ? { ...v, conjuge: { ...v.conjuge, rg: file } } : v
-                              ));
-                            }} />
-                            {vendedor.conjuge?.rg && (
-                              <div className="mt-1 p-1.5 bg-green-50 border border-green-200 rounded text-xs">
-                                <p className="text-green-800 flex items-center gap-1">
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  Arquivo selecionado: {vendedor.conjuge.rg.name}
-                                </p>
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-xs">RG e CPF do Cônjuge *</Label>
+                            <Input 
+                              type="file" 
+                              accept=".pdf,.jpg,.jpeg,.png" 
+                              multiple
+                              className="text-xs h-9" 
+                              onChange={(e) => {
+                                const files = e.target.files;
+                                if (!files || files.length === 0) return;
+                                
+                                const fileArray = Array.from(files);
+                                
+                                // Validar todos os arquivos
+                                for (const file of fileArray) {
+                                  if (!validateFileType(file)) {
+                                    toast.error("Apenas arquivos PDF, JPG e PNG são permitidos");
+                                    return;
+                                  }
+                                  if (file.size > 10 * 1024 * 1024) {
+                                    toast.error("Arquivo muito grande. Máximo: 10MB");
+                                    return;
+                                  }
+                                }
+                                
+                                // Se apenas 1 arquivo foi selecionado, usar o mesmo arquivo para RG e CPF
+                                // Se 2 arquivos foram selecionados, primeiro é RG e segundo é CPF
+                                const rgFile = fileArray[0] || null;
+                                const cpfFile = fileArray[1] || fileArray[0] || null;
+                                
+                                setTempVendedoresData(prev => prev.map((v, i) =>
+                                  i === index && v.conjuge ? { 
+                                    ...v, 
+                                    conjuge: { 
+                                      ...v.conjuge, 
+                                      rg: rgFile, 
+                                      cpf: cpfFile 
+                                    } 
+                                  } : v
+                                ));
+                              }} 
+                            />
+                            {(vendedor.conjuge?.rg || vendedor.conjuge?.cpf) && (
+                              <div className="mt-1">
+                                {vendedor.conjuge.rg && vendedor.conjuge.cpf && vendedor.conjuge.rg.name === vendedor.conjuge.cpf.name ? (
+                                  // Mesmo arquivo para RG e CPF - mostrar apenas um card
+                                  <div className="p-1.5 bg-green-50 border border-green-200 rounded text-xs">
+                                    <p className="text-green-800 flex items-center gap-1">
+                                      <CheckCircle2 className="h-3 w-3" />
+                                      Arquivo selecionado: {vendedor.conjuge.rg.name}
+                                    </p>
+                                  </div>
+                                ) : (
+                                  // Arquivos diferentes - mostrar ambos
+                                  <div className="space-y-1">
+                                    {vendedor.conjuge.rg && (
+                                      <div className="p-1.5 bg-green-50 border border-green-200 rounded text-xs">
+                                        <p className="text-green-800 flex items-center gap-1">
+                                          <CheckCircle2 className="h-3 w-3" />
+                                          RG: {vendedor.conjuge.rg.name}
+                                        </p>
+                                      </div>
+                                    )}
+                                    {vendedor.conjuge.cpf && (
+                                      <div className="p-1.5 bg-green-50 border border-green-200 rounded text-xs">
+                                        <p className="text-green-800 flex items-center gap-1">
+                                          <CheckCircle2 className="h-3 w-3" />
+                                          CPF: {vendedor.conjuge.cpf.name}
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             )}
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">CPF Cônjuge *</Label>
-                            <Input type="file" accept=".pdf,.jpg,.jpeg,.png" className="text-xs h-9" onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) setTempVendedoresData(prev => prev.map((v, i) =>
-                                i === index && v.conjuge ? { ...v, conjuge: { ...v.conjuge, cpf: file } } : v
-                              ));
-                            }} />
-                            {vendedor.conjuge?.cpf && (
-                              <div className="mt-1 p-1.5 bg-green-50 border border-green-200 rounded text-xs">
-                                <p className="text-green-800 flex items-center gap-1">
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  Arquivo selecionado: {vendedor.conjuge.cpf.name}
-                                </p>
-                              </div>
-                            )}
+                            <p className="text-xs text-gray-500">Selecione os arquivos de RG e CPF</p>
                           </div>
                           <div className="space-y-1">
                             <Label className="text-xs">E-mail Cônjuge *</Label>
@@ -1548,7 +1677,94 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
                     </div>
                   )}
                 </div>
+
+                {/* Checkbox Casado */}
+                <div className="flex items-center space-x-2 pt-2">
+                  <Checkbox
+                    id="certidoes-casado"
+                    checked={tempCertidoesData.casado}
+                    onCheckedChange={(checked) => {
+                      setTempCertidoesData(prev => ({ 
+                        ...prev, 
+                        casado: checked as boolean,
+                        conjuge: checked ? tempCertidoesConjugeData : null
+                      }));
+                    }}
+                  />
+                  <Label htmlFor="certidoes-casado" className="cursor-pointer">
+                    Casado(a)?
+                  </Label>
+                </div>
               </div>
+
+              {/* Dados do Cônjuge (condicional) */}
+              {tempCertidoesData.casado && (
+                <div className="space-y-4 border-t pt-4">
+                  <h3 className="font-semibold text-lg border-b pb-2">Certidões Fiscais do Cônjuge</h3>
+                  
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="conjuge-cndt">CNDT do Cônjuge - Certidão Negativa de Débitos Trabalhistas *</Label>
+                      <Input
+                        id="conjuge-cndt"
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          if (file && validateFileType(file) && file.size <= 10 * 1024 * 1024) {
+                            setTempCertidoesConjugeData(prev => ({ ...prev, cndt: file }));
+                            toast.success("Arquivo adicionado");
+                          } else if (file) {
+                            if (!validateFileType(file)) {
+                              toast.error("Apenas arquivos PDF, JPG e PNG são permitidos");
+                            } else {
+                              toast.error("Arquivo muito grande. Máximo: 10MB");
+                            }
+                          }
+                        }}
+                      />
+                      {tempCertidoesConjugeData.cndt && (
+                        <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
+                          <p className="text-sm text-green-800 flex items-center gap-1">
+                            <CheckCircle2 className="h-4 w-4" />
+                            Arquivo selecionado: {tempCertidoesConjugeData.cndt.name}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="conjuge-cnd-federal">CND Federal do Cônjuge - Certidão Negativa de Débitos Federais *</Label>
+                      <Input
+                        id="conjuge-cnd-federal"
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          if (file && validateFileType(file) && file.size <= 10 * 1024 * 1024) {
+                            setTempCertidoesConjugeData(prev => ({ ...prev, cndFederal: file }));
+                            toast.success("Arquivo adicionado");
+                          } else if (file) {
+                            if (!validateFileType(file)) {
+                              toast.error("Apenas arquivos PDF, JPG e PNG são permitidos");
+                            } else {
+                              toast.error("Arquivo muito grande. Máximo: 10MB");
+                            }
+                          }
+                        }}
+                      />
+                      {tempCertidoesConjugeData.cndFederal && (
+                        <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
+                          <p className="text-sm text-green-800 flex items-center gap-1">
+                            <CheckCircle2 className="h-4 w-4" />
+                            Arquivo selecionado: {tempCertidoesConjugeData.cndFederal.name}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end gap-3 border-t pt-4">
                 <Button variant="outline" onClick={handleCloseModal}>
