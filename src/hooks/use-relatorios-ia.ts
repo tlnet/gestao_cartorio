@@ -697,6 +697,9 @@ export const useRelatoriosIA = () => {
             url_matricula: getFileUrl(dadosFormulario.documentosImovel.matricula),
             url_guia_itbi: getFileUrl(dadosFormulario.documentosImovel.guiaITBI),
             url_certidao_onus: getFileUrl(dadosFormulario.documentosImovel.certidaoOnus),
+            url_certidao_negativa_imovel: getFileUrl(
+              dadosFormulario.documentosImovel.certidaoNegativaImovel
+            ),
           },
         } : null;
 
@@ -1123,6 +1126,7 @@ export const useRelatoriosIA = () => {
         matricula: File | null;
         guiaITBI: File | null;
         certidaoOnus: File | null;
+        certidaoNegativaImovel?: File | null;
       } | null;
     },
     webhookUrl?: string

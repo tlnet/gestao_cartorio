@@ -111,6 +111,7 @@ interface DadosDocumentosImovel {
   matricula: File | null;
   guiaITBI: File | null;
   certidaoOnus: File | null;
+  certidaoNegativaImovel: File | null;
 }
 
 // Estado global do formulário de minuta
@@ -206,6 +207,7 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
     matricula: null,
     guiaITBI: null,
     certidaoOnus: null,
+    certidaoNegativaImovel: null,
   });
 
   // ============ FUNÇÕES PARA MODAL DE COMPRADORES ============
@@ -656,7 +658,10 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
     handleCloseModal();
   };
 
-  const handleFileUploadDocumentoImovel = (file: File | null, field: 'matricula' | 'guiaITBI' | 'certidaoOnus') => {
+  const handleFileUploadDocumentoImovel = (
+    file: File | null,
+    field: "matricula" | "guiaITBI" | "certidaoOnus" | "certidaoNegativaImovel"
+  ) => {
     if (!file) return;
     if (!validateFileType(file)) {
       toast.error("Apenas arquivos PDF, JPG e PNG são permitidos");
@@ -706,7 +711,8 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
       title: "Documentos do Imóvel",
       icon: Building,
       color: "bg-orange-500",
-      description: "Matrícula Atualizada, Guia ITBI e Certidão de Ônus",
+      description:
+        "Matrícula Atualizada, Guia ITBI, Certidão de Ônus e Certidão Negativa de Imóvel",
     },
   ];
 
@@ -832,6 +838,8 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
         if (formData.documentosImovel.matricula) todosArquivos.push(formData.documentosImovel.matricula);
         if (formData.documentosImovel.guiaITBI) todosArquivos.push(formData.documentosImovel.guiaITBI);
         if (formData.documentosImovel.certidaoOnus) todosArquivos.push(formData.documentosImovel.certidaoOnus);
+        if (formData.documentosImovel.certidaoNegativaImovel)
+          todosArquivos.push(formData.documentosImovel.certidaoNegativaImovel);
       }
 
       console.log("Total de arquivos coletados:", todosArquivos.length);
@@ -1783,7 +1791,7 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
             <DialogHeader>
               <DialogTitle>Documentos do Imóvel</DialogTitle>
               <DialogDescription>
-                Envie os três documentos obrigatórios do imóvel
+                Envie os documentos do imóvel (Matrícula, ITBI, Ônus e Certidão Negativa de Imóvel)
               </DialogDescription>
             </DialogHeader>
 
@@ -1838,6 +1846,29 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
                       <p className="text-sm text-green-800 flex items-center gap-1">
                         <CheckCircle2 className="h-4 w-4" />
                         Arquivo selecionado: {tempDocumentosImovelData.certidaoOnus.name}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="certidao-negativa-imovel">Certidão Negativa de Imóvel</Label>
+                  <Input
+                    id="certidao-negativa-imovel"
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={(e) =>
+                      handleFileUploadDocumentoImovel(
+                        e.target.files?.[0] || null,
+                        "certidaoNegativaImovel"
+                      )
+                    }
+                  />
+                  {tempDocumentosImovelData.certidaoNegativaImovel && (
+                    <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
+                      <p className="text-sm text-green-800 flex items-center gap-1">
+                        <CheckCircle2 className="h-4 w-4" />
+                        Arquivo selecionado: {tempDocumentosImovelData.certidaoNegativaImovel.name}
                       </p>
                     </div>
                   )}

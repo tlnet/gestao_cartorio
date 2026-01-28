@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -184,12 +185,15 @@ const Sidebar: React.FC<SidebarProps> = ({ userType = "supervisor" }) => {
     <div className="flex flex-col h-full bg-white border-r border-gray-200">
       {/* Logo */}
       <div className="p-6">
-        <div className="flex items-center space-x-2">
-          <Brain className="h-8 w-8 text-blue-600" />
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">IA Cartórios</h1>
-            <p className="text-sm text-gray-500">Gestão Inteligente</p>
-          </div>
+        <div className="flex items-center justify-start">
+          <Image
+            src="/logo_iacartorios.png"
+            alt="IA Cartórios"
+            width={260}
+            height={72}
+            priority
+            className="h-16 w-auto object-contain"
+          />
         </div>
       </div>
 

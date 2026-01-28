@@ -10,6 +10,11 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "IA Cartórios - Gestão Inteligente",
   description: "Plataforma SAAS para gestão inteligente de cartórios com IA",
+  icons: {
+    icon: [{ url: "/favicon.png", type: "image/png" }],
+    shortcut: ["/favicon.png"],
+    apple: [{ url: "/favicon.png", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({
