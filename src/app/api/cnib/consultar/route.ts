@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 
 /**
  * API Route para consultar CNIB por CPF/CNPJ
@@ -58,14 +59,15 @@ export async function POST(request: NextRequest) {
     const cookies = request.headers.get("cookie");
     
     let user: any = null;
+    let accessToken: string | null = null;
     
     try {
       // Se tiver token no header Authorization, usar ele (método preferido)
       if (authHeader && authHeader.startsWith("Bearer ")) {
-        const token = authHeader.replace("Bearer ", "");
+        accessToken = authHeader.replace("Bearer ", "");
         console.log("🔑 Token encontrado no header Authorization");
         
-        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token);
+        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(accessToken);
         
         if (!authError && authUser) {
           user = authUser;
@@ -92,9 +94,9 @@ export async function POST(request: NextRequest) {
           const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
           const urlPrefix = supabaseUrl.replace(/https?:\/\//, "").split(".")[0] || "";
           
-          const accessToken = cookieMap.get("sb-access-token") || 
-                             cookieMap.get("supabase-auth-token") ||
-                             cookieMap.get(`sb-${urlPrefix}-auth-token`);
+          accessToken = cookieMap.get("sb-access-token") || 
+                       cookieMap.get("supabase-auth-token") ||
+                       cookieMap.get(`sb-${urlPrefix}-auth-token`);
           
           if (accessToken) {
             // Usar o cliente Supabase padrão para validar o token
@@ -129,6 +131,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log("👤 Usuário autenticado:", user.id);
+    console.log("🔑 Token disponível:", !!accessToken);
 
     // Obter CPF da SERVENTIA (cartório) para a consulta CNIB
     // IMPORTANTE: Este é o CPF da SERVENTIA cadastrado na CNIB, não do usuário logado
@@ -425,6 +428,55 @@ export async function POST(request: NextRequest) {
         errorText = `Status ${response.status}: ${response.statusText}`;
       }
 
+      // Buscar cartório do usuário para salvar a consulta com erro
+      let cartorioId: string | null = null;
+      try {
+        const { data: userData } = await supabase
+          .from("users")
+          .select("cartorio_id")
+          .eq("id", user.id)
+          .single();
+
+        if (userData?.cartorio_id) {
+          cartorioId = userData.cartorio_id;
+        }
+      } catch (error) {
+        console.warn("⚠️ Erro ao buscar cartório do usuário (não crítico):", error);
+      }
+
+      // Salvar consulta com erro no banco de dados
+      if (cartorioId) {
+        try {
+          const tipoDocumento = documentoLimpo.length === 11 ? "CPF" : "CNPJ";
+          const { data: insertedData, error: insertError } = await supabase
+            .from("consultas_cnib")
+            .insert([
+              {
+                documento: documentoLimpo,
+                tipo_documento: tipoDocumento,
+                status: "erro",
+                mensagem_erro: errorText || `Erro ${response.status}: ${response.statusText}`,
+                usuario_id: user.id,
+                cartorio_id: cartorioId,
+              },
+            ])
+            .select();
+
+          if (insertError) {
+            console.error("❌ Erro ao salvar consulta com erro no banco:", {
+              code: insertError.code,
+              message: insertError.message,
+              details: insertError.details,
+              hint: insertError.hint,
+            });
+          } else {
+            console.log("✅ Consulta com erro salva no banco:", insertedData);
+          }
+        } catch (error) {
+          console.error("❌ Erro ao salvar consulta com erro no banco:", error);
+        }
+      }
+
       return NextResponse.json(
         {
           error: "Erro ao consultar CNIB",
@@ -485,6 +537,213 @@ export async function POST(request: NextRequest) {
     }
 
     console.log("✅ Consulta CNIB realizada com sucesso");
+    console.log("📦 Estrutura completa dos dados recebidos:", JSON.stringify(data, null, 2));
+
+    // Buscar cartório do usuário para salvar a consulta
+    let cartorioId: string | null = null;
+    
+    try {
+      // Criar cliente Supabase autenticado para buscar cartório
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      
+      if (!supabaseUrl || !supabaseAnonKey) {
+        console.error("❌ Variáveis de ambiente do Supabase não configuradas");
+      } else {
+        // Criar cliente autenticado
+        const supabaseClient = accessToken 
+          ? createClient(supabaseUrl, supabaseAnonKey, {
+              global: {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                },
+              },
+            })
+          : supabase;
+
+        const { data: userData, error: userError } = await supabaseClient
+          .from("users")
+          .select("cartorio_id")
+          .eq("id", user.id)
+          .single();
+
+        if (!userError && userData?.cartorio_id) {
+          cartorioId = userData.cartorio_id;
+          console.log("✅ Cartório encontrado:", cartorioId);
+        } else {
+          console.error("❌ Erro ao buscar cartório:", userError);
+        }
+      }
+    } catch (error) {
+      console.error("❌ Erro ao buscar cartório do usuário:", error);
+    }
+
+    // Salvar consulta no banco de dados
+    if (cartorioId) {
+      try {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        
+        if (!supabaseUrl || !supabaseAnonKey) {
+          console.error("❌ Variáveis de ambiente do Supabase não configuradas");
+        } else {
+          // Criar cliente autenticado com o token
+          const supabaseClient = accessToken 
+            ? createClient(supabaseUrl, supabaseAnonKey, {
+                global: {
+                  headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                  },
+                },
+              })
+            : supabase;
+
+          const tipoDocumento = documentoLimpo.length === 11 ? "CPF" : "CNPJ";
+          
+          // A resposta da API CNIB tem estrutura: { success: true, data: { data: { ... }, identifierRequest: "..." } }
+          // Quando retornamos { success: true, data: data }, o frontend recebe o objeto completo
+          // Então aqui, `data` já é o objeto completo com `success` e `data`
+          // Precisamos acessar data.data.data para os dados reais
+          const dadosReais = data?.data?.data || data?.data || data;
+          
+          console.log("🔍 Estrutura dos dados para extração:", {
+            hasData: !!data,
+            hasDataData: !!data?.data,
+            hasDataDataData: !!data?.data?.data,
+            keysData: data ? Object.keys(data) : [],
+            keysDataData: data?.data ? Object.keys(data.data) : [],
+            keysDataDataData: data?.data?.data ? Object.keys(data.data.data) : [],
+            dadosUsuario: dadosReais?.dados_usuario,
+            dadosUsuarioHash: dadosReais?.dados_usuario?.hash,
+            identifierRequest: data?.data?.identifierRequest,
+          });
+          
+          // Extrair nome/razão social - pode estar em data.data.data ou data.data ou data
+          const nomeRazaoSocial = dadosReais?.nomeRazao || 
+                                  dadosReais?.nome || 
+                                  dadosReais?.razaoSocial || 
+                                  null;
+          
+          // Extrair hash - pode estar em vários lugares
+          // Estrutura: data.data.data.dados_usuario.hash ou data.data.identifierRequest
+          // Prioridade: dados_usuario.hash > identifierRequest
+          const hashConsulta = dadosReais?.dados_usuario?.hash ||
+                              dadosReais?.dadosUsuario?.hash ||
+                              data?.data?.identifierRequest ||
+                              dadosReais?.hash ||
+                              data?.identifierRequest ||
+                              null;
+          
+          const indisponivel = dadosReais?.indisponivel || false;
+          const quantidadeOrdens = dadosReais?.qtdOrdens || 
+                                  dadosReais?.quantidadeOrdens || 
+                                  0;
+
+          console.log("💾 Tentando salvar consulta no banco:", {
+            documento: documentoLimpo.substring(0, 3) + "***",
+            tipo_documento: tipoDocumento,
+            nome_razao_social: nomeRazaoSocial,
+            hash_consulta: hashConsulta || "NÃO ENCONTRADO",
+            hash_consulta_length: hashConsulta?.length || 0,
+            indisponivel,
+            quantidade_ordens: quantidadeOrdens,
+            usuario_id: user.id,
+            cartorio_id: cartorioId,
+            hasToken: !!accessToken,
+            estruturaHash: {
+              dadosReaisHasDadosUsuario: !!dadosReais?.dados_usuario,
+              dadosReaisHasDadosUsuarioHash: !!dadosReais?.dados_usuario?.hash,
+              dadosReaisHash: dadosReais?.hash,
+              dataDataIdentifierRequest: data?.data?.identifierRequest,
+            },
+          });
+
+          // Preparar dados para inserção
+          const dadosInsercao: any = {
+            documento: documentoLimpo,
+            tipo_documento: tipoDocumento,
+            nome_razao_social: nomeRazaoSocial,
+            indisponivel: indisponivel,
+            quantidade_ordens: quantidadeOrdens,
+            dados_consulta: data,
+            status: "sucesso",
+            usuario_id: user.id,
+            cartorio_id: cartorioId,
+          };
+
+          // Sempre adicionar hash_consulta se existir
+          // Se a coluna não existir, o fallback tentará sem ela
+          if (hashConsulta) {
+            dadosInsercao.hash_consulta = hashConsulta;
+            console.log("✅ Hash incluído nos dados de inserção:", hashConsulta.substring(0, 20) + "...");
+          } else {
+            console.warn("⚠️ Hash não encontrado nos dados da consulta");
+          }
+
+          console.log("💾 Dados preparados para inserção:", {
+            ...dadosInsercao,
+            documento: dadosInsercao.documento.substring(0, 3) + "***",
+            hash_consulta: dadosInsercao.hash_consulta ? dadosInsercao.hash_consulta.substring(0, 20) + "..." : null,
+          });
+
+          const { data: insertedData, error: insertError } = await supabaseClient
+            .from("consultas_cnib")
+            .insert([dadosInsercao])
+            .select();
+
+          if (insertError) {
+            console.error("❌ Erro ao salvar consulta no banco:", {
+              code: insertError.code,
+              message: insertError.message,
+              details: insertError.details,
+              hint: insertError.hint,
+              fullError: insertError,
+            });
+            
+            // Se o erro for por coluna não existir, tentar sem hash_consulta
+            if (insertError.code === "42703" || insertError.message.includes("column") || insertError.message.includes("does not exist")) {
+              console.log("⚠️ Tentando salvar sem hash_consulta (coluna pode não existir)");
+              const { data: insertedDataRetry, error: insertErrorRetry } = await supabaseClient
+                .from("consultas_cnib")
+                .insert([
+                  {
+                    documento: documentoLimpo,
+                    tipo_documento: tipoDocumento,
+                    nome_razao_social: nomeRazaoSocial,
+                    indisponivel: indisponivel,
+                    quantidade_ordens: quantidadeOrdens,
+                    dados_consulta: data,
+                    status: "sucesso",
+                    usuario_id: user.id,
+                    cartorio_id: cartorioId,
+                  },
+                ])
+                .select();
+
+              if (insertErrorRetry) {
+                console.error("❌ Erro ao salvar consulta no banco (tentativa sem hash):", {
+                  code: insertErrorRetry.code,
+                  message: insertErrorRetry.message,
+                  details: insertErrorRetry.details,
+                  hint: insertErrorRetry.hint,
+                });
+              } else {
+                console.log("✅ Consulta salva no banco de dados com sucesso (sem hash):", insertedDataRetry);
+              }
+            }
+          } else {
+            console.log("✅ Consulta salva no banco de dados com sucesso:", insertedData);
+          }
+        }
+      } catch (error) {
+        console.error("❌ Erro ao salvar consulta no banco:", error);
+        if (error instanceof Error) {
+          console.error("Stack trace:", error.stack);
+        }
+      }
+    } else {
+      console.warn("⚠️ Cartório não encontrado, consulta não será salva no histórico");
+    }
 
     return NextResponse.json({
       success: true,

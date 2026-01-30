@@ -25,14 +25,24 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Search, FileText, AlertCircle, CheckCircle, XCircle, User, Building2, Calendar, Hash, Shield, ShieldCheck, AlertTriangle } from "lucide-react";
-import { formatCPFCNPJ, isValidCPF, isValidCNPJ } from "@/lib/formatters";
+import { Search, FileText, AlertCircle, CheckCircle, XCircle, User, Building2, Calendar, Hash, Shield, ShieldCheck, AlertTriangle, Eye } from "lucide-react";
+import { formatCPFCNPJ, formatCPF, formatCNPJ, isValidCPF, isValidCNPJ } from "@/lib/formatters";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
 import { useCNIBToken } from "@/hooks/use-cnib-token";
+import { useConsultasCNIB } from "@/hooks/use-consultas-cnib";
 import { supabase } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const cnibConsultaSchema = z.object({
   cpfCnpj: z
@@ -90,6 +100,7 @@ interface CNIBResultado {
 const CNIBPage = () => {
   const { user } = useAuth();
   const { token, loading: tokenLoading, isTokenValid, error: tokenError } = useCNIBToken();
+  const { consultas, loading: consultasLoading, fetchConsultas } = useConsultasCNIB();
   const [isConsulting, setIsConsulting] = useState(false);
   const [consultedDocument, setConsultedDocument] = useState<string | null>(
     null
@@ -289,6 +300,13 @@ const CNIBPage = () => {
         success: result.success,
         data: consultaData, // Dados da consulta (documento, nomeRazao, dados_usuario, etc)
       });
+      
+      // Recarregar histórico de consultas após um pequeno delay
+      // para garantir que o banco tenha processado a inserção
+      setTimeout(async () => {
+        await fetchConsultas();
+      }, 500);
+      
       toast.success("Consulta realizada com sucesso", {
         description: "Resultados carregados",
       });
@@ -397,7 +415,7 @@ const CNIBPage = () => {
 
           {consultedDocument && (
             <FadeInUp delay={200}>
-              <Card>
+              <Card id="resultado-consulta">
                 <CardHeader>
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <CardTitle className="flex items-center gap-2">
@@ -687,6 +705,137 @@ const CNIBPage = () => {
               </Card>
             </FadeInUp>
           )}
+
+          {/* Histórico de Consultas */}
+          <FadeInUp delay={300}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-blue-600" />
+                  Histórico de Consultas
+                </CardTitle>
+                <CardDescription>
+                  Consultas CNIB realizadas anteriormente
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {consultasLoading ? (
+                  <div className="space-y-4">
+                    {[...Array(3)].map((_, i) => (
+                      <div key={i} className="flex items-center space-x-4">
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-4 w-48" />
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-4 w-20" />
+                      </div>
+                    ))}
+                  </div>
+                ) : consultas.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Search className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      Nenhuma consulta encontrada
+                    </h3>
+                    <p className="text-gray-500 mb-4">
+                      Ainda não há consultas CNIB realizadas no sistema.
+                    </p>
+                    <p className="text-sm text-gray-400">
+                      Realize uma consulta usando o formulário acima.
+                    </p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Documento</TableHead>
+                        <TableHead>Nome / Razão Social</TableHead>
+                        <TableHead>Hash da Consulta</TableHead>
+                        <TableHead>Consultado em</TableHead>
+                        <TableHead>Usuário</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {consultas.map((consulta) => (
+                        <TableRow key={consulta.id}>
+                          <TableCell className="font-medium">
+                            {consulta.tipo_documento === "CPF"
+                              ? formatCPF(consulta.documento)
+                              : formatCNPJ(consulta.documento)}
+                          </TableCell>
+                          <TableCell>
+                            {consulta.nome_razao_social || "N/A"}
+                          </TableCell>
+                          <TableCell>
+                            {consulta.hash_consulta ? (
+                              <span className="font-mono text-xs" title={consulta.hash_consulta}>
+                                {consulta.hash_consulta.length > 20 
+                                  ? consulta.hash_consulta.substring(0, 20) + "..." 
+                                  : consulta.hash_consulta}
+                              </span>
+                            ) : (
+                              "N/A"
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {new Date(consulta.created_at).toLocaleString("pt-BR")}
+                          </TableCell>
+                          <TableCell>
+                            {consulta.usuario?.name || "Usuário não encontrado"}
+                          </TableCell>
+                          <TableCell>
+                            {consulta.status === "sucesso" ? (
+                              <Badge
+                                className="bg-green-100 text-green-800 hover:bg-green-100 cursor-default"
+                              >
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Sucesso
+                              </Badge>
+                            ) : (
+                              <Badge
+                                className="bg-red-100 text-red-800 hover:bg-red-100 cursor-default"
+                              >
+                                <XCircle className="h-3 w-3 mr-1" />
+                                Erro
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {consulta.status === "sucesso" && consulta.dados_consulta && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setConsultedDocument(consulta.documento);
+                                  setResultado({
+                                    success: true,
+                                    data: consulta.dados_consulta,
+                                  });
+                                  // Scroll para o resultado
+                                  setTimeout(() => {
+                                    const resultadoElement = document.getElementById("resultado-consulta");
+                                    if (resultadoElement) {
+                                      resultadoElement.scrollIntoView({ behavior: "smooth" });
+                                    }
+                                  }, 100);
+                                }}
+                                title="Visualizar resultado da consulta"
+                                className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </FadeInUp>
         </div>
       </MainLayout>
     </ProtectedRoute>

@@ -136,7 +136,9 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
   const { getWebhookUrl } = useN8NConfig();
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showMinutaSelectionDialog, setShowMinutaSelectionDialog] = useState(false);
   const [showMainDialog, setShowMainDialog] = useState(false);
+  const [selectedMinutaType, setSelectedMinutaType] = useState<string | null>(null);
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   
   // Estados de status dos cards
@@ -683,6 +685,24 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
 
   // ============ FIM DAS FUNÇÕES DE DOCUMENTOS DO IMÓVEL ============
 
+  // Tipos de minuta disponíveis
+  const minutaTypes = [
+    {
+      id: "compra_venda",
+      title: "Compra e Venda",
+      description: "Minuta de escritura de compra e venda de imóveis",
+      icon: FileText,
+      color: "bg-purple-500",
+    },
+    // Futuras minutas podem ser adicionadas aqui
+  ];
+
+  const handleMinutaTypeSelect = (minutaId: string) => {
+    setSelectedMinutaType(minutaId);
+    setShowMinutaSelectionDialog(false);
+    setShowMainDialog(true);
+  };
+
   // Cards de documentos
   const documentCards = [
     {
@@ -882,6 +902,7 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
       });
       
       setShowMainDialog(false);
+      setSelectedMinutaType(null);
       
     } catch (error) {
       console.error("Erro ao processar minuta:", error);
@@ -938,7 +959,8 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Dialog open={showMainDialog} onOpenChange={setShowMainDialog}>
+        {/* Dialog de Seleção de Minuta */}
+        <Dialog open={showMinutaSelectionDialog} onOpenChange={setShowMinutaSelectionDialog}>
           <DialogTrigger asChild>
             <Button className="w-full" disabled={isProcessing}>
               {isProcessing ? (
@@ -948,12 +970,73 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
                 </>
               ) : (
                 <>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Enviar Documentos
+                  <FileText className="mr-2 h-4 w-4" />
+                  Selecionar
                 </>
               )}
             </Button>
           </DialogTrigger>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Selecionar Tipo de Minuta</DialogTitle>
+              <DialogDescription>
+                Escolha o tipo de minuta de documento que deseja gerar
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-6 py-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {minutaTypes.map((minuta) => {
+                  const Icon = minuta.icon;
+                  return (
+                    <Card
+                      key={minuta.id}
+                      className="cursor-pointer hover:shadow-md transition-all hover:scale-[1.02] border-2 hover:border-primary"
+                      onClick={() => handleMinutaTypeSelect(minuta.id)}
+                    >
+                      <CardHeader className="pb-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-lg ${minuta.color}`}>
+                            <Icon className="h-5 w-5 text-white" />
+                          </div>
+                          <div>
+                            <CardTitle className="text-base">
+                              {minuta.title}
+                            </CardTitle>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-sm text-gray-600">
+                          {minuta.description}
+                        </p>
+                        <Button
+                          variant="ghost"
+                          className="w-full mt-3"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMinutaTypeSelect(minuta.id);
+                          }}
+                        >
+                          <Upload className="mr-2 h-4 w-4" />
+                          Enviar Documentos
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog Principal de Upload (abre após seleção da minuta) */}
+        <Dialog open={showMainDialog} onOpenChange={(open) => {
+          setShowMainDialog(open);
+          if (!open) {
+            setSelectedMinutaType(null);
+          }
+        }}>
           <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Gerar Minuta de Documento</DialogTitle>
