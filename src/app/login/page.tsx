@@ -1,17 +1,17 @@
 "use client";
 
 import React, { useState } from "react";
+import Image from "next/image";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Brain, Loader2, UserPlus, LogIn, Eye, EyeOff } from "lucide-react";
+import { Loader2, UserPlus, LogIn, Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -319,11 +319,15 @@ export default function LoginPage() {
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <div className="p-3 rounded-lg bg-blue-600">
-                <Brain className="h-8 w-8 text-white" />
-              </div>
+              <Image
+                src="/icone_iacartorios.png"
+                alt="IA Cartórios"
+                width={64}
+                height={64}
+                priority
+                className="h-16 w-auto object-contain"
+              />
             </div>
-            <CardTitle className="text-2xl">IA Cartórios</CardTitle>
             <CardDescription>
               {mode === "login"
                 ? "Faça login para acessar a plataforma de gestão inteligente"
@@ -566,7 +570,6 @@ export default function LoginPage() {
 
         <div className="mt-6 text-center text-sm text-gray-600">
           <p>Sistema de gestão inteligente para cartórios</p>
-          <p className="mt-1">Powered by IA & Supabase</p>
         </div>
       </div>
     </div>
