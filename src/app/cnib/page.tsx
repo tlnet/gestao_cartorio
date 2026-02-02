@@ -25,7 +25,14 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Search, FileText, AlertCircle, CheckCircle, XCircle, User, Building2, Calendar, Hash, Shield, ShieldCheck, AlertTriangle, Eye } from "lucide-react";
+import { Search, FileText, AlertCircle, CheckCircle, XCircle, User, Building2, Calendar, Hash, Shield, ShieldCheck, AlertTriangle, Eye, X } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { formatCPFCNPJ, formatCPF, formatCNPJ, isValidCPF, isValidCNPJ } from "@/lib/formatters";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
@@ -106,6 +113,8 @@ const CNIBPage = () => {
     null
   );
   const [resultado, setResultado] = useState<CNIBResultado | null>(null);
+  const [showConsultaDialog, setShowConsultaDialog] = useState(false);
+  const [consultaSelecionada, setConsultaSelecionada] = useState<CNIBResultado | null>(null);
 
   const form = useForm<CNIBConsultaFormData>({
     resolver: zodResolver(cnibConsultaSchema),
@@ -180,28 +189,83 @@ const CNIBPage = () => {
         throw new Error("Sessão não encontrada. Faça login novamente.");
       }
 
-      // Fazer requisição para a API de consulta CNIB
-      const response = await fetch("/api/cnib/consultar", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`,
-        },
-        credentials: "include", // Incluir cookies na requisição
-        body: JSON.stringify({
-          documento: numbers,
-        }),
-      });
+      // Fazer requisição para a API de consulta CNIB com timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 segundos de timeout
+      
+      let response: Response;
+      try {
+        response = await fetch("/api/cnib/consultar", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session.access_token}`,
+          },
+          credentials: "include", // Incluir cookies na requisição
+          body: JSON.stringify({
+            documento: numbers,
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        
+        if (fetchError.name === "AbortError") {
+          toast.error("Timeout na consulta", {
+            description: "A consulta demorou muito para responder. Tente novamente.",
+            duration: 8000,
+          });
+          throw new Error("Timeout na consulta CNIB");
+        }
+        
+        // Erro de rede
+        toast.error("Erro de conexão", {
+          description: "Não foi possível conectar ao servidor. Verifique sua conexão com a internet.",
+          duration: 8000,
+        });
+        throw new Error("Erro de conexão com o servidor");
+      }
 
       // Ler a resposta como texto primeiro para debug
       const responseText = await response.text();
+      const contentType = response.headers.get("content-type") || "";
+      
       console.log("📥 Resposta bruta da API:", {
         status: response.status,
         statusText: response.statusText,
-        contentType: response.headers.get("content-type"),
+        contentType: contentType,
         textLength: responseText.length,
         textPreview: responseText.substring(0, 200),
       });
+
+      // Verificar se a resposta é HTML (erro de servidor como 502)
+      if (contentType.includes("text/html") || responseText.trim().startsWith("<")) {
+        let errorMessage = "Erro no servidor";
+        let errorDetails = "O servidor retornou uma resposta HTML em vez de JSON";
+        
+        // Tentar extrair mensagem de erro do HTML
+        if (response.status === 502) {
+          errorMessage = "Erro 502 - Bad Gateway";
+          errorDetails = "O servidor não conseguiu se conectar ao serviço upstream. Tente novamente em alguns instantes.";
+        } else if (response.status >= 500) {
+          errorMessage = `Erro ${response.status} - Erro no Servidor`;
+          errorDetails = "O servidor encontrou um erro temporário. Tente novamente em alguns instantes.";
+        }
+        
+        console.error("❌ Resposta HTML recebida (erro de servidor):", {
+          status: response.status,
+          statusText: response.statusText,
+          preview: responseText.substring(0, 500),
+        });
+        
+        toast.error(errorMessage, {
+          description: errorDetails,
+          duration: 10000,
+        });
+        
+        throw new Error(errorMessage);
+      }
 
       let result: CNIBResultado;
       try {
@@ -209,7 +273,21 @@ const CNIBPage = () => {
       } catch (parseError) {
         console.error("❌ Erro ao parsear JSON da resposta:", parseError);
         console.error("📄 Resposta completa:", responseText);
-        throw new Error(`Resposta inválida da API: ${responseText.substring(0, 100)}`);
+        
+        let errorMessage = "Resposta inválida da API";
+        let errorDetails = "A resposta não está em formato JSON válido";
+        
+        if (response.status >= 500) {
+          errorMessage = "Erro no servidor";
+          errorDetails = "O servidor retornou uma resposta inválida. Tente novamente em alguns instantes.";
+        }
+        
+        toast.error(errorMessage, {
+          description: errorDetails,
+          duration: 8000,
+        });
+        
+        throw new Error(errorMessage);
       }
 
       if (!response.ok) {
@@ -217,17 +295,25 @@ const CNIBPage = () => {
         const errorMessage = result.error || result.details || "Erro ao consultar CNIB";
         const solution = (result as any).solution || (result as any).hint || "";
         
-        // Log detalhado para debug
-        console.error("❌ Erro na resposta da API:", {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorMessage,
-          details: result.details,
-          hint: (result as any).hint,
-          fullResult: result,
-        });
+        // Log detalhado para debug (de forma segura)
+        console.error("❌ Erro na resposta da API:");
+        console.error("  Status:", response.status);
+        console.error("  Status Text:", response.statusText);
+        console.error("  Erro:", errorMessage);
+        if (result.details) {
+          console.error("  Detalhes:", result.details);
+        }
+        if ((result as any).hint) {
+          console.error("  Dica:", (result as any).hint);
+        }
         
-        if (errorMessage.includes("Configuração incompleta")) {
+        // Tratamento específico para diferentes tipos de erro
+        if (response.status === 502 || response.status === 503 || response.status === 504) {
+          toast.error("Erro no servidor", {
+            description: "O servidor está temporariamente indisponível. Tente novamente em alguns instantes.",
+            duration: 10000,
+          });
+        } else if (errorMessage.includes("Configuração incompleta")) {
           toast.error(errorMessage, {
             description: solution || "Configure a variável CNIB_CPF_USUARIO no arquivo .env.local",
             duration: 8000,
@@ -241,6 +327,13 @@ const CNIBPage = () => {
           toast.error(errorMessage, {
             description: solution || "Verifique sua conexão com a internet e se a API CNIB está acessível",
             duration: 8000,
+          });
+        } else if (errorMessage.includes("autorização") || errorMessage.includes("não possui autorização")) {
+          // Erro específico de autorização
+          const hint = (result as any).hint || solution || "O CPF da serventia não possui autorização na API CNIB. Verifique se o CPF está correto e se a serventia está cadastrada na CNIB.";
+          toast.error("Erro de Autorização", {
+            description: errorMessage + (hint ? `\n\n${hint}` : ""),
+            duration: 12000,
           });
         } else {
           toast.error(errorMessage, {
@@ -808,18 +901,55 @@ const CNIBPage = () => {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                  setConsultedDocument(consulta.documento);
-                                  setResultado({
-                                    success: true,
-                                    data: consulta.dados_consulta,
-                                  });
-                                  // Scroll para o resultado
-                                  setTimeout(() => {
-                                    const resultadoElement = document.getElementById("resultado-consulta");
-                                    if (resultadoElement) {
-                                      resultadoElement.scrollIntoView({ behavior: "smooth" });
+                                  try {
+                                    // Garantir que dados_consulta seja um objeto
+                                    let dadosConsulta = consulta.dados_consulta;
+                                    
+                                    // Se for string, fazer parse
+                                    if (typeof dadosConsulta === 'string') {
+                                      dadosConsulta = JSON.parse(dadosConsulta);
                                     }
-                                  }, 100);
+                                    
+                                    // Extrair os dados reais da estrutura salva
+                                    // A estrutura salva pode ser: { success: true, data: { data: {...} } } ou { data: {...} } ou {...}
+                                    let dadosReais = dadosConsulta;
+                                    
+                                    // Se tiver estrutura aninhada, extrair os dados reais
+                                    if (dadosConsulta?.data?.data) {
+                                      dadosReais = dadosConsulta.data.data;
+                                    } else if (dadosConsulta?.data) {
+                                      dadosReais = dadosConsulta.data;
+                                    } else if (dadosConsulta) {
+                                      dadosReais = dadosConsulta;
+                                    }
+                                    
+                                    // Garantir que dadosReais seja um objeto válido
+                                    if (!dadosReais || typeof dadosReais !== 'object') {
+                                      throw new Error("Estrutura de dados inválida");
+                                    }
+                                    
+                                    // Formatar o documento para exibição
+                                    const documentoFormatado = consulta.tipo_documento === "CPF"
+                                      ? formatCPF(consulta.documento)
+                                      : formatCNPJ(consulta.documento);
+                                    
+                                    // Preparar dados para o dialog
+                                    const consultaData: CNIBResultado = {
+                                      success: true,
+                                      data: {
+                                        ...dadosReais,
+                                        documento: consulta.documento,
+                                      },
+                                    };
+                                    
+                                    setConsultaSelecionada(consultaData);
+                                    setShowConsultaDialog(true);
+                                  } catch (error) {
+                                    console.error("Erro ao processar dados da consulta:", error);
+                                    toast.error("Erro ao carregar dados da consulta", {
+                                      description: error instanceof Error ? error.message : "Não foi possível processar os dados salvos",
+                                    });
+                                  }
                                 }}
                                 title="Visualizar resultado da consulta"
                                 className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
@@ -836,6 +966,246 @@ const CNIBPage = () => {
               </CardContent>
             </Card>
           </FadeInUp>
+
+          {/* Dialog de Detalhes da Consulta */}
+          <Dialog open={showConsultaDialog} onOpenChange={setShowConsultaDialog}>
+            <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto">
+              <DialogHeader className="pb-3">
+                <DialogTitle className="flex items-center gap-2 text-lg">
+                  <FileText className="h-5 w-5 text-blue-600" />
+                  Detalhes da Consulta
+                </DialogTitle>
+                <DialogDescription className="text-sm">
+                  {consultaSelecionada?.data?.documento && (
+                    <>Documento consultado: {formatCPFCNPJ(consultaSelecionada.data.documento)}</>
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+
+              {consultaSelecionada && (
+                <div className="space-y-4">
+                  {consultaSelecionada.success && consultaSelecionada.data ? (
+                    <>
+                      {/* Status Principal */}
+                      <div className="flex items-center justify-between pb-2">
+                        <div className="flex items-center gap-2 text-green-600">
+                          <CheckCircle className="h-4 w-4" />
+                          <span className="text-sm font-medium">Consulta realizada com sucesso</span>
+                        </div>
+                        {consultaSelecionada.data.indisponivel !== undefined && (
+                          <Badge 
+                            variant={consultaSelecionada.data.indisponivel ? "destructive" : "default"}
+                            className="text-xs px-2 py-0.5"
+                          >
+                            {consultaSelecionada.data.indisponivel ? (
+                              <>
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                Indisponível
+                              </>
+                            ) : (
+                              <>
+                                <ShieldCheck className="h-3 w-3 mr-1" />
+                                Disponível
+                              </>
+                            )}
+                          </Badge>
+                        )}
+                      </div>
+
+                      <Separator className="my-2" />
+
+                      {/* Informações do Documento Consultado */}
+                      <div className="space-y-2">
+                        <h3 className="text-base font-semibold flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-blue-600" />
+                          Informações do Documento
+                        </h3>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="bg-muted/50 rounded-lg p-3">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                              <FileText className="h-3 w-3" />
+                              Documento
+                            </div>
+                            <p className="font-semibold text-base">
+                              {consultaSelecionada.data.documento ? formatCPFCNPJ(consultaSelecionada.data.documento) : "N/A"}
+                            </p>
+                          </div>
+
+                          <div className="bg-muted/50 rounded-lg p-3">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                              <User className="h-3 w-3" />
+                              Nome / Razão Social
+                            </div>
+                            <p className="font-semibold text-base">
+                              {consultaSelecionada.data?.nomeRazao || consultaSelecionada.data?.nome || consultaSelecionada.data?.razaoSocial || "N/A"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Status de Indisponibilidade e Ordens */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <Card className="bg-muted/30">
+                          <CardContent className="pt-4 pb-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-xs text-muted-foreground mb-1">Status</p>
+                                <p className="text-xl font-bold">
+                                  {consultaSelecionada.data?.indisponivel ? (
+                                    <span className="text-red-600">Indisponível</span>
+                                  ) : (
+                                    <span className="text-green-600">Disponível</span>
+                                  )}
+                                </p>
+                              </div>
+                              {consultaSelecionada.data?.indisponivel ? (
+                                <Shield className="h-6 w-6 text-red-600" />
+                              ) : (
+                                <ShieldCheck className="h-6 w-6 text-green-600" />
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <Card className="bg-muted/30">
+                          <CardContent className="pt-4 pb-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-xs text-muted-foreground mb-1">Quantidade de Ordens</p>
+                                <p className="text-xl font-bold">
+                                  {consultaSelecionada.data?.qtdOrdens ?? consultaSelecionada.data?.quantidadeOrdens ?? 0}
+                                </p>
+                              </div>
+                              <AlertCircle className="h-6 w-6 text-blue-600" />
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      {/* Protocolos */}
+                      {consultaSelecionada.data?.protocolos && consultaSelecionada.data.protocolos.length > 0 && (
+                        <div className="space-y-2">
+                          <h3 className="text-base font-semibold flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-orange-600" />
+                            Protocolos ({consultaSelecionada.data.protocolos.length})
+                          </h3>
+                          <div className="space-y-2">
+                            {consultaSelecionada.data.protocolos.map((protocolo: any, index: number) => (
+                              <Card key={index} className="bg-orange-50 border-orange-200">
+                                <CardContent className="pt-3 pb-3">
+                                  <pre className="text-xs overflow-auto max-h-32">
+                                    {JSON.stringify(protocolo, null, 2)}
+                                  </pre>
+                                </CardContent>
+                              </Card>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Dados da Consulta */}
+                      <Separator className="my-2" />
+                      <div className="space-y-2">
+                        <h3 className="text-base font-semibold flex items-center gap-2">
+                          <Building2 className="h-4 w-4 text-purple-600" />
+                          Dados da Consulta
+                        </h3>
+                        
+                        <Card className="bg-muted/30">
+                          <CardContent className="pt-4 pb-4 space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {/* Hash da Consulta */}
+                              {(consultaSelecionada.data?.dados_usuario?.hash || consultaSelecionada.data?.hash || consultaSelecionada.data?.identifierRequest) && (
+                                <div className="md:col-span-2">
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                                    <Hash className="h-3 w-3" />
+                                    Hash da Consulta
+                                  </div>
+                                  <p className="font-mono text-xs bg-muted p-2 rounded break-all">
+                                    {consultaSelecionada.data?.dados_usuario?.hash || consultaSelecionada.data?.hash || consultaSelecionada.data?.identifierRequest || "N/A"}
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* Data e Hora */}
+                              {(consultaSelecionada.data?.dados_usuario?.data || consultaSelecionada.data?.data) && (
+                                <div className="md:col-span-2">
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                                    <Calendar className="h-3 w-3" />
+                                    Data e Hora da Consulta
+                                  </div>
+                                  <p className="font-medium text-sm">
+                                    {consultaSelecionada.data?.dados_usuario?.data || consultaSelecionada.data?.data || "N/A"}
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* Nome do Usuário */}
+                              {(consultaSelecionada.data?.dados_usuario?.nome || consultaSelecionada.data?.dadosUsuario?.nome) && (
+                                <div>
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                                    <User className="h-3 w-3" />
+                                    Usuário
+                                  </div>
+                                  <p className="font-medium text-sm">
+                                    {consultaSelecionada.data?.dados_usuario?.nome || consultaSelecionada.data?.dadosUsuario?.nome || "N/A"}
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* CPF do Usuário */}
+                              {(consultaSelecionada.data?.dados_usuario?.documento || consultaSelecionada.data?.dadosUsuario?.documento) && (
+                                <div>
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                                    <FileText className="h-3 w-3" />
+                                    CPF do Usuário
+                                  </div>
+                                  <p className="font-medium text-sm">
+                                    {consultaSelecionada.data?.dados_usuario?.documento || consultaSelecionada.data?.dadosUsuario?.documento || "N/A"}
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* Organização */}
+                              {consultaSelecionada.data?.dados_usuario?.organizacao && (
+                                <div className="md:col-span-2">
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                                    <Building2 className="h-3 w-3" />
+                                    Organização
+                                  </div>
+                                  <p className="font-medium text-sm">
+                                    {consultaSelecionada.data.dados_usuario.organizacao}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 text-red-600">
+                        <XCircle className="h-5 w-5" />
+                        <span className="font-medium">Erro na consulta</span>
+                      </div>
+                      <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                        <p className="text-sm text-red-800">
+                          <strong>Erro:</strong> {consultaSelecionada.error || "Erro desconhecido"}
+                        </p>
+                        {consultaSelecionada.details && (
+                          <p className="text-sm text-red-600 mt-2">
+                            {consultaSelecionada.details}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
         </div>
       </MainLayout>
     </ProtectedRoute>

@@ -416,16 +416,55 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       let errorText = "";
+      let errorData: any = null;
+      
       try {
         errorText = await response.text();
+        
+        // Tentar parsear como JSON para extrair detalhes
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (parseError) {
+          // Se não for JSON, usar como texto
+          errorData = { message: errorText };
+        }
+        
         console.error("❌ Erro na resposta CNIB:", {
           status: response.status,
           statusText: response.statusText,
           error: errorText,
+          parsedError: errorData,
         });
       } catch (textError) {
         console.error("❌ Erro ao ler resposta de erro:", textError);
         errorText = `Status ${response.status}: ${response.statusText}`;
+      }
+
+      // Extrair informações específicas do erro
+      let errorMessage = "Erro ao consultar CNIB";
+      let errorDetails = errorText || "Erro desconhecido";
+      let errorHint = "";
+      
+      if (errorData) {
+        // Verificar se há notificações com detalhes específicos
+        if (errorData.notifications && Array.isArray(errorData.notifications) && errorData.notifications.length > 0) {
+          const notification = errorData.notifications[0];
+          errorMessage = notification.reason || errorData.message || errorMessage;
+          errorDetails = errorData.message || errorDetails;
+          
+          // Informações adicionais
+          if (notification.title) {
+            errorDetails += `\nDocumento consultado: ${notification.title}`;
+          }
+          
+          // Dica específica para erro de autorização
+          if (notification.reason && notification.reason.includes("autorização")) {
+            errorHint = `O CPF da serventia (${cpfUsuarioLimpo.substring(0, 3)}***) não possui autorização na API CNIB. Verifique se o CPF está correto e se a serventia está cadastrada na CNIB.`;
+          }
+        } else if (errorData.message) {
+          errorMessage = errorData.message;
+          errorDetails = errorText;
+        }
       }
 
       // Buscar cartório do usuário para salvar a consulta com erro
@@ -455,7 +494,7 @@ export async function POST(request: NextRequest) {
                 documento: documentoLimpo,
                 tipo_documento: tipoDocumento,
                 status: "erro",
-                mensagem_erro: errorText || `Erro ${response.status}: ${response.statusText}`,
+                mensagem_erro: errorMessage || errorText || `Erro ${response.status}: ${response.statusText}`,
                 usuario_id: user.id,
                 cartorio_id: cartorioId,
               },
@@ -479,9 +518,18 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json(
         {
-          error: "Erro ao consultar CNIB",
+          error: errorMessage,
           status: response.status,
-          details: errorText || "Erro desconhecido",
+          details: errorDetails,
+          hint: errorHint,
+          // Incluir informações de debug (apenas em desenvolvimento)
+          ...(process.env.NODE_ENV === 'development' && {
+            debug: {
+              documentoConsultado: documentoLimpo,
+              cpfServentia: cpfUsuarioLimpo.substring(0, 3) + "***",
+              errorData: errorData,
+            }
+          }),
         },
         { status: response.status }
       );
@@ -538,6 +586,30 @@ export async function POST(request: NextRequest) {
 
     console.log("✅ Consulta CNIB realizada com sucesso");
     console.log("📦 Estrutura completa dos dados recebidos:", JSON.stringify(data, null, 2));
+    
+    // Log detalhado da estrutura para debug - especialmente para hash
+    console.log("🔍 Análise detalhada da estrutura (foco em hash):", {
+      nivel1: {
+        keys: data ? Object.keys(data) : [],
+        hasData: !!data?.data,
+        identifierRequest: data?.identifierRequest || "NÃO ENCONTRADO",
+        hasHash: !!data?.hash,
+        hash: data?.hash || "NÃO ENCONTRADO",
+      },
+      nivel2: data?.data ? {
+        keys: Object.keys(data.data),
+        hasData: !!data.data.data,
+        identifierRequest: data.data.identifierRequest || "NÃO ENCONTRADO",
+        hasDadosUsuario: !!data.data.dados_usuario,
+        dadosUsuarioHash: data.data.dados_usuario?.hash || "NÃO ENCONTRADO",
+      } : null,
+      nivel3: data?.data?.data ? {
+        keys: Object.keys(data.data.data),
+        hasDadosUsuario: !!data.data.data.dados_usuario,
+        dadosUsuarioHash: data.data.data.dados_usuario?.hash || "NÃO ENCONTRADO",
+        identifierRequest: data.data.data.identifierRequest || "NÃO ENCONTRADO",
+      } : null,
+    });
 
     // Buscar cartório do usuário para salvar a consulta
     let cartorioId: string | null = null;
@@ -618,21 +690,135 @@ export async function POST(request: NextRequest) {
             identifierRequest: data?.data?.identifierRequest,
           });
           
-          // Extrair nome/razão social - pode estar em data.data.data ou data.data ou data
-          const nomeRazaoSocial = dadosReais?.nomeRazao || 
-                                  dadosReais?.nome || 
-                                  dadosReais?.razaoSocial || 
-                                  null;
+          // Extrair nome/razão social - pode estar em vários lugares na resposta
+          // Tentar múltiplas possibilidades de estrutura
+          // Nota: A API CNIB pode não retornar nome/razão social quando não há indisponibilidade
+          let nomeRazaoSocial = dadosReais?.nomeRazao || 
+                                dadosReais?.nome || 
+                                dadosReais?.razaoSocial ||
+                                dadosReais?.nomeRazaoSocial ||
+                                dadosReais?.nomeRazaoSocial ||
+                                data?.data?.nomeRazao ||
+                                data?.data?.nome ||
+                                data?.data?.razaoSocial ||
+                                data?.data?.nomeRazaoSocial ||
+                                data?.nomeRazao ||
+                                data?.nome ||
+                                data?.razaoSocial ||
+                                data?.nomeRazaoSocial ||
+                                null;
+          
+          // Se ainda não encontrou, tentar extrair de dados_usuario (pode conter nome do usuário que fez a consulta)
+          // Mas isso não é o nome/razão social do documento consultado, então só usar como último recurso
+          if (!nomeRazaoSocial) {
+            // Verificar se há algum campo que possa conter o nome
+            const possivelNome = dadosReais?.dados_usuario?.nome ||
+                                 dadosReais?.dadosUsuario?.nome ||
+                                 data?.data?.dados_usuario?.nome ||
+                                 data?.data?.dadosUsuario?.nome ||
+                                 null;
+            
+            // Só usar se realmente não houver outra opção (pode ser o nome do usuário, não do documento)
+            // Por enquanto, deixar como null se não encontrar
+            // nomeRazaoSocial = possivelNome; // Comentado - pode ser confuso
+          }
           
           // Extrair hash - pode estar em vários lugares
-          // Estrutura: data.data.data.dados_usuario.hash ou data.data.identifierRequest
-          // Prioridade: dados_usuario.hash > identifierRequest
-          const hashConsulta = dadosReais?.dados_usuario?.hash ||
-                              dadosReais?.dadosUsuario?.hash ||
-                              data?.data?.identifierRequest ||
-                              dadosReais?.hash ||
-                              data?.identifierRequest ||
-                              null;
+          // Prioridade: dados_usuario.hash > identifierRequest > hash direto
+          // IMPORTANTE: identifierRequest geralmente é o hash da consulta retornado pela API CNIB
+          let hashConsulta = dadosReais?.dados_usuario?.hash ||
+                            dadosReais?.dadosUsuario?.hash ||
+                            data?.data?.dados_usuario?.hash ||
+                            data?.data?.dadosUsuario?.hash ||
+                            data?.dados_usuario?.hash ||
+                            data?.dadosUsuario?.hash ||
+                            null;
+          
+          // Se não encontrou em dados_usuario, tentar identifierRequest
+          // identifierRequest é geralmente o hash principal retornado pela API CNIB
+          // IMPORTANTE: Só usar identifierRequest se não for um UUID (que começa com números e hífens)
+          // Hash válido da CNIB geralmente é uma string alfanumérica curta (ex: "s7dtr75wf6")
+          if (!hashConsulta) {
+            const identifierRequest = data?.data?.identifierRequest ||
+                                    data?.identifierRequest ||
+                                    dadosReais?.identifierRequest ||
+                                    null;
+            
+            // Verificar se identifierRequest parece ser um hash válido (não um UUID)
+            // Hash CNIB geralmente tem 10-15 caracteres alfanuméricos
+            // UUID tem formato: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+            if (identifierRequest) {
+              const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifierRequest);
+              const isHashLike = /^[a-z0-9]{8,20}$/i.test(identifierRequest);
+              
+              // Só usar identifierRequest se parecer um hash válido (não UUID)
+              if (isHashLike && !isUUID) {
+                hashConsulta = identifierRequest;
+                console.log("✅ Hash encontrado em identifierRequest (formato válido):", identifierRequest);
+              } else {
+                console.warn("⚠️ identifierRequest encontrado mas não parece ser um hash válido:", {
+                  identifierRequest,
+                  isUUID,
+                  isHashLike,
+                  length: identifierRequest.length,
+                });
+              }
+            }
+          }
+          
+          // Última tentativa: hash direto (só se parecer válido)
+          if (!hashConsulta) {
+            const hashDireto = dadosReais?.hash || data?.hash || null;
+            if (hashDireto) {
+              const isHashLike = /^[a-z0-9]{8,20}$/i.test(hashDireto);
+              if (isHashLike) {
+                hashConsulta = hashDireto;
+              } else {
+                console.warn("⚠️ Hash direto encontrado mas não parece válido:", hashDireto);
+              }
+            }
+          }
+          
+          // Log específico do hash
+          if (hashConsulta) {
+            console.log("✅ Hash encontrado e validado:", {
+              hash: hashConsulta,
+              hashLength: hashConsulta.length,
+              origem: dadosReais?.dados_usuario?.hash ? "dados_usuario.hash" :
+                      dadosReais?.dadosUsuario?.hash ? "dadosUsuario.hash" :
+                      data?.data?.identifierRequest ? "data.data.identifierRequest" :
+                      data?.identifierRequest ? "data.identifierRequest" :
+                      "outro",
+            });
+          } else {
+            console.warn("⚠️ Hash não encontrado ou não é válido. NÃO será salvo no banco.");
+            console.warn("📋 Estrutura data:", {
+              hasData: !!data,
+              hasDataData: !!data?.data,
+              keysData: data ? Object.keys(data) : [],
+              keysDataData: data?.data ? Object.keys(data.data) : [],
+              identifierRequest: data?.data?.identifierRequest || data?.identifierRequest,
+              dadosUsuario: data?.data?.dados_usuario || data?.dados_usuario,
+            });
+          }
+          
+          // Log detalhado para debug
+          console.log("🔍 Extração de dados:", {
+            nomeRazaoSocial: nomeRazaoSocial || "NÃO ENCONTRADO",
+            hashConsulta: hashConsulta ? hashConsulta.substring(0, 20) + "..." : "NÃO ENCONTRADO",
+            estruturaDadosReais: {
+              hasNomeRazao: !!dadosReais?.nomeRazao,
+              hasNome: !!dadosReais?.nome,
+              hasRazaoSocial: !!dadosReais?.razaoSocial,
+              hasDadosUsuario: !!dadosReais?.dados_usuario,
+              hasDadosUsuarioHash: !!dadosReais?.dados_usuario?.hash,
+            },
+            estruturaData: {
+              hasData: !!data?.data,
+              hasIdentifierRequest: !!data?.data?.identifierRequest,
+              hasHash: !!data?.hash,
+            },
+          });
           
           const indisponivel = dadosReais?.indisponivel || false;
           const quantidadeOrdens = dadosReais?.qtdOrdens || 
@@ -662,7 +848,7 @@ export async function POST(request: NextRequest) {
           const dadosInsercao: any = {
             documento: documentoLimpo,
             tipo_documento: tipoDocumento,
-            nome_razao_social: nomeRazaoSocial,
+            nome_razao_social: nomeRazaoSocial || null, // Garantir que seja null se não encontrado, não undefined
             indisponivel: indisponivel,
             quantidade_ordens: quantidadeOrdens,
             dados_consulta: data,
@@ -671,25 +857,50 @@ export async function POST(request: NextRequest) {
             cartorio_id: cartorioId,
           };
 
-          // Sempre adicionar hash_consulta se existir
+          // Sempre adicionar hash_consulta APENAS se existir e for válido
+          // IMPORTANTE: Não salvar valores que não são hashes válidos (como UUIDs)
           // Se a coluna não existir, o fallback tentará sem ela
           if (hashConsulta) {
-            dadosInsercao.hash_consulta = hashConsulta;
-            console.log("✅ Hash incluído nos dados de inserção:", hashConsulta.substring(0, 20) + "...");
+            // Validação final: garantir que é um hash válido
+            const isHashValid = /^[a-z0-9]{8,20}$/i.test(hashConsulta);
+            const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(hashConsulta);
+            
+            if (isHashValid && !isUUID) {
+              dadosInsercao.hash_consulta = hashConsulta;
+              console.log("✅ Hash válido incluído nos dados de inserção:", {
+                hash: hashConsulta.substring(0, 20) + "...",
+                hashCompleto: hashConsulta,
+                hashLength: hashConsulta.length,
+              });
+            } else {
+              console.warn("⚠️ Hash encontrado mas não é válido (não será salvo):", {
+                hash: hashConsulta,
+                isHashValid,
+                isUUID,
+                length: hashConsulta.length,
+              });
+              // NÃO adicionar hash_consulta aos dados de inserção
+            }
           } else {
-            console.warn("⚠️ Hash não encontrado nos dados da consulta");
+            console.warn("⚠️ Hash não encontrado nos dados da consulta - NÃO será salvo");
+            console.warn("🔍 Estrutura completa para debug:", JSON.stringify(data, null, 2));
           }
-
-          console.log("💾 Dados preparados para inserção:", {
-            ...dadosInsercao,
+          
+          // Log final antes de inserir
+          console.log("💾 Dados finais para inserção:", {
             documento: dadosInsercao.documento.substring(0, 3) + "***",
-            hash_consulta: dadosInsercao.hash_consulta ? dadosInsercao.hash_consulta.substring(0, 20) + "..." : null,
+            tipo_documento: dadosInsercao.tipo_documento,
+            nome_razao_social: dadosInsercao.nome_razao_social || "NULL",
+            hash_consulta: dadosInsercao.hash_consulta ? dadosInsercao.hash_consulta.substring(0, 20) + "..." : "NULL",
+            indisponivel: dadosInsercao.indisponivel,
+            quantidade_ordens: dadosInsercao.quantidade_ordens,
+            hasDadosConsulta: !!dadosInsercao.dados_consulta,
           });
 
           const { data: insertedData, error: insertError } = await supabaseClient
             .from("consultas_cnib")
             .insert([dadosInsercao])
-            .select();
+            .select("id, documento, tipo_documento, nome_razao_social, hash_consulta, indisponivel, quantidade_ordens, status, created_at");
 
           if (insertError) {
             console.error("❌ Erro ao salvar consulta no banco:", {
@@ -700,25 +911,45 @@ export async function POST(request: NextRequest) {
               fullError: insertError,
             });
             
+            // Log dos dados que tentaram ser inseridos
+            console.error("📋 Dados que tentaram ser inseridos:", {
+              documento: dadosInsercao.documento.substring(0, 3) + "***",
+              nome_razao_social: dadosInsercao.nome_razao_social || "NULL",
+              hash_consulta: dadosInsercao.hash_consulta ? dadosInsercao.hash_consulta.substring(0, 20) + "..." : "NULL",
+            });
+            
             // Se o erro for por coluna não existir, tentar sem hash_consulta
-            if (insertError.code === "42703" || insertError.message.includes("column") || insertError.message.includes("does not exist")) {
-              console.log("⚠️ Tentando salvar sem hash_consulta (coluna pode não existir)");
+            // Mas primeiro verificar se o erro é realmente da coluna hash_consulta
+            const isHashColumnError = insertError.message?.includes("hash_consulta") || 
+                                     insertError.details?.includes("hash_consulta") ||
+                                     insertError.hint?.includes("hash_consulta");
+            
+            if ((insertError.code === "42703" || insertError.message.includes("column") || insertError.message.includes("does not exist")) && isHashColumnError) {
+              console.log("⚠️ Erro na coluna hash_consulta. Tentando salvar sem hash_consulta (coluna pode não existir)");
+              
+              // Preparar dados sem hash_consulta
+              const dadosInsercaoSemHash: any = {
+                documento: documentoLimpo,
+                tipo_documento: tipoDocumento,
+                nome_razao_social: nomeRazaoSocial || null,
+                indisponivel: indisponivel,
+                quantidade_ordens: quantidadeOrdens,
+                dados_consulta: data,
+                status: "sucesso",
+                usuario_id: user.id,
+                cartorio_id: cartorioId,
+              };
+              
+              console.log("💾 Tentando salvar sem hash_consulta:", {
+                nome_razao_social: nomeRazaoSocial || "NÃO ENCONTRADO",
+                documento: documentoLimpo.substring(0, 3) + "***",
+                hash_consulta: "REMOVIDO (coluna não existe)",
+              });
+              
               const { data: insertedDataRetry, error: insertErrorRetry } = await supabaseClient
                 .from("consultas_cnib")
-                .insert([
-                  {
-                    documento: documentoLimpo,
-                    tipo_documento: tipoDocumento,
-                    nome_razao_social: nomeRazaoSocial,
-                    indisponivel: indisponivel,
-                    quantidade_ordens: quantidadeOrdens,
-                    dados_consulta: data,
-                    status: "sucesso",
-                    usuario_id: user.id,
-                    cartorio_id: cartorioId,
-                  },
-                ])
-                .select();
+                .insert([dadosInsercaoSemHash])
+                .select("id, documento, tipo_documento, nome_razao_social, hash_consulta, indisponivel, quantidade_ordens, status, created_at");
 
               if (insertErrorRetry) {
                 console.error("❌ Erro ao salvar consulta no banco (tentativa sem hash):", {
@@ -728,11 +959,32 @@ export async function POST(request: NextRequest) {
                   hint: insertErrorRetry.hint,
                 });
               } else {
-                console.log("✅ Consulta salva no banco de dados com sucesso (sem hash):", insertedDataRetry);
+                console.log("✅ Consulta salva no banco de dados com sucesso (sem hash):", {
+                  id: insertedDataRetry?.[0]?.id,
+                  documento: insertedDataRetry?.[0]?.documento?.substring(0, 3) + "***",
+                  nome_razao_social: insertedDataRetry?.[0]?.nome_razao_social || "NULL",
+                  hash_consulta: insertedDataRetry?.[0]?.hash_consulta || "NULL",
+                });
               }
             }
           } else {
-            console.log("✅ Consulta salva no banco de dados com sucesso:", insertedData);
+            console.log("✅ Consulta salva no banco de dados com sucesso:", {
+              id: insertedData?.[0]?.id,
+              documento: insertedData?.[0]?.documento?.substring(0, 3) + "***",
+              nome_razao_social: insertedData?.[0]?.nome_razao_social || "NULL",
+              hash_consulta: insertedData?.[0]?.hash_consulta || "NULL",
+              dadosCompletos: insertedData?.[0],
+            });
+            
+            // Verificar se os dados foram salvos corretamente
+            if (insertedData && insertedData[0]) {
+              if (!insertedData[0].nome_razao_social && nomeRazaoSocial) {
+                console.warn("⚠️ ATENÇÃO: nome_razao_social não foi salvo mesmo tendo valor:", nomeRazaoSocial);
+              }
+              if (!insertedData[0].hash_consulta && hashConsulta) {
+                console.warn("⚠️ ATENÇÃO: hash_consulta não foi salvo mesmo tendo valor:", hashConsulta.substring(0, 20) + "...");
+              }
+            }
           }
         }
       } catch (error) {

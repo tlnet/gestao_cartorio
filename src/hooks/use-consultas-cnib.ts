@@ -40,23 +40,41 @@ export const useConsultasCNIB = () => {
 
       console.log("Iniciando busca de consultas CNIB...");
 
-      const { data, error: fetchError } = await supabase
+      // Tentar buscar com hash_consulta primeiro
+      let { data, error: fetchError } = await supabase
         .from("consultas_cnib")
-        .select("*")
+        .select("id, documento, tipo_documento, nome_razao_social, hash_consulta, indisponivel, quantidade_ordens, dados_consulta, status, mensagem_erro, usuario_id, cartorio_id, created_at")
         .order("created_at", { ascending: false });
 
+      // Se der erro de coluna não existir (42703 = undefined_column), tentar sem hash_consulta
+      if (fetchError && (fetchError.code === "42703" || fetchError.message?.includes("hash_consulta") || fetchError.message?.includes("does not exist"))) {
+        console.warn("Coluna hash_consulta não encontrada. Buscando sem essa coluna...");
+        
+        const { data: dataFallback, error: fetchErrorFallback } = await supabase
+          .from("consultas_cnib")
+          .select("id, documento, tipo_documento, nome_razao_social, indisponivel, quantidade_ordens, dados_consulta, status, mensagem_erro, usuario_id, cartorio_id, created_at")
+          .order("created_at", { ascending: false });
+        
+        data = dataFallback;
+        fetchError = fetchErrorFallback;
+      }
+
       if (fetchError) {
-        console.error("Erro do Supabase:", {
-          code: fetchError.code,
-          message: fetchError.message,
-          details: fetchError.details,
-          hint: fetchError.hint,
-        });
+        // Logar erro de forma segura, evitando problemas de serialização
+        console.error("Erro do Supabase:");
+        console.error("  Código:", fetchError.code || "N/A");
+        console.error("  Mensagem:", fetchError.message || "N/A");
+        if (fetchError.details) {
+          console.error("  Detalhes:", fetchError.details);
+        }
+        if (fetchError.hint) {
+          console.error("  Dica:", fetchError.hint);
+        }
 
         // Se for erro de tabela não encontrada, apenas retorna array vazio
         if (
           fetchError.code === "42P01" ||
-          fetchError.message.includes("does not exist")
+          fetchError.message?.includes("does not exist")
         ) {
           console.warn(
             "Tabela consultas_cnib não encontrada. Execute o script SQL primeiro."
@@ -68,7 +86,7 @@ export const useConsultasCNIB = () => {
         // Se for erro de RLS, também retorna array vazio
         if (
           fetchError.code === "42501" ||
-          fetchError.message.includes("permission denied")
+          fetchError.message?.includes("permission denied")
         ) {
           console.warn("Erro de permissão RLS. Verifique as políticas.");
           setConsultas([]);
@@ -83,7 +101,7 @@ export const useConsultasCNIB = () => {
       // Se há dados, carregar informações dos usuários separadamente
       if (data && data.length > 0) {
         const consultasComUsuarios = await Promise.all(
-          data.map(async (consulta) => {
+          data.map(async (consulta: any) => {
             try {
               // Buscar dados do usuário
               const { data: usuarioData } = await supabase
@@ -101,6 +119,8 @@ export const useConsultasCNIB = () => {
 
               return {
                 ...consulta,
+                // Garantir que hash_consulta seja undefined se não existir
+                hash_consulta: consulta.hash_consulta || undefined,
                 usuario: usuarioData,
                 cartorio: cartorioData,
               };
@@ -111,6 +131,8 @@ export const useConsultasCNIB = () => {
               );
               return {
                 ...consulta,
+                // Garantir que hash_consulta seja undefined se não existir
+                hash_consulta: consulta.hash_consulta || undefined,
                 usuario: null,
                 cartorio: null,
               };
@@ -120,7 +142,12 @@ export const useConsultasCNIB = () => {
 
         setConsultas(consultasComUsuarios);
       } else {
-        setConsultas(data || []);
+        // Garantir que hash_consulta seja undefined se não existir
+        const consultasFormatadas = (data || []).map((consulta: any) => ({
+          ...consulta,
+          hash_consulta: consulta.hash_consulta || undefined,
+        }));
+        setConsultas(consultasFormatadas);
       }
     } catch (err) {
       console.error("Erro detalhado ao carregar consultas CNIB:", {
