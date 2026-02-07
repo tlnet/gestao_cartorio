@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -34,7 +34,7 @@ const registroSchema = z.object({
 
 type RegistroFormData = z.infer<typeof registroSchema>;
 
-export default function RegistroPage() {
+function RegistroForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
@@ -815,5 +815,20 @@ export default function RegistroPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function RegistroPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Carregando...</p>
+        </div>
+      </div>
+    }>
+      <RegistroForm />
+    </Suspense>
   );
 }
