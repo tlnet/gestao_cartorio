@@ -27,15 +27,148 @@ export interface HistoricoProtocolo {
   observacao?: string;
 }
 
+// =====================================================
+// TIPOS PARA SISTEMA DE HIERARQUIA E PERMISSÕES
+// =====================================================
+
+/**
+ * Tipos de usuário disponíveis no sistema.
+ * - admin: Acesso total ao sistema, incluindo gerenciamento de usuários e configurações
+ * - atendente: Acesso limitado às funcionalidades operacionais
+ */
+export type TipoUsuario = "admin" | "atendente";
+
+/**
+ * Rotas protegidas do sistema que requerem permissões específicas
+ */
+export type RotaProtegida = 
+  | "/usuarios"
+  | "/configuracoes";
+
+/**
+ * Interface de permissões por tipo de usuário
+ */
+export interface PermissoesUsuario {
+  /** Pode acessar página de gerenciamento de usuários */
+  podeGerenciarUsuarios: boolean;
+  /** Pode acessar página de configurações */
+  podeAcessarConfiguracoes: boolean;
+  /** Pode modificar configurações do cartório */
+  podeModificarConfiguracoes: boolean;
+  /** Pode criar/editar/desativar outros usuários */
+  podeGerenciarPermissoes: boolean;
+  /** Lista de rotas que o usuário pode acessar */
+  rotasPermitidas: string[];
+  /** Lista de rotas bloqueadas para o usuário */
+  rotasBloqueadas: RotaProtegida[];
+}
+
+/**
+ * Mapeamento de permissões por tipo de usuário
+ */
+export const PERMISSOES_POR_TIPO: Record<TipoUsuario, PermissoesUsuario> = {
+  admin: {
+    podeGerenciarUsuarios: true,
+    podeAcessarConfiguracoes: true,
+    podeModificarConfiguracoes: true,
+    podeGerenciarPermissoes: true,
+    rotasPermitidas: [
+      "/dashboard",
+      "/protocolos",
+      "/contas",
+      "/relatorios",
+      "/ia",
+      "/cnib",
+      "/notificacoes",
+      "/perfil",
+      "/usuarios",
+      "/configuracoes",
+    ],
+    rotasBloqueadas: [],
+  },
+  atendente: {
+    podeGerenciarUsuarios: false,
+    podeAcessarConfiguracoes: false,
+    podeModificarConfiguracoes: false,
+    podeGerenciarPermissoes: false,
+    rotasPermitidas: [
+      "/dashboard",
+      "/protocolos",
+      "/contas",
+      "/relatorios",
+      "/ia",
+      "/cnib",
+      "/notificacoes",
+      "/perfil",
+    ],
+    rotasBloqueadas: ["/usuarios", "/configuracoes"],
+  },
+};
+
+/**
+ * Type guard: verifica se o usuário é administrador
+ */
+export function isAdmin(tipo: TipoUsuario | null | undefined): boolean {
+  return tipo === "admin";
+}
+
+/**
+ * Type guard: verifica se o usuário é atendente
+ */
+export function isAtendente(tipo: TipoUsuario | null | undefined): boolean {
+  return tipo === "atendente";
+}
+
+/**
+ * Obtém as permissões de um tipo de usuário
+ * @param tipo - Tipo do usuário
+ * @returns Objeto de permissões ou permissões de atendente se tipo for inválido (fallback seguro)
+ */
+export function getPermissoes(tipo: TipoUsuario | null | undefined): PermissoesUsuario {
+  if (!tipo) {
+    // Fallback seguro: sem tipo = atendente (mais restritivo)
+    return PERMISSOES_POR_TIPO.atendente;
+  }
+  return PERMISSOES_POR_TIPO[tipo] || PERMISSOES_POR_TIPO.atendente;
+}
+
+/**
+ * Verifica se um tipo de usuário pode acessar uma rota específica
+ * @param tipo - Tipo do usuário
+ * @param rota - Rota a ser verificada
+ * @returns true se pode acessar, false caso contrário
+ */
+export function podeAcessarRota(
+  tipo: TipoUsuario | null | undefined,
+  rota: string
+): boolean {
+  const permissoes = getPermissoes(tipo);
+  
+  // Verificar se está explicitamente bloqueada
+  if (permissoes.rotasBloqueadas.some((r) => rota.startsWith(r))) {
+    return false;
+  }
+  
+  // Verificar se está na lista de permitidas
+  return permissoes.rotasPermitidas.some((r) => rota.startsWith(r));
+}
+
 export interface Usuario {
   id: string;
   nome: string;
   email: string;
   telefone: string;
-  tipo: "admin" | "supervisor" | "atendente";
+  tipo: TipoUsuario;
   cartorioId?: string;
   ativo: boolean;
   criadoEm: Date;
+  // Campos do sistema de convites
+  inviteToken?: string | null;
+  inviteCreatedAt?: Date | null;
+  inviteExpiresAt?: Date | null;
+  inviteStatus?: 'pending' | 'accepted' | 'expired' | 'cancelled' | null;
+  inviteAcceptedAt?: Date | null;
+  accountStatus?: 'active' | 'pending_activation' | 'inactive';
 }
 
 export interface Cartorio {

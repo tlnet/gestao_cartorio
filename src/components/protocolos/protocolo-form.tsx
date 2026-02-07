@@ -25,8 +25,26 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { DatePicker } from "@/components/ui/date-picker";
-import { Plus, X } from "lucide-react";
+import { Plus, X, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Switch } from "@/components/ui/switch";
 import {
   formatPhone,
   formatCPFCNPJ,
@@ -108,7 +126,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   >([]);
 
   const { statusPersonalizados } = useStatusPersonalizados();
-  const { servicos, loading: servicosLoading, createServico } = useServicos();
+  const { servicos, loading: servicosLoading, createServico, fetchServicos } = useServicos();
   const { config: levontechConfig, loading: levontechLoading } = useLevontechConfig();
   const { user } = useAuth();
   
@@ -120,6 +138,19 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   
   // Ref para debounce do webhook
   const webhookTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  
+  // Estados para dialogs de serviço não encontrado
+  const [showServicoNaoEncontradoDialog, setShowServicoNaoEncontradoDialog] = React.useState(false);
+  const [servicoNaoEncontrado, setServicoNaoEncontrado] = React.useState<string>("");
+  const [showCriarServicoDialog, setShowCriarServicoDialog] = React.useState(false);
+  const [servicoForm, setServicoForm] = React.useState({
+    nome: "",
+    descricao: "",
+    preco: "",
+    prazo_execucao: 3,
+    dias_notificacao_antes_vencimento: 1,
+    ativo: true,
+  });
   
   // Debug: Log da configuração Levontech
   React.useEffect(() => {
@@ -236,11 +267,46 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     setAvisosPrazos(novosAvisos);
   }, [form, servicos]);
 
+  // Função para calcular e preencher o prazo de execução baseado nos serviços
+  const calcularPrazoExecucao = React.useCallback((servicosParaCalcular: string[]) => {
+    const prazoAtual = form.getValues("prazoExecucao");
+    
+    // Se já tiver prazo preenchido manualmente, não alterar
+    if (prazoAtual) {
+      return;
+    }
+    
+    // Encontrar o maior prazo entre os serviços selecionados
+    let maiorPrazo = 0;
+    
+    servicosParaCalcular.forEach((nomeServico) => {
+      const servicoInfo = servicos.find((s) => s.nome === nomeServico);
+      if (servicoInfo && servicoInfo.prazo_execucao) {
+        if (servicoInfo.prazo_execucao > maiorPrazo) {
+          maiorPrazo = servicoInfo.prazo_execucao;
+        }
+      }
+    });
+    
+    // Se encontrou um prazo, calcular a data (hoje + prazo em dias)
+    if (maiorPrazo > 0) {
+      const dataPrazo = new Date();
+      dataPrazo.setDate(dataPrazo.getDate() + maiorPrazo);
+      dataPrazo.setHours(0, 0, 0, 0);
+      
+      form.setValue("prazoExecucao", dataPrazo);
+      console.log(`✅ Prazo de execução calculado: ${dataPrazo.toLocaleDateString("pt-BR")} (${maiorPrazo} dias a partir de hoje)`);
+    }
+  }, [form, servicos]);
+
   const adicionarServico = (servico: string) => {
     if (!servicosSelecionados.includes(servico)) {
       const novosServicos = [...servicosSelecionados, servico];
       setServicosSelecionados(novosServicos);
       form.setValue("servicos", novosServicos);
+      
+      // Calcular e preencher prazo de execução se não estiver preenchido
+      calcularPrazoExecucao(novosServicos);
       
       // Atualizar avisos de prazos
       atualizarAvisosPrazos(novosServicos);
@@ -536,11 +602,16 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
               }
               
               // Preencher Prazo de Execução
-              if (protocoloData.prazoExecucao) {
+              // IMPORTANTE: Só preencher se não tiver sido preenchido por um serviço
+              // O prazo será calculado automaticamente quando o serviço for adicionado
+              // Se a Levontech retornar um prazo, só usar se não houver serviço ou se o serviço ainda não foi processado
+              const prazoAtual = form.getValues("prazoExecucao");
+              if (protocoloData.prazoExecucao && !prazoAtual) {
                 try {
                   const dataPrazo = new Date(protocoloData.prazoExecucao);
                   if (!isNaN(dataPrazo.getTime())) {
                     form.setValue("prazoExecucao", dataPrazo);
+                    console.log("✅ Prazo de execução preenchido pela Levontech:", dataPrazo.toLocaleDateString("pt-BR"));
                   }
                 } catch (error) {
                   console.error("Erro ao converter data do prazo:", error);
@@ -552,7 +623,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                 const solicitante = protocoloData.solicitante;
                 
                 // Nome do Solicitante
-                if (solicitante.nome) {
+                if (solicitante.nome && typeof solicitante.nome === 'string') {
                   form.setValue("solicitante", solicitante.nome.trim());
                 }
                 
@@ -569,64 +640,55 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                 }
                 
                 // Email (pegar o primeiro email da lista)
-                if (solicitante.emails && Array.isArray(solicitante.emails) && solicitante.emails.length > 0) {
+                if (solicitante.emails && Array.isArray(solicitante.emails) && solicitante.emails.length > 0 && solicitante.emails[0] && typeof solicitante.emails[0] === 'string') {
                   form.setValue("email", solicitante.emails[0].trim());
                 }
               }
               
               // Preencher Apresentante
-              if (protocoloData.apresentante && protocoloData.apresentante.trim() !== "") {
+              if (protocoloData.apresentante && typeof protocoloData.apresentante === 'string' && protocoloData.apresentante.trim() !== "") {
                 form.setValue("apresentante", protocoloData.apresentante.trim());
               }
               
               // Preencher Serviço
-              if (protocoloData.tipoDeServico) {
+              if (protocoloData.tipoDeServico && typeof protocoloData.tipoDeServico === 'string') {
                 const servicoNome = protocoloData.tipoDeServico.trim();
                 
-                // Verificar se o serviço existe na lista de serviços disponíveis
-                const servicoExiste = servicosDisponiveis.includes(servicoNome);
+                // Normalizar nome do serviço para comparação (case-insensitive, sem espaços extras)
+                const servicoNomeNormalizado = servicoNome.toLowerCase().trim();
+                
+                // Verificar se o serviço existe na lista de serviços disponíveis (comparação case-insensitive)
+                const servicoExiste = servicosDisponiveis.some(
+                  (s) => s.toLowerCase().trim() === servicoNomeNormalizado
+                );
                 
                 if (servicoExiste) {
-                  // Se o serviço existe, apenas adicionar se não estiver já selecionado
-                  if (!servicosSelecionados.includes(servicoNome)) {
-                    const novosServicos = [...servicosSelecionados, servicoNome];
-                    setServicosSelecionados(novosServicos);
-                    form.setValue("servicos", novosServicos);
+                  // Se o serviço existe, encontrar o nome exato (pode ter diferenças de capitalização)
+                  const servicoExato = servicosDisponiveis.find(
+                    (s) => s.toLowerCase().trim() === servicoNomeNormalizado
+                  );
+                  
+                  // Adicionar o serviço usando o nome exato da lista (não o nome normalizado)
+                  if (servicoExato && !servicosSelecionados.includes(servicoExato)) {
+                    const novosServicos = [...servicosSelecionados, servicoExato];
+                      setServicosSelecionados(novosServicos);
+                      form.setValue("servicos", novosServicos);
+                    
+                    // Calcular e preencher prazo de execução se não estiver preenchido
+                    calcularPrazoExecucao(novosServicos);
+                    
+                    console.log(`✅ Serviço "${servicoExato}" adicionado ao protocolo`);
                   }
                 } else {
-                  // Se o serviço não existir, criar automaticamente
-                  try {
-                    await createServico({
-                      nome: servicoNome,
-                      prazo_execucao: 3, // Valor padrão
-                      dias_notificacao_antes_vencimento: 1, // Valor padrão
-                      ativo: true,
-                    });
-                    
-                    // Após criar, adicionar o serviço à lista de selecionados
-                    if (!servicosSelecionados.includes(servicoNome)) {
-                      const novosServicos = [...servicosSelecionados, servicoNome];
-                      setServicosSelecionados(novosServicos);
-                      form.setValue("servicos", novosServicos);
-                    }
-                    
-                    // Mostrar mensagem informando que o serviço foi criado
-                    toast.info(`Serviço "${servicoNome}" foi criado automaticamente e adicionado ao protocolo.`);
-                  } catch (error) {
-                    console.error("Erro ao criar serviço automaticamente:", error);
-                    // Mesmo com erro, tentar adicionar o serviço ao formulário
-                    if (!servicosSelecionados.includes(servicoNome)) {
-                      const novosServicos = [...servicosSelecionados, servicoNome];
-                      setServicosSelecionados(novosServicos);
-                      form.setValue("servicos", novosServicos);
-                    }
-                    toast.warning(`Não foi possível criar o serviço "${servicoNome}" automaticamente, mas ele foi adicionado ao protocolo.`);
-                  }
+                  // Se o serviço não existir, mostrar dialog de confirmação
+                  console.log(`⚠️ Serviço "${servicoNome}" não encontrado na lista de serviços.`);
+                  setServicoNaoEncontrado(servicoNome);
+                  setShowServicoNaoEncontradoDialog(true);
                 }
               }
               
               // Preencher Observações
-              if (protocoloData.observacoes) {
+              if (protocoloData.observacoes && typeof protocoloData.observacoes === 'string') {
                 form.setValue("observacao", protocoloData.observacoes.trim());
               }
               
@@ -686,7 +748,257 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     }
   };
 
+  // Função para abrir o dialog de criação de serviço
+  const handleConfirmarCriarServico = () => {
+    setShowServicoNaoEncontradoDialog(false);
+    // Preencher o formulário com o nome do serviço retornado pela Levontech
+    setServicoForm({
+      nome: servicoNaoEncontrado,
+      descricao: "",
+      preco: "",
+      prazo_execucao: 3,
+      dias_notificacao_antes_vencimento: 1,
+      ativo: true,
+    });
+    setShowCriarServicoDialog(true);
+  };
+
+  // Função para criar o serviço e adicionar ao protocolo
+  const handleCriarServico = async () => {
+    try {
+      if (!servicoForm.nome.trim()) {
+        toast.error("Nome do serviço é obrigatório");
+        return;
+      }
+
+      // Validação: dias de notificação deve ser menor que prazo de execução
+      if (
+        servicoForm.dias_notificacao_antes_vencimento &&
+        servicoForm.prazo_execucao &&
+        servicoForm.dias_notificacao_antes_vencimento >= servicoForm.prazo_execucao
+      ) {
+        toast.error("Dias para notificação deve ser menor que o prazo de execução");
+        return;
+      }
+
+      // Converter preço para número
+      // O input aceita apenas números e vírgula, então convertemos para número
+      const preco = servicoForm.preco
+        ? (() => {
+            const numbers = servicoForm.preco.replace(/[^\d,]/g, '');
+            if (!numbers) return undefined;
+            // Se tiver vírgula, é centavos (ex: "100,50" = 100.50)
+            const parts = numbers.split(',');
+            if (parts.length === 2) {
+              return parseFloat(`${parts[0]}.${parts[1]}`);
+            }
+            // Se não tiver vírgula, é valor inteiro
+            return parseFloat(numbers);
+          })()
+        : undefined;
+
+      // Criar o serviço
+      const novoServico = await createServico({
+        nome: servicoForm.nome.trim(),
+        descricao: servicoForm.descricao.trim() || undefined,
+        preco: preco,
+        prazo_execucao: servicoForm.prazo_execucao,
+        dias_notificacao_antes_vencimento: servicoForm.dias_notificacao_antes_vencimento,
+        ativo: servicoForm.ativo,
+      });
+
+      console.log(`✅ Serviço "${servicoForm.nome}" criado com sucesso:`, novoServico);
+
+      // Recarregar a lista de serviços
+      if (fetchServicos) {
+        await fetchServicos();
+      }
+
+      // Adicionar o serviço ao protocolo
+      if (!servicosSelecionados.includes(servicoForm.nome.trim())) {
+        const novosServicos = [...servicosSelecionados, servicoForm.nome.trim()];
+        setServicosSelecionados(novosServicos);
+        form.setValue("servicos", novosServicos);
+        
+        // Calcular prazo de execução usando o serviço recém-criado
+        const prazoAtual = form.getValues("prazoExecucao");
+        if (!prazoAtual && novoServico && novoServico.prazo_execucao) {
+          const dataPrazo = new Date();
+          dataPrazo.setDate(dataPrazo.getDate() + novoServico.prazo_execucao);
+          dataPrazo.setHours(0, 0, 0, 0);
+          form.setValue("prazoExecucao", dataPrazo);
+          console.log(`✅ Prazo de execução calculado: ${dataPrazo.toLocaleDateString("pt-BR")} (${novoServico.prazo_execucao} dias a partir de hoje)`);
+        } else {
+          // Se não conseguiu usar o serviço recém-criado, aguardar e usar a função normal
+          await new Promise(resolve => setTimeout(resolve, 200));
+          calcularPrazoExecucao(novosServicos);
+        }
+        
+        console.log(`✅ Serviço "${servicoForm.nome}" adicionado ao protocolo após criação`);
+      }
+
+      // Fechar dialog e resetar formulário
+      setShowCriarServicoDialog(false);
+      setServicoForm({
+        nome: "",
+        descricao: "",
+        preco: "",
+        prazo_execucao: 3,
+        dias_notificacao_antes_vencimento: 1,
+        ativo: true,
+      });
+
+      toast.success(`Serviço "${servicoForm.nome}" criado e adicionado ao protocolo com sucesso!`);
+    } catch (error) {
+      console.error("❌ Erro ao criar serviço:", error);
+      // Erro já tratado no hook useServicos
+    }
+  };
+
   return (
+    <>
+      {/* Dialog de confirmação - Serviço não encontrado */}
+      <AlertDialog open={showServicoNaoEncontradoDialog} onOpenChange={setShowServicoNaoEncontradoDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-amber-500" />
+              Serviço não encontrado
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-600">
+              O serviço <strong>"{servicoNaoEncontrado}"</strong> retornado pela Levontech não foi encontrado na lista de serviços disponíveis.
+              <br /><br />
+              Deseja criar este serviço agora?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmarCriarServico}>
+              Criar Serviço
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dialog de criação de serviço */}
+      <Dialog open={showCriarServicoDialog} onOpenChange={setShowCriarServicoDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Adicionar Novo Serviço</DialogTitle>
+            <DialogDescription>
+              Configure um novo serviço oferecido pelo cartório
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="nomeServico">Nome do Serviço *</Label>
+              <Input
+                id="nomeServico"
+                placeholder="Ex: Certidão de Nascimento"
+                value={servicoForm.nome}
+                onChange={(e) =>
+                  setServicoForm((prev) => ({
+                    ...prev,
+                    nome: e.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="descricaoServico">Descrição</Label>
+              <Textarea
+                id="descricaoServico"
+                placeholder="Descrição do serviço"
+                value={servicoForm.descricao}
+                onChange={(e) =>
+                  setServicoForm((prev) => ({
+                    ...prev,
+                    descricao: e.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="precoServico">Preço (R$)</Label>
+              <Input
+                id="precoServico"
+                type="text"
+                placeholder="0,00"
+                value={servicoForm.preco}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/[^\d,]/g, '');
+                  setServicoForm((prev) => ({
+                    ...prev,
+                    preco: value,
+                  }));
+                }}
+              />
+            </div>
+            <div>
+              <Label htmlFor="prazoServico">Prazo de Execução (dias) *</Label>
+              <Input
+                id="prazoServico"
+                type="number"
+                min="1"
+                value={servicoForm.prazo_execucao}
+                onChange={(e) =>
+                  setServicoForm((prev) => ({
+                    ...prev,
+                    prazo_execucao: parseInt(e.target.value) || 3,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="diasNotificacaoServico">
+                Dias para Notificação de Vencimento *
+              </Label>
+              <Input
+                id="diasNotificacaoServico"
+                type="number"
+                min="1"
+                max={servicoForm.prazo_execucao - 1}
+                value={servicoForm.dias_notificacao_antes_vencimento}
+                onChange={(e) =>
+                  setServicoForm((prev) => ({
+                    ...prev,
+                    dias_notificacao_antes_vencimento: parseInt(e.target.value) || 1,
+                  }))
+                }
+              />
+              <p className="text-sm text-gray-500 mt-1">
+                Quantos dias antes do vencimento receber notificação via WhatsApp
+              </p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="ativoServico"
+                checked={servicoForm.ativo}
+                onCheckedChange={(checked) =>
+                  setServicoForm((prev) => ({
+                    ...prev,
+                    ativo: checked,
+                  }))
+                }
+              />
+              <Label htmlFor="ativoServico">Serviço ativo</Label>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowCriarServicoDialog(false)}
+              >
+                Cancelar
+              </Button>
+              <Button type="button" onClick={handleCriarServico}>
+                Criar e Adicionar ao Protocolo
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
         {/* Informações Básicas */}
@@ -1051,6 +1363,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
         </div>
       </form>
     </Form>
+    </>
   );
 };
 

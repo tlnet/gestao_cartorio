@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import MainLayout from "@/components/layout/main-layout";
+import { RequirePermission } from "@/components/auth/require-permission";
 import {
   Card,
   CardContent,
@@ -2209,4 +2210,12 @@ const Configuracoes = () => {
   );
 };
 
-export default Configuracoes;
+function ConfiguracoesPage() {
+  return (
+    <RequirePermission requiredRole="admin" redirectTo="/acesso-negado">
+      <Configuracoes />
+    </RequirePermission>
+  );
+}
+
+export default ConfiguracoesPage;

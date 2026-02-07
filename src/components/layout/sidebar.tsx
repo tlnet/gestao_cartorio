@@ -24,6 +24,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/contexts/auth-context";
+import { usePermissions } from "@/hooks/use-permissions";
 import { supabase } from "@/lib/supabase";
 import { UserSkeleton } from "@/components/ui/user-skeleton";
 import { useEffect, useState } from "react";
@@ -33,26 +34,54 @@ interface SidebarProps {
   userType?: "admin" | "supervisor" | "atendente";
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ userType = "supervisor" }) => {
+const Sidebar: React.FC<SidebarProps> = () => {
   const pathname = usePathname();
-  const { user, signOut } = useAuth();
+  const { user, signOut, userProfile: contextUserProfile, userType: contextUserType } = useAuth();
+  const { canAccess } = usePermissions();
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const { isValid: isCartorioValid } = useCartorioValidation();
+  
+  // Usar tipo de usuário do contexto
+  const userType = contextUserType || "atendente";
 
-  // Buscar dados do usuário
+  // Usar perfil do contexto ou buscar se necessário
   useEffect(() => {
-    const fetchUserProfile = async () => {
-      if (user) {
+    if (contextUserProfile) {
+      setUserProfile(contextUserProfile);
+      setIsLoadingProfile(false);
+    } else if (user) {
+      const fetchUserProfile = async () => {
         try {
           setIsLoadingProfile(true);
+          // Selecionar apenas campos que existem, com fallback para campos opcionais
           const { data, error } = await supabase
             .from("users")
-            .select("*")
+            .select(
+              "id, name, email, telefone, role, cartorio_id, ativo, created_at, updated_at"
+            )
             .eq("id", user.id)
             .single();
 
           if (error) {
+            // Se erro for de coluna não existir, tentar novamente sem campos opcionais
+            if (error.code === "42703") {
+              const { data: fallbackData, error: fallbackError } =
+                await supabase
+                  .from("users")
+                  .select("id, name, email, telefone, role, cartorio_id, ativo")
+                  .eq("id", user.id)
+                  .single();
+
+              if (fallbackError) {
+                console.error("Erro ao buscar perfil:", fallbackError);
+                return;
+              }
+
+              setUserProfile(fallbackData);
+              return;
+            }
+
             console.error("Erro ao buscar perfil:", error);
             return;
           }
@@ -63,80 +92,64 @@ const Sidebar: React.FC<SidebarProps> = ({ userType = "supervisor" }) => {
         } finally {
           setIsLoadingProfile(false);
         }
-      } else {
-        setIsLoadingProfile(false);
-      }
-    };
+      };
 
-    fetchUserProfile();
-  }, [user]);
+      fetchUserProfile();
+    } else {
+      setIsLoadingProfile(false);
+    }
+  }, [user, contextUserProfile]);
 
   const menuItems = [
     {
       title: "Dashboard",
       href: "/dashboard",
       icon: LayoutDashboard,
-      roles: ["admin", "supervisor", "atendente"],
     },
     {
       title: "Protocolos",
       href: "/protocolos",
       icon: FileText,
-      roles: ["admin", "supervisor", "atendente"],
     },
     {
       title: "Contas a Pagar",
       href: "/contas",
       icon: Receipt,
-      roles: ["admin", "supervisor"],
     },
     {
       title: "Notificações",
       href: "/notificacoes",
       icon: Bell,
-      roles: ["admin", "supervisor", "atendente"],
     },
     {
       title: "CNIB",
       href: "/cnib",
       icon: FileSearch,
-      roles: ["admin", "supervisor", "atendente"],
     },
     {
       title: "Análise IA",
       href: "/ia",
       icon: Brain,
-      roles: ["admin", "supervisor", "atendente"],
     },
     {
       title: "Relatórios",
       href: "/relatorios",
       icon: BarChart3,
-      roles: ["admin", "supervisor"],
     },
     {
       title: "Usuários",
       href: "/usuarios",
       icon: Users,
-      roles: ["admin", "supervisor"],
-    },
-    {
-      title: "Cartórios",
-      href: "/cartorios",
-      icon: Building2,
-      roles: ["admin"],
     },
     {
       title: "Configurações",
       href: "/configuracoes",
       icon: Settings,
-      roles: ["admin", "supervisor"],
     },
   ];
 
-  const filteredMenuItems = menuItems.filter((item) =>
-    item.roles.includes(userType)
-  );
+  // Filtrar menu baseado em permissões
+  const filteredMenuItems = menuItems.filter((item) => canAccess(item.href));
 
   const getUserInitials = (name: string) => {
     if (!name) return "U";

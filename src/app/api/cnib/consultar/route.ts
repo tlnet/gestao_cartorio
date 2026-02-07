@@ -694,8 +694,8 @@ export async function POST(request: NextRequest) {
           // Tentar múltiplas possibilidades de estrutura
           // Nota: A API CNIB pode não retornar nome/razão social quando não há indisponibilidade
           let nomeRazaoSocial = dadosReais?.nomeRazao || 
-                                dadosReais?.nome || 
-                                dadosReais?.razaoSocial ||
+                                  dadosReais?.nome || 
+                                  dadosReais?.razaoSocial || 
                                 dadosReais?.nomeRazaoSocial ||
                                 dadosReais?.nomeRazaoSocial ||
                                 data?.data?.nomeRazao ||
@@ -706,7 +706,7 @@ export async function POST(request: NextRequest) {
                                 data?.nome ||
                                 data?.razaoSocial ||
                                 data?.nomeRazaoSocial ||
-                                null;
+                                  null;
           
           // Se ainda não encontrou, tentar extrair de dados_usuario (pode conter nome do usuário que fez a consulta)
           // Mas isso não é o nome/razão social do documento consultado, então só usar como último recurso
@@ -727,7 +727,7 @@ export async function POST(request: NextRequest) {
           // Prioridade: dados_usuario.hash > identifierRequest > hash direto
           // IMPORTANTE: identifierRequest geralmente é o hash da consulta retornado pela API CNIB
           let hashConsulta = dadosReais?.dados_usuario?.hash ||
-                            dadosReais?.dadosUsuario?.hash ||
+                              dadosReais?.dadosUsuario?.hash ||
                             data?.data?.dados_usuario?.hash ||
                             data?.data?.dadosUsuario?.hash ||
                             data?.dados_usuario?.hash ||
@@ -740,9 +740,9 @@ export async function POST(request: NextRequest) {
           // Hash válido da CNIB geralmente é uma string alfanumérica curta (ex: "s7dtr75wf6")
           if (!hashConsulta) {
             const identifierRequest = data?.data?.identifierRequest ||
-                                    data?.identifierRequest ||
+                              data?.identifierRequest ||
                                     dadosReais?.identifierRequest ||
-                                    null;
+                              null;
             
             // Verificar se identifierRequest parece ser um hash válido (não um UUID)
             // Hash CNIB geralmente tem 10-15 caracteres alfanuméricos
@@ -866,13 +866,13 @@ export async function POST(request: NextRequest) {
             const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(hashConsulta);
             
             if (isHashValid && !isUUID) {
-              dadosInsercao.hash_consulta = hashConsulta;
+            dadosInsercao.hash_consulta = hashConsulta;
               console.log("✅ Hash válido incluído nos dados de inserção:", {
                 hash: hashConsulta.substring(0, 20) + "...",
                 hashCompleto: hashConsulta,
                 hashLength: hashConsulta.length,
               });
-            } else {
+          } else {
               console.warn("⚠️ Hash encontrado mas não é válido (não será salvo):", {
                 hash: hashConsulta,
                 isHashValid,
@@ -885,7 +885,7 @@ export async function POST(request: NextRequest) {
             console.warn("⚠️ Hash não encontrado nos dados da consulta - NÃO será salvo");
             console.warn("🔍 Estrutura completa para debug:", JSON.stringify(data, null, 2));
           }
-          
+
           // Log final antes de inserir
           console.log("💾 Dados finais para inserção:", {
             documento: dadosInsercao.documento.substring(0, 3) + "***",
@@ -929,15 +929,15 @@ export async function POST(request: NextRequest) {
               
               // Preparar dados sem hash_consulta
               const dadosInsercaoSemHash: any = {
-                documento: documentoLimpo,
-                tipo_documento: tipoDocumento,
+                    documento: documentoLimpo,
+                    tipo_documento: tipoDocumento,
                 nome_razao_social: nomeRazaoSocial || null,
-                indisponivel: indisponivel,
-                quantidade_ordens: quantidadeOrdens,
-                dados_consulta: data,
-                status: "sucesso",
-                usuario_id: user.id,
-                cartorio_id: cartorioId,
+                    indisponivel: indisponivel,
+                    quantidade_ordens: quantidadeOrdens,
+                    dados_consulta: data,
+                    status: "sucesso",
+                    usuario_id: user.id,
+                    cartorio_id: cartorioId,
               };
               
               console.log("💾 Tentando salvar sem hash_consulta:", {

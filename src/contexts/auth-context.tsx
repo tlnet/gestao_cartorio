@@ -10,6 +10,13 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { 
+  TipoUsuario, 
+  PermissoesUsuario, 
+  Usuario,
+  getPermissoes,
+  podeAcessarRota 
+} from "@/types";
 
 interface AuthContextType {
   user: User | null;
@@ -17,6 +24,9 @@ interface AuthContextType {
   loading: boolean;
   signOut: () => Promise<void>;
   error: AuthError | null;
+  userProfile: Usuario | null;
+  userType: TipoUsuario | null;
+  permissions: PermissoesUsuario | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -26,6 +36,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AuthError | null>(null);
+  const [userProfile, setUserProfile] = useState<Usuario | null>(null);
+  const [userType, setUserType] = useState<TipoUsuario | null>(null);
+  const [permissions, setPermissions] = useState<PermissoesUsuario | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -51,6 +64,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // Função para buscar perfil do usuário e permissões
+    const fetchUserProfile = async (userId: string) => {
+      try {
+        const { data: profile, error: profileError } = await supabase
+          .from("users")
+          .select("*")
+          .eq("id", userId)
+          .single();
+
+        if (profileError) {
+          console.warn("Erro ao buscar perfil do usuário:", profileError);
+          // Fallback: tratar como atendente (mais restritivo)
+          setUserType("atendente");
+          setPermissions(getPermissoes("atendente"));
+          setUserProfile(null);
+          return;
+        }
+
+        if (profile) {
+          // O banco usa 'role' mas nossa interface usa 'tipo'
+          const tipo = (profile.tipo || profile.role) as TipoUsuario;
+          setUserProfile({ ...profile, tipo } as Usuario);
+          setUserType(tipo);
+          setPermissions(getPermissoes(tipo));
+          console.log(`✅ Perfil carregado: ${profile.name || profile.nome} (${tipo})`);
+        }
+      } catch (err) {
+        console.error("Erro ao processar perfil:", err);
+        // Fallback seguro
+        setUserType("atendente");
+        setPermissions(getPermissoes("atendente"));
+        setUserProfile(null);
+      }
+    };
+
     // Verificar sessão inicial
     const getInitialSession = async () => {
       try {
@@ -62,6 +110,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         setSession(session);
         setUser(session?.user ?? null);
+
+        // Buscar perfil e permissões se houver usuário
+        if (session?.user) {
+          await fetchUserProfile(session.user.id);
+        }
       } catch (error: any) {
         console.error("Erro ao verificar sessão:", error);
         setError(error);
@@ -90,16 +143,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           setSession(session);
           setUser(session?.user ?? null);
-          setLoading(false);
 
-          if (event === "SIGNED_IN") {
+          if (event === "SIGNED_IN" && session?.user) {
             setError(null);
+            // Buscar perfil e permissões ao fazer login
+            await fetchUserProfile(session.user.id);
+            setLoading(false);
             // Não fazer redirecionamento aqui para evitar conflitos
             // O redirecionamento será feito pela função de login
           }
 
           if (event === "SIGNED_OUT") {
             setError(null);
+            // Limpar dados de perfil e permissões
+            setUserProfile(null);
+            setUserType(null);
+            setPermissions(null);
+            setLoading(false);
             try {
               toast.info("Logout realizado com sucesso!");
               if (router) {
@@ -116,10 +176,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               if (error) {
                 setError(error);
                 toast.error("Erro ao atualizar sessão: " + error.message);
+              } else if (session?.user) {
+                // Recarregar perfil ao atualizar usuário
+                await fetchUserProfile(session.user.id);
               }
             } catch (sessionError) {
               console.error("Erro ao atualizar sessão:", sessionError);
             }
+            setLoading(false);
+          }
+          
+          // Para outros eventos, apenas finalizar loading
+          if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") {
+            setLoading(false);
           }
         }
       );
@@ -145,6 +214,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(true);
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+      
+      // Limpar dados locais
+      setUserProfile(null);
+      setUserType(null);
+      setPermissions(null);
     } catch (error: any) {
       setError(error);
       toast.error("Erro ao fazer logout: " + error.message);
@@ -159,6 +233,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loading,
     signOut,
     error,
+    userProfile,
+    userType,
+    permissions,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -806,13 +806,55 @@ export function useUsuarios(cartorioId?: string) {
     try {
       setLoading(true);
 
-      let query = supabase.from("users").select("*");
+      // Selecionar campos base primeiro, depois tentar campos opcionais de convite
+      let query = supabase
+        .from("users")
+        .select(
+          "id, name, email, telefone, role, cartorio_id, ativo, created_at, updated_at"
+        );
 
       if (cartorioId) {
         query = query.eq("cartorio_id", cartorioId);
       }
 
       const { data, error } = await query;
+
+      // Se erro for relacionado a coluna não existir (42703), tentar sem campos de convite
+      if (error && error.code === "42703") {
+        console.warn(
+          "Campos de convite não encontrados, buscando apenas campos básicos"
+        );
+        // Tentar novamente sem campos de convite
+        let fallbackQuery = supabase
+          .from("users")
+          .select("id, name, email, telefone, role, cartorio_id, ativo, created_at, updated_at");
+
+        if (cartorioId) {
+          fallbackQuery = fallbackQuery.eq("cartorio_id", cartorioId);
+        }
+
+        const { data: fallbackData, error: fallbackError } =
+          await fallbackQuery;
+
+        if (fallbackError) {
+          console.error("Erro ao carregar usuários (fallback):", {
+            message: fallbackError.message,
+            details: fallbackError.details,
+            hint: fallbackError.hint,
+            code: fallbackError.code,
+          });
+          throw fallbackError;
+        }
+
+        // Mapear campo 'role' para 'tipo' para compatibilidade
+        const usuariosMapeados = (fallbackData || []).map((usuario) => ({
+          ...usuario,
+          tipo: usuario.role,
+          account_status: usuario.ativo ? "active" : "inactive",
+        }));
+        setUsuarios(usuariosMapeados);
+        return;
+      }
 
       if (error) {
         console.error("Erro detalhado do Supabase (usuários):", {
@@ -828,6 +870,9 @@ export function useUsuarios(cartorioId?: string) {
       const usuariosMapeados = (data || []).map((usuario) => ({
         ...usuario,
         tipo: usuario.role,
+        // Garantir que campos de convite existam (podem ser null)
+        account_status: (usuario as any).account_status || (usuario.ativo ? "active" : "inactive"),
+        invite_status: (usuario as any).invite_status || null,
       }));
       setUsuarios(usuariosMapeados);
     } catch (error: any) {
@@ -853,7 +898,7 @@ export function useUsuarios(cartorioId?: string) {
       const { id, created_at, updated_at, cartorio, ...usuarioData } = usuario;
 
       // Garantir que não há campos undefined ou null desnecessários
-      const cleanUsuarioData = {
+      const cleanUsuarioData: any = {
         name: usuarioData.name,
         email: usuarioData.email,
         telefone: usuarioData.telefone,
@@ -862,6 +907,11 @@ export function useUsuarios(cartorioId?: string) {
           usuarioData.cartorio_id === "null" ? null : usuarioData.cartorio_id,
         ativo: usuarioData.ativo !== undefined ? usuarioData.ativo : true,
       };
+
+      // Adicionar account_status se fornecido
+      if (usuarioData.account_status) {
+        cleanUsuarioData.account_status = usuarioData.account_status;
+      }
 
       console.log("Dados limpos para criação:", cleanUsuarioData);
 

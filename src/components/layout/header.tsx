@@ -64,28 +64,64 @@ interface Notification {
 
 const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, signOut, userProfile: contextUserProfile, loading: authLoading } = useAuth();
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
 
-  // Buscar dados do usuário
+  // Usar userProfile do contexto se disponível, senão buscar
   useEffect(() => {
+    if (contextUserProfile) {
+      console.log("[HEADER] Usando userProfile do contexto:", { 
+        hasAvatar: !!contextUserProfile.avatar_url,
+        avatarUrl: contextUserProfile.avatar_url 
+      });
+      setUserProfile(contextUserProfile);
+      setIsLoadingProfile(false);
+      return;
+    }
+
+    // Se não tem no contexto, buscar
     const fetchUserProfile = async () => {
       if (user) {
         try {
           setIsLoadingProfile(true);
+          // Selecionar apenas campos que existem, com fallback para campos opcionais
           const { data, error } = await supabase
             .from("users")
-            .select("*")
+            .select(
+              "id, name, email, telefone, role, cartorio_id, ativo, created_at, updated_at, avatar_url"
+            )
             .eq("id", user.id)
             .single();
 
           if (error) {
+            // Se erro for de coluna não existir, tentar novamente sem campos opcionais
+            if (error.code === "42703") {
+              const { data: fallbackData, error: fallbackError } =
+                await supabase
+                  .from("users")
+                  .select("id, name, email, telefone, role, cartorio_id, ativo, avatar_url")
+                  .eq("id", user.id)
+                  .single();
+
+              if (fallbackError) {
+                console.error("Erro ao buscar perfil:", fallbackError);
+                return;
+              }
+
+              setUserProfile(fallbackData);
+              return;
+            }
+
             console.error("Erro ao buscar perfil:", error);
             return;
           }
 
+          console.log("[HEADER] Perfil carregado:", { 
+            hasAvatar: !!data?.avatar_url,
+            avatarUrl: data?.avatar_url 
+          });
           setUserProfile(data);
         } catch (error) {
           console.error("Erro ao buscar perfil:", error);
@@ -97,8 +133,10 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
       }
     };
 
-    fetchUserProfile();
-  }, [user]);
+    if (!authLoading) {
+      fetchUserProfile();
+    }
+  }, [user, contextUserProfile, authLoading]);
 
   // Estado das notificações
   const [notifications, setNotifications] = useState<Notification[]>([

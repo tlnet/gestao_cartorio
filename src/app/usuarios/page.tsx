@@ -2,7 +2,10 @@
 
 import React, { useState } from "react";
 import MainLayout from "@/components/layout/main-layout";
-import { useUsuarios, useCartorios } from "@/hooks/use-supabase";
+import { RequirePermission } from "@/components/auth/require-permission";
+import { useAuth } from "@/contexts/auth-context";
+import { useUsuarios } from "@/hooks/use-supabase";
+import { supabase } from "@/lib/supabase";
 import {
   Card,
   CardContent,
@@ -33,10 +36,12 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -48,11 +53,14 @@ import {
   Trash2,
   UserCheck,
   UserX,
-  Shield,
   User,
   Crown,
   Loader2,
+  CheckCircle,
+  Copy,
+  AlertTriangle,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -75,7 +83,7 @@ const usuarioSchema = z.object({
     .string()
     .min(1, "Telefone é obrigatório")
     .refine((value) => isValidPhone(value), "Telefone inválido"),
-  role: z.enum(["admin", "supervisor", "atendente"]),
+  role: z.enum(["admin", "atendente"]),
   cartorio_id: z.string().optional(),
   ativo: z.boolean().default(true),
 });
@@ -85,7 +93,7 @@ type UsuarioFormData = z.infer<typeof usuarioSchema>;
 const GestaoUsuarios = () => {
   const { usuarios, loading, createUsuario, updateUsuario, deleteUsuario } =
     useUsuarios();
-  const { cartorios } = useCartorios();
+  const { userProfile } = useAuth();
 
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("todos");
@@ -95,6 +103,14 @@ const GestaoUsuarios = () => {
   const [submitting, setSubmitting] = useState(false);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [userToDelete, setUserToDelete] = useState<any>(null);
+  
+  // Estados para sistema de convites
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteUrl, setInviteUrl] = useState("");
+  const [inviteUserData, setInviteUserData] = useState<any>(null);
+  const [resendingInvite, setResendingInvite] = useState<string | null>(null);
+  const [showCancelInviteDialog, setShowCancelInviteDialog] = useState(false);
+  const [userToCancel, setUserToCancel] = useState<any>(null);
 
   const form = useForm<UsuarioFormData>({
     resolver: zodResolver(usuarioSchema),
@@ -107,7 +123,6 @@ const GestaoUsuarios = () => {
   const tipoOptions = [
     { value: "todos", label: "Todos os Tipos" },
     { value: "admin", label: "Administrador" },
-    { value: "supervisor", label: "Supervisor" },
     { value: "atendente", label: "Atendente" },
   ];
 
@@ -121,8 +136,6 @@ const GestaoUsuarios = () => {
     switch (tipo) {
       case "admin":
         return <Crown className="h-4 w-4" />;
-      case "supervisor":
-        return <Shield className="h-4 w-4" />;
       case "atendente":
         return <User className="h-4 w-4" />;
       default:
@@ -134,8 +147,6 @@ const GestaoUsuarios = () => {
     switch (tipo) {
       case "admin":
         return "bg-purple-100 text-purple-800";
-      case "supervisor":
-        return "bg-blue-100 text-blue-800";
       case "atendente":
         return "bg-green-100 text-green-800";
       default:
@@ -147,8 +158,6 @@ const GestaoUsuarios = () => {
     switch (tipo) {
       case "admin":
         return "Administrador";
-      case "supervisor":
-        return "Supervisor";
       case "atendente":
         return "Atendente";
       default:
@@ -178,21 +187,63 @@ const GestaoUsuarios = () => {
     try {
       setSubmitting(true);
 
-      // Tratar valor "null" para cartorio_id
+      // Automaticamente vincular ao cartório do administrador logado
       const userData = {
         ...data,
-        cartorio_id: data.cartorio_id === "null" ? null : data.cartorio_id,
+        cartorio_id: (userProfile as any)?.cartorio_id || userProfile?.cartorioId || null,
       };
 
       if (editingUser) {
+        // Modo edição - não gera convite
         await updateUsuario(editingUser.id, userData);
         setEditingUser(null);
+        setShowUserDialog(false);
+        form.reset();
       } else {
-        await createUsuario(userData);
-      }
+        // Modo criação - criar usuário e gerar link de registro
+        try {
+          // 1. Criar usuário no sistema (sem senha, inativo)
+          const userDataWithStatus = {
+            ...userData,
+            ativo: false, // Usuário fica inativo até completar o registro
+            account_status: "pending_activation", // Status pendente de ativação
+          };
+          
+          const newUser = await createUsuario(userDataWithStatus);
+          
+          if (!newUser || !newUser.id) {
+            toast.error("Erro ao criar usuário");
+            return;
+          }
 
-      setShowUserDialog(false);
-      form.reset();
+          // 2. Gerar link de registro com query params
+          const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+          const params = new URLSearchParams({
+            name: encodeURIComponent(data.name),
+            email: encodeURIComponent(data.email),
+            telefone: encodeURIComponent(data.telefone || ""),
+            role: encodeURIComponent(data.role),
+            cartorio_id: encodeURIComponent(userData.cartorio_id || ""),
+          });
+          
+          const registroUrl = `${baseUrl}/registro?${params.toString()}`;
+
+          // 3. Armazenar dados do link e abrir modal
+          setInviteUrl(registroUrl);
+          setInviteUserData({
+            id: newUser.id,
+            name: data.name,
+            email: data.email,
+          });
+          setShowUserDialog(false);
+          setShowInviteModal(true);
+          form.reset();
+          toast.success("Usuário criado! Envie o link de registro.");
+        } catch (error) {
+          console.error("Erro ao criar usuário:", error);
+          toast.error("Erro ao criar usuário");
+        }
+      }
     } catch (error) {
       // Erro já tratado no hook
     } finally {
@@ -227,6 +278,63 @@ const GestaoUsuarios = () => {
       await deleteUsuario(userToDelete.id);
       setShowDeleteConfirmation(false);
       setUserToDelete(null);
+    }
+  };
+
+  const handleResendInvite = async (usuario: any) => {
+    try {
+      setResendingInvite(usuario.id);
+
+      // Gerar link de registro com query params
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+      const params = new URLSearchParams({
+        name: encodeURIComponent(usuario.name || ""),
+        email: encodeURIComponent(usuario.email || ""),
+        telefone: encodeURIComponent(usuario.telefone || ""),
+        role: encodeURIComponent(usuario.role || "atendente"),
+        cartorio_id: encodeURIComponent(usuario.cartorio_id || ""),
+      });
+      
+      const registroUrl = `${baseUrl}/registro?${params.toString()}`;
+
+      setInviteUrl(registroUrl);
+      setInviteUserData({
+        id: usuario.id,
+        name: usuario.name,
+        email: usuario.email,
+      });
+      setShowInviteModal(true);
+      toast.success("Link de registro gerado!");
+    } catch (error) {
+      console.error("Erro ao gerar link de registro:", error);
+      toast.error("Erro ao gerar link de registro");
+    } finally {
+      setResendingInvite(null);
+    }
+  };
+
+  const handleCancelInvite = (usuario: any) => {
+    setUserToCancel(usuario);
+    setShowCancelInviteDialog(true);
+  };
+
+  const confirmCancelInvite = async () => {
+    if (!userToCancel) return;
+
+    try {
+      // Atualizar usuário para inativar e cancelar convite
+      await updateUsuario(userToCancel.id, {
+        ativo: false,
+        invite_status: "cancelled",
+        invite_token: null,
+      });
+
+      toast.success("Convite cancelado");
+      setShowCancelInviteDialog(false);
+      setUserToCancel(null);
+    } catch (error) {
+      console.error("Erro ao cancelar convite:", error);
+      toast.error("Erro ao cancelar convite");
     }
   };
 
@@ -379,16 +487,14 @@ const GestaoUsuarios = () => {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Supervisores
-              </CardTitle>
-              <Shield className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Administradores</CardTitle>
+              <Crown className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {usuarios.filter((u) => u.tipo === "supervisor").length}
+                {usuarios.filter((u) => (u.tipo === "admin" || u.role === "admin" || u.tipo === "supervisor" || u.role === "supervisor")).length}
               </div>
-              <p className="text-xs text-muted-foreground">Nível supervisor</p>
+              <p className="text-xs text-muted-foreground">Nível administrador</p>
             </CardContent>
           </Card>
 
@@ -399,7 +505,7 @@ const GestaoUsuarios = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {usuarios.filter((u) => u.tipo === "atendente").length}
+                {usuarios.filter((u) => (u.tipo === "atendente" || u.role === "atendente")).length}
               </div>
               <p className="text-xs text-muted-foreground">Nível atendente</p>
             </CardContent>
@@ -439,7 +545,6 @@ const GestaoUsuarios = () => {
                   <TableRow>
                     <TableHead>Usuário</TableHead>
                     <TableHead>Tipo</TableHead>
-                    <TableHead>Cartório</TableHead>
                     <TableHead>Último Acesso</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Ações</TableHead>
@@ -470,49 +575,91 @@ const GestaoUsuarios = () => {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {usuario.cartorio?.nome || "Não atribuído"}
-                      </TableCell>
-                      <TableCell>
                         {usuario.updated_at
                           ? new Date(usuario.updated_at).toLocaleString("pt-BR")
                           : "Nunca acessou"}
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          variant={usuario.ativo ? "default" : "secondary"}
-                        >
-                          {usuario.ativo ? "Ativo" : "Inativo"}
-                        </Badge>
+                        <div className="flex flex-col gap-1 items-start">
+                          <Badge
+                            variant={usuario.ativo ? "default" : "secondary"}
+                            className="w-fit"
+                          >
+                            {usuario.ativo ? "Ativo" : "Inativo"}
+                          </Badge>
+                          {(usuario as any).account_status === "pending_activation" && (
+                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 w-fit">
+                              Aguardando Ativação
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex space-x-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEditUser(usuario)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              handleToggleStatus(usuario.id, usuario.ativo)
-                            }
-                          >
-                            {usuario.ativo ? (
-                              <UserX className="h-4 w-4" />
-                            ) : (
-                              <UserCheck className="h-4 w-4" />
-                            )}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteUser(usuario)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {(usuario as any).account_status === "pending_activation" ? (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleResendInvite(usuario)}
+                                disabled={resendingInvite === usuario.id}
+                                title="Reenviar Convite"
+                              >
+                                {resendingInvite === usuario.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 2v6h-6"></path>
+                                    <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                                    <path d="M3 22v-6h6"></path>
+                                    <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                                  </svg>
+                                )}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleCancelInvite(usuario)}
+                                title="Cancelar Convite"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <circle cx="12" cy="12" r="10"></circle>
+                                  <line x1="15" y1="9" x2="9" y2="15"></line>
+                                  <line x1="9" y1="9" x2="15" y2="15"></line>
+                                </svg>
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEditUser(usuario)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  handleToggleStatus(usuario.id, usuario.ativo)
+                                }
+                              >
+                                {usuario.ativo ? (
+                                  <UserX className="h-4 w-4" />
+                                ) : (
+                                  <UserCheck className="h-4 w-4" />
+                                )}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteUser(usuario)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -608,7 +755,6 @@ const GestaoUsuarios = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="admin">Administrador</SelectItem>
-                      <SelectItem value="supervisor">Supervisor</SelectItem>
                       <SelectItem value="atendente">Atendente</SelectItem>
                     </SelectContent>
                   </Select>
@@ -618,31 +764,6 @@ const GestaoUsuarios = () => {
                     </p>
                   )}
                 </div>
-              </div>
-
-              <div>
-                <Label htmlFor="cartorio">Cartório</Label>
-                <Select
-                  value={form.watch("cartorio_id") || "null"}
-                  onValueChange={(value) =>
-                    form.setValue(
-                      "cartorio_id",
-                      value === "null" ? (null as any) : value
-                    )
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione um cartório" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="null">Nenhum cartório</SelectItem>
-                    {cartorios.map((cartorio) => (
-                      <SelectItem key={cartorio.id} value={cartorio.id}>
-                        {cartorio.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
 
               <div className="flex items-center space-x-2">
@@ -675,6 +796,97 @@ const GestaoUsuarios = () => {
         </Dialog>
 
         {/* Dialog de Confirmação de Exclusão */}
+        {/* Dialog de Cancelar Convite */}
+        <ConfirmationDialog
+          open={showCancelInviteDialog}
+          onOpenChange={setShowCancelInviteDialog}
+          onConfirm={confirmCancelInvite}
+          title="Cancelar Convite"
+          description={`Tem certeza que deseja cancelar o convite de "${userToCancel?.name}"? O link de ativação será invalidado e o usuário ficará inativo.`}
+          confirmText="Cancelar Convite"
+          cancelText="Voltar"
+          variant="destructive"
+        />
+
+        {/* Modal de Convite Gerado */}
+        <Dialog open={showInviteModal} onOpenChange={setShowInviteModal}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle className="h-6 w-6 text-green-600" />
+                <DialogTitle>Link de Registro Gerado!</DialogTitle>
+              </div>
+              <DialogDescription>
+                Envie este link para o novo usuário definir sua senha e ativar a conta.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {inviteUserData && (
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-sm text-gray-600 mb-1">
+                    <strong>Usuário:</strong> {inviteUserData.name}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <strong>Email:</strong> {inviteUserData.email}
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <Label htmlFor="invite-url" className="text-sm font-medium">
+                  Link de Registro
+                </Label>
+                <div className="flex gap-2 mt-1">
+                  <Input
+                    id="invite-url"
+                    value={inviteUrl}
+                    readOnly
+                    className="font-mono text-xs"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(inviteUrl);
+                      toast.success("Link copiado para área de transferência!");
+                    }}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Atenção</AlertTitle>
+                <AlertDescription className="text-sm">
+                  Este link expira em <strong>7 dias</strong>. Certifique-se de
+                  enviá-lo ao usuário antes do prazo.
+                </AlertDescription>
+              </Alert>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800">
+                  📧 <strong>Próximo passo:</strong> Envie este link por email
+                  ou WhatsApp ao novo usuário.
+                </p>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                onClick={() => setShowInviteModal(false)}
+                className="w-full"
+              >
+                Fechar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <ConfirmationDialog
           open={showDeleteConfirmation}
           onOpenChange={setShowDeleteConfirmation}
@@ -690,4 +902,12 @@ const GestaoUsuarios = () => {
   );
 };
 
-export default GestaoUsuarios;
+function GestaoUsuariosPage() {
+  return (
+    <RequirePermission requiredRole="admin" redirectTo="/acesso-negado">
+      <GestaoUsuarios />
+    </RequirePermission>
+  );
+}
+
+export default GestaoUsuariosPage;

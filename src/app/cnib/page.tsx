@@ -196,17 +196,17 @@ const CNIBPage = () => {
       let response: Response;
       try {
         response = await fetch("/api/cnib/consultar", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${session.access_token}`,
-          },
-          credentials: "include", // Incluir cookies na requisição
-          body: JSON.stringify({
-            documento: numbers,
-          }),
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`,
+        },
+        credentials: "include", // Incluir cookies na requisição
+        body: JSON.stringify({
+          documento: numbers,
+        }),
           signal: controller.signal,
-        });
+      });
         clearTimeout(timeoutId);
       } catch (fetchError: any) {
         clearTimeout(timeoutId);
@@ -312,7 +312,7 @@ const CNIBPage = () => {
           toast.error("Erro no servidor", {
             description: "O servidor está temporariamente indisponível. Tente novamente em alguns instantes.",
             duration: 10000,
-          });
+        });
         } else if (errorMessage.includes("Configuração incompleta")) {
           toast.error(errorMessage, {
             description: solution || "Configure a variável CNIB_CPF_USUARIO no arquivo .env.local",
@@ -935,7 +935,7 @@ const CNIBPage = () => {
                                     
                                     // Preparar dados para o dialog
                                     const consultaData: CNIBResultado = {
-                                      success: true,
+                                    success: true,
                                       data: {
                                         ...dadosReais,
                                         documento: consulta.documento,
@@ -949,7 +949,7 @@ const CNIBPage = () => {
                                     toast.error("Erro ao carregar dados da consulta", {
                                       description: error instanceof Error ? error.message : "Não foi possível processar os dados salvos",
                                     });
-                                  }
+                                    }
                                 }}
                                 title="Visualizar resultado da consulta"
                                 className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
