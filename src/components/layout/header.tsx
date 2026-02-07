@@ -72,9 +72,6 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
   // Usar userProfile do contexto se disponível, senão buscar
   useEffect(() => {
     if (contextUserProfile) {
-        hasAvatar: !!contextUserProfile.avatar_url,
-        avatarUrl: contextUserProfile.avatar_url 
-      });
       setUserProfile(contextUserProfile);
       setIsLoadingProfile(false);
       return;

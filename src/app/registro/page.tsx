@@ -415,11 +415,6 @@ export default function RegistroPage() {
               throw new Error("Erro ao processar registro. Tente novamente.");
             }
 
-              id: existingUserData.id,
-              authId: authUserId,
-              sameId: existingUserData.id === authUserId
-            });
-
             // Se os IDs forem diferentes, precisamos sincronizar
             if (existingUserData.id !== authUserId) {
               

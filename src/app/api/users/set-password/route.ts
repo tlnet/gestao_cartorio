@@ -189,15 +189,6 @@ export async function POST(request: NextRequest) {
       .ilike("email", email) // Case insensitive
       .maybeSingle(); // Usar maybeSingle para não dar erro se não encontrar
 
-      hasUser: !!userData, 
-      hasError: !!userError,
-      errorCode: userError?.code,
-      errorMessage: userError?.message,
-      userId: userData?.id,
-      accountStatus: userData?.account_status,
-      ativo: userData?.ativo
-    });
-
     if (userError) {
       console.error("[SET-PASSWORD] Erro ao buscar usuário:", userError);
       // Se o erro for "nenhum resultado encontrado", retornar erro específico
