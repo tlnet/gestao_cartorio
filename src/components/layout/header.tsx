@@ -72,7 +72,6 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
   // Usar userProfile do contexto se disponível, senão buscar
   useEffect(() => {
     if (contextUserProfile) {
-      console.log("[HEADER] Usando userProfile do contexto:", { 
         hasAvatar: !!contextUserProfile.avatar_url,
         avatarUrl: contextUserProfile.avatar_url 
       });
@@ -118,10 +117,6 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
             return;
           }
 
-          console.log("[HEADER] Perfil carregado:", { 
-            hasAvatar: !!data?.avatar_url,
-            avatarUrl: data?.avatar_url 
-          });
           setUserProfile(data);
         } catch (error) {
           console.error("Erro ao buscar perfil:", error);

@@ -36,7 +36,6 @@ async function createAuthUser(adminClient: any, email: string, password: string,
     throw createError || new Error("Usuário não foi criado");
   }
 
-  console.log("[SET-PASSWORD] Usuário criado no Auth com sucesso, ID:", createdUser.user.id);
   return createdUser.user;
 }
 
@@ -52,13 +51,11 @@ async function updateAuthPassword(adminClient: any, userId: string, password: st
     throw updateError;
   }
 
-  console.log("[SET-PASSWORD] Senha atualizada com sucesso");
   return updatedUser.user;
 }
 
 // Função auxiliar para sincronizar IDs
 async function syncUserIds(adminClient: any, oldId: string, newId: string, email: string) {
-  console.log("[SET-PASSWORD] Sincronizando IDs: deletando", oldId, "e criando com", newId);
   
   // Buscar dados completos do usuário antes de atualizar
   const { data: fullUserData, error: fetchError } = await adminClient
@@ -82,7 +79,6 @@ async function syncUserIds(adminClient: any, oldId: string, newId: string, email
     if (updateError) {
       console.error("[SET-PASSWORD] Erro ao atualizar ID por email:", updateError);
     } else {
-      console.log("[SET-PASSWORD] ID atualizado por email com sucesso");
     }
     return;
   }
@@ -108,7 +104,6 @@ async function syncUserIds(adminClient: any, oldId: string, newId: string, email
     if (updateError) {
       console.error("[SET-PASSWORD] Erro ao atualizar ID por email:", updateError);
     } else {
-      console.log("[SET-PASSWORD] ID atualizado por email com sucesso");
     }
     return;
   }
@@ -139,10 +134,8 @@ async function syncUserIds(adminClient: any, oldId: string, newId: string, email
     if (updateError) {
       console.error("[SET-PASSWORD] Erro ao atualizar ID por email:", updateError);
     } else {
-      console.log("[SET-PASSWORD] ID atualizado por email com sucesso");
     }
   } else {
-    console.log("[SET-PASSWORD] IDs sincronizados com sucesso");
   }
 }
 
@@ -171,7 +164,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("[SET-PASSWORD] Buscando usuário na tabela users para:", email);
     
     // Criar cliente admin primeiro para garantir acesso à tabela
     let adminClient;
@@ -197,7 +189,6 @@ export async function POST(request: NextRequest) {
       .ilike("email", email) // Case insensitive
       .maybeSingle(); // Usar maybeSingle para não dar erro se não encontrar
 
-    console.log("[SET-PASSWORD] Resultado da busca:", { 
       hasUser: !!userData, 
       hasError: !!userError,
       errorCode: userError?.code,
@@ -232,7 +223,6 @@ export async function POST(request: NextRequest) {
     // Se o usuário não foi encontrado na tabela, verificar se existe no Auth
     // Se existir no Auth, criar o registro na tabela
     if (!userData) {
-      console.log("[SET-PASSWORD] Usuário não encontrado na tabela users. Verificando se existe no Auth...");
       
       try {
         // Buscar usuário no Auth pelo email
@@ -253,7 +243,6 @@ export async function POST(request: NextRequest) {
         const existingAuthUser = usersList.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
         
         if (existingAuthUser) {
-          console.log("[SET-PASSWORD] Usuário encontrado no Auth mas não na tabela. Criando registro na tabela...");
           
           // Buscar dados do usuário dos query params ou usar dados básicos
           // Como não temos os dados completos, vamos criar com dados mínimos
@@ -283,7 +272,6 @@ export async function POST(request: NextRequest) {
               
               if (retryUserData) {
                 userData = retryUserData;
-                console.log("[SET-PASSWORD] Usuário encontrado após retry:", userData);
               } else {
                 return NextResponse.json(
                   {
@@ -313,7 +301,6 @@ export async function POST(request: NextRequest) {
               ativo: false,
               name: existingAuthUser.user_metadata?.name || existingAuthUser.email?.split("@")[0] || "Usuário",
             };
-            console.log("[SET-PASSWORD] Registro criado na tabela com sucesso:", userData);
           }
         } else {
           // Usuário não existe nem na tabela nem no Auth
@@ -338,12 +325,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log("[SET-PASSWORD] Usuário encontrado:", { 
-      id: userData.id, 
-      email: userData.email,
-      account_status: userData.account_status,
-      ativo: userData.ativo 
-    });
 
     // Verificar se o usuário já está ativo
     // Considerar ativo se account_status for "active" OU se ativo for true
@@ -351,7 +332,6 @@ export async function POST(request: NextRequest) {
     const isActive = userData.account_status === "active" || userData.ativo === true;
     
     if (isActive) {
-      console.log("[SET-PASSWORD] Usuário já está ativo");
       return NextResponse.json(
         {
           success: false,
@@ -367,7 +347,6 @@ export async function POST(request: NextRequest) {
                      userData.ativo === false;
 
     if (!isPending) {
-      console.log("[SET-PASSWORD] Status do usuário não permite ativação:", userData.account_status);
       return NextResponse.json(
         {
           success: false,
@@ -402,12 +381,10 @@ export async function POST(request: NextRequest) {
         const existingAuthUser = usersList.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
         
         if (existingAuthUser) {
-          console.log("[SET-PASSWORD] Usuário encontrado no Auth pelo email, ID:", existingAuthUser.id);
           authUser = existingAuthUser;
           
           // Se o ID do Auth for diferente do ID na tabela, atualizar a tabela
           if (authUser.id !== userData.id) {
-            console.log("[SET-PASSWORD] IDs diferentes. Auth ID:", authUser.id, "Tabela ID:", userData.id);
             await syncUserIds(adminClient, userData.id, authUser.id, email);
           }
           
@@ -415,12 +392,10 @@ export async function POST(request: NextRequest) {
           await updateAuthPassword(adminClient, authUser.id, password);
         } else {
           // Usuário não existe no Auth, criar novo
-          console.log("[SET-PASSWORD] Usuário não encontrado no Auth pelo email, criando novo...");
           authUser = await createAuthUser(adminClient, email, password, userData);
           
           // Se o ID do Auth for diferente do ID na tabela, atualizar a tabela
           if (authUser.id !== userData.id) {
-            console.log("[SET-PASSWORD] IDs diferentes após criação. Auth ID:", authUser.id, "Tabela ID:", userData.id);
             await syncUserIds(adminClient, userData.id, authUser.id, email);
           }
         }

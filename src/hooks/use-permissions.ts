@@ -35,9 +35,7 @@ export function usePermissions() {
    * @returns true se pode acessar, false caso contrário
    */
   const canAccess = (rota: string): boolean => {
-    const result = podeAcessarRota(userType, rota);
-    console.log(`🔍 canAccess("${rota}"): ${result} (userType: ${userType})`);
-    return result;
+    return podeAcessarRota(userType, rota);
   };
 
   /**

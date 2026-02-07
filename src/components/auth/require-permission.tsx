@@ -56,7 +56,6 @@ export function RequirePermission({
 
     // Se não está autenticado, redirecionar para login
     if (!user) {
-      console.log("❌ Usuário não autenticado, redirecionando para login");
       router.push("/login");
       return;
     }
@@ -64,7 +63,6 @@ export function RequirePermission({
     // Se usuário está autenticado mas userType ainda não foi carregado, aguardar
     // Isso pode acontecer quando o perfil ainda está sendo buscado do banco
     if (requiredRole && userType === null) {
-      console.log("⏳ Aguardando carregamento do tipo de usuário...");
       return;
     }
 
@@ -74,7 +72,6 @@ export function RequirePermission({
       const hasRole = userType && roles.includes(userType);
       
       if (!hasRole) {
-        console.log(`❌ Usuário tipo "${userType}" não tem permissão (requerido: ${roles.join(", ")})`);
         if (!fallback) {
           router.push(redirectTo);
         }
@@ -87,7 +84,6 @@ export function RequirePermission({
       const hasAccess = canAccess(requiredPage);
       
       if (!hasAccess) {
-        console.log(`❌ Usuário não tem permissão para acessar "${requiredPage}"`);
         if (!fallback) {
           router.push(redirectTo);
         }
@@ -95,7 +91,6 @@ export function RequirePermission({
       }
     }
 
-    console.log("✅ Permissão concedida");
   }, [loading, user, userType, requiredRole, requiredPage, canAccess, router, redirectTo, fallback]);
 
   // Exibir loading enquanto verifica autenticação OU enquanto userType não está carregado

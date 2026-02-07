@@ -93,10 +93,7 @@ export default function RegistroPage() {
     setErrorMessage(null);
 
     try {
-      console.log("[REGISTRO] Iniciando processo de registro para:", formData.email);
-
       // Verificar se o usuário já existe na tabela users
-      console.log("[REGISTRO] Verificando se usuário já existe...");
       
       let existingUser: any = null;
       let checkError: any = null;
@@ -123,15 +120,6 @@ export default function RegistroPage() {
           existingUser = data;
           checkError = error;
           
-          console.log("[REGISTRO] Resultado da verificação:", { 
-            hasUser: !!existingUser, 
-            hasError: !!checkError,
-            errorCode: checkError?.code,
-            errorMessage: checkError?.message,
-            userEmail: existingUser?.email,
-            accountStatus: existingUser?.account_status,
-            ativo: existingUser?.ativo
-          });
         } catch (timeoutError: any) {
           if (timeoutError?.message === "TIMEOUT") {
             console.warn("[REGISTRO] Verificação demorou muito (timeout). Continuando sem verificação...");
@@ -164,13 +152,6 @@ export default function RegistroPage() {
       // Também tentar se houver erro mas o usuário foi encontrado
       if (existingUser) {
         userId = existingUser.id;
-        console.log("[REGISTRO] Usuário encontrado na tabela users:", {
-          id: userId,
-          email: existingUser.email,
-          account_status: existingUser.account_status,
-          ativo: existingUser.ativo,
-          checkError: checkError?.message
-        });
 
         // Verificar se a conta já está ativa
         if (existingUser.account_status === "active" || existingUser.ativo === true) {
@@ -181,7 +162,6 @@ export default function RegistroPage() {
         }
 
         // Usuário existe mas está pendente - usar API para definir senha
-        console.log("[REGISTRO] Usuário existe mas está pendente. Definindo senha via API...");
         
         try {
           // Adicionar timeout para a requisição
@@ -204,14 +184,6 @@ export default function RegistroPage() {
 
             const setPasswordData = await setPasswordResponse.json();
 
-            console.log("[REGISTRO] Resposta da API set-password:", {
-              ok: setPasswordResponse.ok,
-              status: setPasswordResponse.status,
-              success: setPasswordData.success,
-              error: setPasswordData.error,
-              details: setPasswordData.details,
-              userId: setPasswordData.userId
-            });
 
           if (!setPasswordResponse.ok || !setPasswordData.success) {
             let errorMsg = setPasswordData.error || "Erro ao definir senha. Tente novamente.";
@@ -240,7 +212,6 @@ export default function RegistroPage() {
 
           authUserId = setPasswordData.userId;
           passwordWasSetViaAPI = true;
-          console.log("[REGISTRO] Senha definida com sucesso via API. UserId:", authUserId);
         } catch (apiError: any) {
           console.error("[REGISTRO] Erro ao chamar API set-password:", apiError);
           
@@ -253,8 +224,6 @@ export default function RegistroPage() {
         }
       } else {
         // Usuário não existe na tabela - criar novo registro
-        console.log("[REGISTRO] Usuário não encontrado na tabela, criando novo registro...");
-        console.log("[REGISTRO] Criando conta no Supabase Auth...");
         
         // Adicionar timeout para evitar travamento
         const signUpPromise = supabase.auth.signUp({
@@ -278,13 +247,6 @@ export default function RegistroPage() {
           timeoutPromise,
         ]) as any;
 
-        console.log("[REGISTRO] Resposta do Auth:", { 
-          hasUser: !!authData?.user, 
-          hasError: !!authError,
-          error: authError?.message,
-          session: !!authData?.session,
-          needsEmailConfirmation: authData?.user && !authData?.session
-        });
 
         if (authError) {
           console.error("[REGISTRO] Erro no Auth:", authError);
@@ -296,7 +258,6 @@ export default function RegistroPage() {
             authError.message?.includes("already exists") ||
             authError.message?.includes("User already registered")
           ) {
-            console.log("[REGISTRO] Email já existe no Auth. Tentando definir senha via API...");
             
             try {
               // Adicionar timeout para a requisição
@@ -319,14 +280,6 @@ export default function RegistroPage() {
 
               const setPasswordData = await setPasswordResponse.json();
 
-              console.log("[REGISTRO] Resposta da API set-password (fallback):", {
-                ok: setPasswordResponse.ok,
-                status: setPasswordResponse.status,
-                success: setPasswordData.success,
-                error: setPasswordData.error,
-                details: setPasswordData.details,
-                userId: setPasswordData.userId
-              });
 
               if (!setPasswordResponse.ok || !setPasswordData.success) {
                 let errorMsg = setPasswordData.error || "Erro ao definir senha. Tente novamente.";
@@ -355,7 +308,6 @@ export default function RegistroPage() {
 
               authUserId = setPasswordData.userId;
               passwordWasSetViaAPI = true;
-              console.log("[REGISTRO] Senha definida com sucesso via API. UserId:", authUserId);
             } catch (apiError: any) {
               console.error("[REGISTRO] Erro ao chamar API set-password (fallback):", apiError);
               
@@ -375,13 +327,6 @@ export default function RegistroPage() {
         } else {
           // Sucesso ao criar no Auth
           authUserId = authData.user.id;
-          console.log("[REGISTRO] Usuário criado no Auth com ID:", authUserId);
-          
-          // Se não houver sessão, pode ser que o email precise ser confirmado
-          // Mas mesmo assim, podemos continuar criando o registro na tabela users
-          if (!authData.session) {
-            console.warn("[REGISTRO] Usuário criado mas sem sessão (pode precisar confirmar email)");
-          }
         }
       }
 
@@ -389,13 +334,10 @@ export default function RegistroPage() {
       const cartorioId = (form as any).cartorioId || (existingUser?.cartorio_id) || null;
       const role = (form as any).role || (existingUser?.role) || "atendente";
 
-      console.log("[REGISTRO] Dados para inserção/atualização:", { cartorioId, role, userId, authUserId, passwordWasSetViaAPI });
 
       // Se a senha foi atualizada via API, ela já sincronizou os IDs e atualizou o status
       // A API já fez todo o trabalho necessário, apenas verificar se está tudo ok
       if (passwordWasSetViaAPI) {
-        console.log("[REGISTRO] Senha foi atualizada via API. A API já sincronizou IDs e atualizou status.");
-        console.log("[REGISTRO] UserId retornado pela API:", authUserId);
         // A API já fez tudo, não precisamos fazer mais nada
         // Apenas verificar se o usuário existe na tabela com o ID correto
         const { data: verifyUser, error: verifyError } = await supabase
@@ -407,13 +349,11 @@ export default function RegistroPage() {
         if (verifyError) {
           console.warn("[REGISTRO] Erro ao verificar usuário (não crítico):", verifyError);
         } else {
-          console.log("[REGISTRO] Usuário verificado com sucesso:", verifyUser);
         }
         // Não falhar, pois a senha já foi definida e a API já fez a sincronização
       } else if (userId && userId !== authUserId) {
         // Usuário já existe na tabela, mas com ID diferente
         // Deletar o registro antigo e criar um novo com o ID do Auth
-        console.log("[REGISTRO] Deletando registro antigo e criando novo com ID do Auth...");
         const { error: deleteError } = await supabase
           .from("users")
           .delete()
@@ -442,10 +382,8 @@ export default function RegistroPage() {
           console.error("[REGISTRO] Erro ao inserir novo registro:", insertError);
           throw insertError;
         }
-        console.log("[REGISTRO] Novo registro criado com sucesso");
       } else if (!userId) {
         // Criar novo registro na tabela users
-        console.log("[REGISTRO] Criando novo registro na tabela users...");
         const { error: insertError } = await supabase
           .from("users")
           .insert({
@@ -464,7 +402,6 @@ export default function RegistroPage() {
           
           // Se der erro de duplicata, o usuário já existe - buscar e sincronizar IDs
           if (insertError.code === "23505" || insertError.message?.includes("duplicate key")) {
-            console.log("[REGISTRO] Usuário já existe (duplicata). Buscando e sincronizando IDs...");
             
             // Buscar o usuário existente pelo email
             const { data: existingUserData, error: fetchError } = await supabase
@@ -478,7 +415,6 @@ export default function RegistroPage() {
               throw new Error("Erro ao processar registro. Tente novamente.");
             }
 
-            console.log("[REGISTRO] Usuário existente encontrado:", {
               id: existingUserData.id,
               authId: authUserId,
               sameId: existingUserData.id === authUserId
@@ -486,7 +422,6 @@ export default function RegistroPage() {
 
             // Se os IDs forem diferentes, precisamos sincronizar
             if (existingUserData.id !== authUserId) {
-              console.log("[REGISTRO] IDs diferentes. Sincronizando...");
               
               // Deletar o registro antigo
               const { error: deleteError } = await supabase
@@ -526,7 +461,6 @@ export default function RegistroPage() {
                   console.error("[REGISTRO] Erro ao inserir registro com novo ID:", insertNewError);
                   throw insertNewError;
                 }
-                console.log("[REGISTRO] IDs sincronizados e usuário atualizado com sucesso");
               }
             } else {
               // IDs já são iguais, apenas atualizar dados
@@ -546,18 +480,15 @@ export default function RegistroPage() {
                 console.error("[REGISTRO] Erro ao atualizar usuário:", updateError);
                 throw updateError;
               }
-              console.log("[REGISTRO] Usuário atualizado com sucesso");
             }
           } else {
             // Outro tipo de erro
             throw insertError;
           }
         } else {
-          console.log("[REGISTRO] Novo usuário criado na tabela com sucesso");
         }
       } else {
         // Usuário já existe e o ID já corresponde ao Auth, apenas atualizar
-        console.log("[REGISTRO] Atualizando registro existente...");
         const { error: updateError } = await supabase
           .from("users")
           .update({
@@ -575,11 +506,9 @@ export default function RegistroPage() {
         console.log("[REGISTRO] Usuário atualizado com sucesso");
       }
 
-      console.log("[REGISTRO] Processo concluído com sucesso!");
       
       // Se a senha foi definida via API, fazer login automático
       if (passwordWasSetViaAPI) {
-        console.log("[REGISTRO] Fazendo login automático após registro...");
         toast.success("Conta criada com sucesso! Fazendo login...");
         
         try {
@@ -600,7 +529,6 @@ export default function RegistroPage() {
               router.push("/login");
             }, 1500);
           } else if (signInData?.user) {
-            console.log("[REGISTRO] Login automático bem-sucedido!");
             toast.success("Login realizado com sucesso!");
             
             // Aguardar um pouco para o toast aparecer
@@ -621,14 +549,12 @@ export default function RegistroPage() {
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
-          console.log("[REGISTRO] Sessão já existe, redirecionando para dashboard...");
           toast.success("Conta criada com sucesso!");
           setTimeout(() => {
             router.push("/dashboard");
           }, 500);
         } else {
           // Não há sessão, fazer login automático
-          console.log("[REGISTRO] Fazendo login automático após registro...");
           toast.success("Conta criada com sucesso! Fazendo login...");
           
           try {
@@ -646,7 +572,6 @@ export default function RegistroPage() {
                 router.push("/login");
               }, 1500);
             } else if (signInData?.user) {
-              console.log("[REGISTRO] Login automático bem-sucedido!");
               toast.success("Login realizado com sucesso!");
               setTimeout(() => {
                 router.push("/dashboard");

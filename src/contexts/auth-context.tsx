@@ -88,7 +88,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUserProfile({ ...profile, tipo } as Usuario);
           setUserType(tipo);
           setPermissions(getPermissoes(tipo));
-          console.log(`✅ Perfil carregado: ${profile.name || profile.nome} (${tipo})`);
         }
       } catch (err) {
         console.error("Erro ao processar perfil:", err);
@@ -139,7 +138,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         data: { subscription },
       } = supabase.auth.onAuthStateChange(
         async (event: AuthChangeEvent, session: Session | null) => {
-          console.log("Auth state change:", event, session);
 
           setSession(session);
           setUser(session?.user ?? null);
