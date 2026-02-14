@@ -23,7 +23,7 @@ CREATE TABLE usuarios (
     nome VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     telefone VARCHAR(20) NOT NULL,
-    tipo VARCHAR(20) CHECK (tipo IN ('admin', 'supervisor', 'atendente')) NOT NULL,
+    tipo VARCHAR(20) CHECK (tipo IN ('admin', 'atendente', 'financeiro')) NOT NULL,
     cartorio_id UUID REFERENCES cartorios(id) ON DELETE SET NULL,
     ativo BOOLEAN DEFAULT true,
     ultimo_acesso TIMESTAMP WITH TIME ZONE,

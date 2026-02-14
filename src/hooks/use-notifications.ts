@@ -33,7 +33,7 @@ export const useNotifications = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
-  const { user } = useAuth();
+  const { user, userType, userRoles } = useAuth();
 
   const fetchNotificacoes = async () => {
     try {
@@ -55,8 +55,18 @@ export const useNotifications = () => {
 
       if (error) throw error;
 
-      setNotificacoes(data || []);
-      setUnreadCount(data?.filter((n) => !n.lida).length || 0);
+      // Financeiro (em qualquer permissão): apenas notificações de contas a pagar
+      // Apenas atendente (sem financeiro): não vê notificações de contas a pagar
+      let list = data || [];
+      const roles = userRoles?.length ? userRoles : (userType ? [userType] : []);
+      if (roles.includes("financeiro")) {
+        list = list.filter((n) => n.tipo === "conta_pagar");
+      } else if (roles.includes("atendente") && !roles.includes("admin")) {
+        list = list.filter((n) => n.tipo !== "conta_pagar");
+      }
+
+      setNotificacoes(list);
+      setUnreadCount(list.filter((n) => !n.lida).length || 0);
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Erro ao carregar notificações";
@@ -779,7 +789,7 @@ export const useNotifications = () => {
       clearInterval(interval);
       clearInterval(notificationInterval);
     };
-  }, [user]);
+  }, [user?.id, userType, userRoles]);
 
   return {
     notificacoes,

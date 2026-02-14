@@ -35,8 +35,9 @@ export interface HistoricoProtocolo {
  * Tipos de usuário disponíveis no sistema.
  * - admin: Acesso total ao sistema, incluindo gerenciamento de usuários e configurações
  * - atendente: Acesso limitado às funcionalidades operacionais
+ * - financeiro: Acesso apenas a Contas a Pagar e Notificações (apenas de contas a pagar)
  */
-export type TipoUsuario = "admin" | "atendente";
+export type TipoUsuario = "admin" | "atendente" | "financeiro";
 
 /**
  * Rotas protegidas do sistema que requerem permissões específicas
@@ -94,13 +95,20 @@ export const PERMISSOES_POR_TIPO: Record<TipoUsuario, PermissoesUsuario> = {
     rotasPermitidas: [
       "/dashboard",
       "/protocolos",
-      "/contas",
       "/relatorios",
       "/ia",
       "/cnib",
       "/notificacoes",
       "/perfil",
     ],
+    rotasBloqueadas: ["/usuarios", "/configuracoes", "/contas"],
+  },
+  financeiro: {
+    podeGerenciarUsuarios: false,
+    podeAcessarConfiguracoes: false,
+    podeModificarConfiguracoes: false,
+    podeGerenciarPermissoes: false,
+    rotasPermitidas: ["/contas", "/notificacoes", "/perfil"],
     rotasBloqueadas: ["/usuarios", "/configuracoes"],
   },
 };
@@ -120,6 +128,13 @@ export function isAtendente(tipo: TipoUsuario | null | undefined): boolean {
 }
 
 /**
+ * Type guard: verifica se o usuário é financeiro
+ */
+export function isFinanceiro(tipo: TipoUsuario | null | undefined): boolean {
+  return tipo === "financeiro";
+}
+
+/**
  * Obtém as permissões de um tipo de usuário
  * @param tipo - Tipo do usuário
  * @returns Objeto de permissões ou permissões de atendente se tipo for inválido (fallback seguro)
@@ -133,23 +148,88 @@ export function getPermissoes(tipo: TipoUsuario | null | undefined): PermissoesU
 }
 
 /**
+ * Mescla permissões de múltiplos tipos (união: qualquer permissão concedida por um tipo é concedida).
+ * Admin sempre ganha tudo; rotas permitidas = união; rotas bloqueadas = só bloqueia se nenhum tipo permitir.
+ */
+export function getPermissoesForRoles(roles: TipoUsuario[] | null | undefined): PermissoesUsuario {
+  if (!roles?.length) {
+    return PERMISSOES_POR_TIPO.atendente;
+  }
+  const tipos = roles.filter((t): t is TipoUsuario => t in PERMISSOES_POR_TIPO) as TipoUsuario[];
+  if (tipos.length === 0) return PERMISSOES_POR_TIPO.atendente;
+
+  const merged: PermissoesUsuario = {
+    podeGerenciarUsuarios: false,
+    podeAcessarConfiguracoes: false,
+    podeModificarConfiguracoes: false,
+    podeGerenciarPermissoes: false,
+    rotasPermitidas: [],
+    rotasBloqueadas: [],
+  };
+
+  const rotasPermitidasSet = new Set<string>();
+
+  for (const t of tipos) {
+    const p = PERMISSOES_POR_TIPO[t];
+    if (!p) continue;
+    merged.podeGerenciarUsuarios = merged.podeGerenciarUsuarios || p.podeGerenciarUsuarios;
+    merged.podeAcessarConfiguracoes = merged.podeAcessarConfiguracoes || p.podeAcessarConfiguracoes;
+    merged.podeModificarConfiguracoes = merged.podeModificarConfiguracoes || p.podeModificarConfiguracoes;
+    merged.podeGerenciarPermissoes = merged.podeGerenciarPermissoes || p.podeGerenciarPermissoes;
+    p.rotasPermitidas.forEach((r) => rotasPermitidasSet.add(r));
+  }
+
+  merged.rotasPermitidas = Array.from(rotasPermitidasSet);
+  // União de permissões: rota bloqueada só se nenhum tipo permitir (já não está em rotasPermitidas)
+  merged.rotasBloqueadas = [];
+  return merged;
+}
+
+/** Ordem de prioridade para exibição do "tipo principal" (maior = mais importante) */
+const ORDEM_TIPO_PRIORIDADE: Record<TipoUsuario, number> = {
+  admin: 3,
+  financeiro: 2,
+  atendente: 1,
+};
+
+/**
+ * Retorna o tipo "principal" para exibição quando o usuário tem múltiplos roles.
+ */
+export function getTipoPrincipal(roles: TipoUsuario[] | null | undefined): TipoUsuario {
+  if (!roles?.length) return "atendente";
+  const ordenados = [...roles].filter((t) => t in PERMISSOES_POR_TIPO) as TipoUsuario[];
+  if (ordenados.length === 0) return "atendente";
+  return ordenados.sort((a, b) => ORDEM_TIPO_PRIORIDADE[b] - ORDEM_TIPO_PRIORIDADE[a])[0];
+}
+
+/**
+ * Normaliza valor do banco (role único ou array roles) para array de TipoUsuario.
+ */
+export function normalizarRoles(role: string | null | undefined, roles: string[] | null | undefined): TipoUsuario[] {
+  if (roles?.length) {
+    return roles.filter((r): r is TipoUsuario => r === "admin" || r === "atendente" || r === "financeiro");
+  }
+  if (role && (role === "admin" || role === "atendente" || role === "financeiro")) {
+    return [role];
+  }
+  return ["atendente"];
+}
+
+/**
  * Verifica se um tipo de usuário pode acessar uma rota específica
- * @param tipo - Tipo do usuário
+ * @param tipo - Tipo do usuário (ou array de tipos para múltiplas permissões)
  * @param rota - Rota a ser verificada
  * @returns true se pode acessar, false caso contrário
  */
 export function podeAcessarRota(
-  tipo: TipoUsuario | null | undefined,
+  tipo: TipoUsuario | TipoUsuario[] | null | undefined,
   rota: string
 ): boolean {
-  const permissoes = getPermissoes(tipo);
-  
-  // Verificar se está explicitamente bloqueada
+  const roles = Array.isArray(tipo) ? tipo : tipo != null ? [tipo] : null;
+  const permissoes = getPermissoesForRoles(roles);
   if (permissoes.rotasBloqueadas.some((r) => rota.startsWith(r))) {
     return false;
   }
-  
-  // Verificar se está na lista de permitidas
   return permissoes.rotasPermitidas.some((r) => rota.startsWith(r));
 }
 
@@ -159,6 +239,8 @@ export interface Usuario {
   email: string;
   telefone: string;
   tipo: TipoUsuario;
+  /** Múltiplas permissões/roles do usuário (quando usado, união das permissões) */
+  roles?: TipoUsuario[];
   cartorioId?: string;
   ativo: boolean;
   criadoEm: Date;

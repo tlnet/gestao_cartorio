@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users,
@@ -55,6 +56,7 @@ import {
   UserX,
   User,
   Crown,
+  Receipt,
   Loader2,
   CheckCircle,
   Copy,
@@ -83,7 +85,7 @@ const usuarioSchema = z.object({
     .string()
     .min(1, "Telefone é obrigatório")
     .refine((value) => isValidPhone(value), "Telefone inválido"),
-  role: z.enum(["admin", "atendente"]),
+  roles: z.array(z.enum(["admin", "atendente", "financeiro"])).min(1, "Selecione ao menos uma permissão"),
   cartorio_id: z.string().optional(),
   ativo: z.boolean().default(true),
 });
@@ -116,7 +118,7 @@ const GestaoUsuarios = () => {
     resolver: zodResolver(usuarioSchema),
     defaultValues: {
       ativo: true,
-      role: "atendente",
+      roles: ["atendente"],
     },
   });
 
@@ -124,6 +126,7 @@ const GestaoUsuarios = () => {
     { value: "todos", label: "Todos os Tipos" },
     { value: "admin", label: "Administrador" },
     { value: "atendente", label: "Atendente" },
+    { value: "financeiro", label: "Financeiro" },
   ];
 
   const statusOptions = [
@@ -138,6 +141,8 @@ const GestaoUsuarios = () => {
         return <Crown className="h-4 w-4" />;
       case "atendente":
         return <User className="h-4 w-4" />;
+      case "financeiro":
+        return <Receipt className="h-4 w-4" />;
       default:
         return <User className="h-4 w-4" />;
     }
@@ -149,6 +154,8 @@ const GestaoUsuarios = () => {
         return "bg-purple-100 text-purple-800";
       case "atendente":
         return "bg-green-100 text-green-800";
+      case "financeiro":
+        return "bg-amber-100 text-amber-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -160,6 +167,8 @@ const GestaoUsuarios = () => {
         return "Administrador";
       case "atendente":
         return "Atendente";
+      case "financeiro":
+        return "Financeiro";
       default:
         return tipo;
     }
@@ -174,7 +183,8 @@ const GestaoUsuarios = () => {
       nome.toLowerCase().includes(busca.toLowerCase()) ||
       email.toLowerCase().includes(busca.toLowerCase());
 
-    const matchTipo = filtroTipo === "todos" || usuario.role === filtroTipo;
+    const userRoles = (usuario as any).roles?.length ? (usuario as any).roles : (usuario.role ? [usuario.role] : []);
+    const matchTipo = filtroTipo === "todos" || userRoles.includes(filtroTipo);
     const matchStatus =
       filtroStatus === "todos" ||
       (filtroStatus === "ativo" && usuario.ativo) ||
@@ -190,6 +200,8 @@ const GestaoUsuarios = () => {
       // Automaticamente vincular ao cartório do administrador logado
       const userData = {
         ...data,
+        role: data.roles[0],
+        roles: data.roles,
         cartorio_id: (userProfile as any)?.cartorio_id || userProfile?.cartorioId || null,
       };
 
@@ -222,7 +234,8 @@ const GestaoUsuarios = () => {
             name: encodeURIComponent(data.name),
             email: encodeURIComponent(data.email),
             telefone: encodeURIComponent(data.telefone || ""),
-            role: encodeURIComponent(data.role),
+            role: encodeURIComponent(data.roles[0]),
+            roles: encodeURIComponent(JSON.stringify(data.roles)),
             cartorio_id: encodeURIComponent(userData.cartorio_id || ""),
           });
           
@@ -253,11 +266,12 @@ const GestaoUsuarios = () => {
 
   const handleEditUser = (usuario: any) => {
     setEditingUser(usuario);
+    const roles = usuario.roles?.length ? usuario.roles : (usuario.role ? [usuario.role] : ["atendente"]);
     form.reset({
       name: usuario.name,
       email: usuario.email,
       telefone: usuario.telefone,
-      role: usuario.role,
+      roles,
       cartorio_id: usuario.cartorio_id || "null",
       ativo: usuario.ativo,
     });
@@ -342,7 +356,7 @@ const GestaoUsuarios = () => {
     setEditingUser(null);
     form.reset({
       ativo: true,
-      role: "atendente",
+      roles: ["atendente"],
     });
     setShowUserDialog(true);
   };
@@ -470,29 +484,12 @@ const GestaoUsuarios = () => {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Usuários Ativos
-              </CardTitle>
-              <UserCheck className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {usuarios.filter((u) => u.ativo).length}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Com acesso liberado
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Administradores</CardTitle>
               <Crown className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {usuarios.filter((u) => (u.tipo === "admin" || u.role === "admin" || u.tipo === "supervisor" || u.role === "supervisor")).length}
+                {usuarios.filter((u) => (u as any).roles?.includes("admin") || u.role === "admin" || u.tipo === "admin").length}
               </div>
               <p className="text-xs text-muted-foreground">Nível administrador</p>
             </CardContent>
@@ -505,9 +502,22 @@ const GestaoUsuarios = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {usuarios.filter((u) => (u.tipo === "atendente" || u.role === "atendente")).length}
+                {usuarios.filter((u) => (u as any).roles?.includes("atendente") || u.role === "atendente" || u.tipo === "atendente").length}
               </div>
               <p className="text-xs text-muted-foreground">Nível atendente</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Financeiros</CardTitle>
+              <Receipt className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {usuarios.filter((u) => (u as any).roles?.includes("financeiro") || u.role === "financeiro" || u.tipo === "financeiro").length}
+              </div>
+              <p className="text-xs text-muted-foreground">Acesso contas e notificações</p>
             </CardContent>
           </Card>
         </div>
@@ -567,12 +577,16 @@ const GestaoUsuarios = () => {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge className={getTipoColor(usuario.role)}>
-                          <div className="flex items-center gap-1">
-                            {getTipoIcon(usuario.role)}
-                            {getTipoLabel(usuario.role)}
-                          </div>
-                        </Badge>
+                        <div className="flex flex-wrap gap-1">
+                          {((usuario as any).roles?.length ? (usuario as any).roles : (usuario.role ? [usuario.role] : [])).map((r: string) => (
+                            <Badge key={r} className={getTipoColor(r)} variant="secondary">
+                              <div className="flex items-center gap-1">
+                                {getTipoIcon(r)}
+                                {getTipoLabel(r)}
+                              </div>
+                            </Badge>
+                          ))}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {usuario.updated_at
@@ -742,25 +756,41 @@ const GestaoUsuarios = () => {
                   )}
                 </div>
 
-                <div>
-                  <Label htmlFor="role">Tipo de Usuário</Label>
-                  <Select
-                    value={form.watch("role")}
-                    onValueChange={(value) =>
-                      form.setValue("role", value as any)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="admin">Administrador</SelectItem>
-                      <SelectItem value="atendente">Atendente</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {form.formState.errors.role && (
+                <div className="space-y-3">
+                  <Label>Permissões</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Selecione uma ou mais permissões. O usuário terá acesso à união das áreas escolhidas.
+                  </p>
+                  <div className="flex flex-wrap gap-4">
+                    {(["admin", "atendente", "financeiro"] as const).map((r) => (
+                      <div key={r} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`role-${r}`}
+                          checked={form.watch("roles").includes(r)}
+                          onCheckedChange={(checked) => {
+                            const current = form.getValues("roles");
+                            if (checked) {
+                              form.setValue("roles", [...current, r].sort());
+                            } else {
+                              const next = current.filter((x) => x !== r);
+                              if (next.length === 0) return;
+                              form.setValue("roles", next);
+                            }
+                          }}
+                        />
+                        <label
+                          htmlFor={`role-${r}`}
+                          className="text-sm font-medium leading-none flex items-center gap-1.5 cursor-pointer"
+                        >
+                          {getTipoIcon(r)}
+                          {getTipoLabel(r)}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  {form.formState.errors.roles && (
                     <p className="text-sm text-red-500">
-                      {form.formState.errors.role.message}
+                      {form.formState.errors.roles.message}
                     </p>
                   )}
                 </div>

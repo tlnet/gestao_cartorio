@@ -45,7 +45,7 @@ const mockUsuarios = [
     id: "1",
     name: "João Silva",
     email: "joao@cartorio.com",
-    role: "supervisor",
+    role: "atendente",
     telefone: "(11) 99999-9999",
     cartorio_id: null,
     ativo: true,
@@ -810,7 +810,7 @@ export function useUsuarios(cartorioId?: string) {
       let query = supabase
         .from("users")
         .select(
-          "id, name, email, telefone, role, cartorio_id, ativo, created_at, updated_at"
+          "id, name, email, telefone, role, roles, cartorio_id, ativo, created_at, updated_at"
         );
 
       if (cartorioId) {
@@ -827,7 +827,7 @@ export function useUsuarios(cartorioId?: string) {
         // Tentar novamente sem campos de convite
         let fallbackQuery = supabase
           .from("users")
-          .select("id, name, email, telefone, role, cartorio_id, ativo, created_at, updated_at");
+          .select("id, name, email, telefone, role, roles, cartorio_id, ativo, created_at, updated_at");
 
         if (cartorioId) {
           fallbackQuery = fallbackQuery.eq("cartorio_id", cartorioId);
@@ -846,10 +846,10 @@ export function useUsuarios(cartorioId?: string) {
           throw fallbackError;
         }
 
-        // Mapear campo 'role' para 'tipo' para compatibilidade
         const usuariosMapeados = (fallbackData || []).map((usuario) => ({
           ...usuario,
           tipo: usuario.role,
+          roles: (usuario as any).roles?.length ? (usuario as any).roles : (usuario.role ? [usuario.role] : []),
           account_status: usuario.ativo ? "active" : "inactive",
         }));
         setUsuarios(usuariosMapeados);
@@ -866,11 +866,10 @@ export function useUsuarios(cartorioId?: string) {
         throw error;
       }
 
-      // Mapear campo 'role' para 'tipo' para compatibilidade
       const usuariosMapeados = (data || []).map((usuario) => ({
         ...usuario,
         tipo: usuario.role,
-        // Garantir que campos de convite existam (podem ser null)
+        roles: (usuario as any).roles?.length ? (usuario as any).roles : (usuario.role ? [usuario.role] : []),
         account_status: (usuario as any).account_status || (usuario.ativo ? "active" : "inactive"),
         invite_status: (usuario as any).invite_status || null,
       }));
@@ -898,35 +897,33 @@ export function useUsuarios(cartorioId?: string) {
       const { id, created_at, updated_at, cartorio, ...usuarioData } = usuario;
 
       // Garantir que não há campos undefined ou null desnecessários
+      const roles = Array.isArray(usuarioData.roles) && usuarioData.roles.length > 0
+        ? usuarioData.roles
+        : (usuarioData.role ? [usuarioData.role] : ["atendente"]);
       const cleanUsuarioData: any = {
         name: usuarioData.name,
         email: usuarioData.email,
         telefone: usuarioData.telefone,
-        role: usuarioData.role,
+        role: roles[0],
+        roles,
         cartorio_id:
           usuarioData.cartorio_id === "null" ? null : usuarioData.cartorio_id,
         ativo: usuarioData.ativo !== undefined ? usuarioData.ativo : true,
       };
 
-      // Adicionar account_status se fornecido
       if (usuarioData.account_status) {
         cleanUsuarioData.account_status = usuarioData.account_status;
       }
 
       console.log("Dados limpos para criação:", cleanUsuarioData);
 
-      // Verificar se todos os campos obrigatórios estão presentes
-      if (
-        !cleanUsuarioData.name ||
-        !cleanUsuarioData.email ||
-        !cleanUsuarioData.role
-      ) {
+      if (!cleanUsuarioData.name || !cleanUsuarioData.email || roles.length === 0) {
         console.error("Campos obrigatórios faltando:", {
           name: cleanUsuarioData.name,
           email: cleanUsuarioData.email,
-          role: cleanUsuarioData.role,
+          roles,
         });
-        throw new Error("Campos obrigatórios não preenchidos");
+        throw new Error("Campos obrigatórios não preenchidos (nome, email e ao menos uma permissão)");
       }
 
       console.log("Todos os campos obrigatórios estão presentes");

@@ -83,6 +83,10 @@ export async function POST(request: NextRequest) {
       tipo_arquivo,
       nome_arquivo,
       tamanho_arquivo,
+      // Campos para erro de minuta com campos pendentes
+      mensagens_erro,
+      mensagens_alerta,
+      campos_pendentes,
     } = body;
 
     if (!relatorio_id) {
@@ -184,6 +188,34 @@ export async function POST(request: NextRequest) {
           tipo_processamento: tipo_processamento || "resumo_matricula",
           timestamp_conclusao: new Date().toISOString(),
         };
+      }
+
+      // Tratar retorno de erro com campos pendentes (minuta de documento)
+      if (status === "ERROR" || status === "error") {
+        updates.status = "erro";
+        
+        // Salvar informações de erro e campos pendentes
+        const errorData: any = {};
+        
+        if (mensagens_erro && Array.isArray(mensagens_erro) && mensagens_erro.length > 0) {
+          errorData.mensagens_erro = mensagens_erro;
+        }
+        
+        if (mensagens_alerta && Array.isArray(mensagens_alerta) && mensagens_alerta.length > 0) {
+          errorData.mensagens_alerta = mensagens_alerta;
+        }
+        
+        if (campos_pendentes && Array.isArray(campos_pendentes) && campos_pendentes.length > 0) {
+          errorData.campos_pendentes = campos_pendentes;
+          errorData.requer_preenchimento = true;
+        }
+        
+        if (Object.keys(errorData).length > 0) {
+          updates.resumo = {
+            ...(updates.resumo || {}),
+            ...errorData,
+          };
+        }
       }
     }
 

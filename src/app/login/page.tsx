@@ -108,8 +108,10 @@ export default function LoginPage() {
 
             toast.success("Login realizado com sucesso!");
 
+            const roles = (userProfile as any)?.roles?.length ? (userProfile as any).roles : [(userProfile as any)?.role || "atendente"];
+            const defaultRoute = roles.includes("financeiro") && !roles.includes("admin") ? "/contas" : "/dashboard";
             setTimeout(() => {
-              router.push("/dashboard");
+              router.push(defaultRoute);
             }, 100);
             return;
           }
@@ -136,9 +138,11 @@ export default function LoginPage() {
 
         toast.success("Login realizado com sucesso!");
 
-        // Aguardar um pouco para o toast aparecer antes do redirecionamento
+        // Usuário financeiro vai para Contas a Pagar; demais para Dashboard
+        const roles = (userProfile as any)?.roles?.length ? (userProfile as any).roles : [(userProfile as any)?.role || "atendente"];
+        const defaultRoute = roles.includes("financeiro") && !roles.includes("admin") ? "/contas" : "/dashboard";
         setTimeout(() => {
-          router.push("/dashboard");
+          router.push(defaultRoute);
         }, 100);
       }
     } catch (error: any) {

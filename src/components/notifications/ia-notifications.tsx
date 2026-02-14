@@ -77,12 +77,14 @@ const IANotifications = () => {
                       variant="outline"
                       className={`text-xs ${getStatusColor(status)}`}
                     >
-                      {status === "processado"
+                      {status === "processado" || status === "concluido"
                         ? "Processado"
                         : status === "processando"
                         ? "Processando"
                         : status === "erro"
                         ? "Erro"
+                        : status === "analise_incompleta"
+                        ? "Análise Incompleta"
                         : "Desconhecido"}
                     </Badge>
                     <span className="text-xs opacity-75">

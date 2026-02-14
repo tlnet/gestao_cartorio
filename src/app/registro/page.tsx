@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Eye, EyeOff, CheckCircle, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/auth-context";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -37,6 +38,7 @@ type RegistroFormData = z.infer<typeof registroSchema>;
 function RegistroForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { refetchUserProfile } = useAuth();
   
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -61,17 +63,24 @@ function RegistroForm() {
     const telefone = searchParams.get("telefone");
     const cartorioId = searchParams.get("cartorio_id");
     const role = searchParams.get("role");
+    const rolesParam = searchParams.get("roles");
 
     if (name) form.setValue("name", decodeURIComponent(name));
     if (email) form.setValue("email", decodeURIComponent(email));
     if (telefone) form.setValue("telefone", decodeURIComponent(telefone));
 
-    // Armazenar cartorio_id e role para usar no submit
     if (cartorioId) {
       (form as any).cartorioId = decodeURIComponent(cartorioId);
     }
     if (role) {
       (form as any).role = decodeURIComponent(role);
+    }
+    if (rolesParam) {
+      try {
+        (form as any).roles = JSON.parse(decodeURIComponent(rolesParam));
+      } catch {
+        (form as any).roles = [decodeURIComponent(role || "atendente")];
+      }
     }
   }, [searchParams, form]);
 
@@ -330,27 +339,40 @@ function RegistroForm() {
         }
       }
 
-      // Obter dados adicionais dos query params
       const cartorioId = (form as any).cartorioId || (existingUser?.cartorio_id) || null;
-      const role = (form as any).role || (existingUser?.role) || "atendente";
+      const roles = (form as any).roles?.length ? (form as any).roles : [(form as any).role || (existingUser?.role) || "atendente"];
+      const role = roles[0];
 
-
-      // Se a senha foi atualizada via API, ela já sincronizou os IDs e atualizou o status
-      // A API já fez todo o trabalho necessário, apenas verificar se está tudo ok
       if (passwordWasSetViaAPI) {
-        // A API já fez tudo, não precisamos fazer mais nada
-        // Apenas verificar se o usuário existe na tabela com o ID correto
-        const { data: verifyUser, error: verifyError } = await supabase
-          .from("users")
-          .select("id, email, account_status, ativo")
-          .eq("id", authUserId)
-          .single();
+        // Login primeiro para o JWT permitir UPDATE por email (RLS)
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: formData.password,
+        });
+        if (signInErr) console.warn("[REGISTRO] Login antes do update:", signInErr);
 
-        if (verifyError) {
-          console.warn("[REGISTRO] Erro ao verificar usuário (não crítico):", verifyError);
-        } else {
+        const updatePayload: Record<string, unknown> = {
+          id: authUserId,
+          name: formData.name,
+          telefone: formData.telefone,
+          role,
+          account_status: "active",
+          ativo: true,
+        };
+        if (Array.isArray(roles) && roles.length > 0) updatePayload.roles = roles;
+        if (cartorioId != null) updatePayload.cartorio_id = cartorioId;
+
+        const { error: updateAfterApiError } = await supabase
+          .from("users")
+          .update(updatePayload)
+          .eq("email", formData.email);
+
+        if (updateAfterApiError) {
+          console.error("[REGISTRO] Erro ao atualizar perfil por email:", updateAfterApiError);
+          toast.error("Não foi possível ativar sua conta. Execute no Supabase o script fix-users-rls-read-own.sql e tente novamente.");
+          setLoading(false);
+          return;
         }
-        // Não falhar, pois a senha já foi definida e a API já fez a sincronização
       } else if (userId && userId !== authUserId) {
         // Usuário já existe na tabela, mas com ID diferente
         // Deletar o registro antigo e criar um novo com o ID do Auth
@@ -372,7 +394,8 @@ function RegistroForm() {
             name: formData.name,
             email: formData.email,
             telefone: formData.telefone,
-            role: role,
+            role,
+            roles,
             cartorio_id: cartorioId,
             account_status: "active",
             ativo: true,
@@ -383,115 +406,84 @@ function RegistroForm() {
           throw insertError;
         }
       } else if (!userId) {
-        // Criar novo registro na tabela users
-        const { error: insertError } = await supabase
+        let insertError: any = null;
+        let insertResult = await supabase
           .from("users")
           .insert({
             id: authUserId,
             name: formData.name,
             email: formData.email,
             telefone: formData.telefone,
-            role: role,
+            role,
+            roles,
             cartorio_id: cartorioId,
             account_status: "active",
             ativo: true,
           });
+        insertError = insertResult.error;
+
+        if (insertError?.code === "42703") {
+          insertResult = await supabase
+            .from("users")
+            .insert({
+              id: authUserId,
+              name: formData.name,
+              email: formData.email,
+              telefone: formData.telefone,
+              role,
+              cartorio_id: cartorioId,
+              account_status: "active",
+              ativo: true,
+            });
+          insertError = insertResult.error;
+        }
 
         if (insertError) {
-          console.error("[REGISTRO] Erro ao criar usuário na tabela:", insertError);
-          
-          // Se der erro de duplicata, o usuário já existe - buscar e sincronizar IDs
-          if (insertError.code === "23505" || insertError.message?.includes("duplicate key")) {
-            
-            // Buscar o usuário existente pelo email
-            const { data: existingUserData, error: fetchError } = await supabase
+          const isDuplicateKey = insertError.code === "23505" || insertError.message?.includes("duplicate key");
+          if (insertError.code === "23514") {
+            throw new Error("Configuração do banco: execute o script fix-users-role-constraint.sql no Supabase para permitir o tipo de usuário selecionado.");
+          }
+          if (isDuplicateKey) {
+            const updatePayload: Record<string, unknown> = {
+              id: authUserId,
+              name: formData.name,
+              telefone: formData.telefone,
+              role,
+              roles,
+              cartorio_id: cartorioId,
+              account_status: "active",
+              ativo: true,
+            };
+            const { error: updateByEmailError } = await supabase
               .from("users")
-              .select("*")
-              .ilike("email", formData.email)
-              .maybeSingle();
+              .update(updatePayload)
+              .eq("email", formData.email);
 
-            if (fetchError || !existingUserData) {
-              console.error("[REGISTRO] Erro ao buscar usuário existente:", fetchError);
-              throw new Error("Erro ao processar registro. Tente novamente.");
-            }
-
-            // Se os IDs forem diferentes, precisamos sincronizar
-            if (existingUserData.id !== authUserId) {
-              
-              // Deletar o registro antigo
-              const { error: deleteError } = await supabase
-                .from("users")
-                .delete()
-                .eq("id", existingUserData.id);
-
-              if (deleteError) {
-                console.error("[REGISTRO] Erro ao deletar registro antigo:", deleteError);
-                // Se não conseguir deletar, tentar atualizar o ID diretamente
-                const { error: updateIdError } = await supabase
-                  .from("users")
-                  .update({ id: authUserId })
-                  .eq("email", formData.email);
-                
-                if (updateIdError) {
-                  console.error("[REGISTRO] Erro ao atualizar ID:", updateIdError);
-                  throw new Error("Erro ao sincronizar conta. Contate o administrador.");
-                }
-              } else {
-                // Criar novo registro com o ID do Auth
-                const { id, created_at, updated_at, ...userDataWithoutId } = existingUserData;
-                const { error: insertNewError } = await supabase
-                  .from("users")
-                  .insert({
-                    ...userDataWithoutId,
-                    id: authUserId,
-                    name: formData.name,
-                    telefone: formData.telefone,
-                    role: role,
-                    cartorio_id: cartorioId,
-                    account_status: "active",
-                    ativo: true,
-                  });
-
-                if (insertNewError) {
-                  console.error("[REGISTRO] Erro ao inserir registro com novo ID:", insertNewError);
-                  throw insertNewError;
-                }
-              }
-            } else {
-              // IDs já são iguais, apenas atualizar dados
-              const { error: updateError } = await supabase
-                .from("users")
-                .update({
-                  name: formData.name,
-                  telefone: formData.telefone,
-                  role: role,
-                  cartorio_id: cartorioId,
-                  account_status: "active",
-                  ativo: true,
-                })
-                .eq("id", authUserId);
-
-              if (updateError) {
-                console.error("[REGISTRO] Erro ao atualizar usuário:", updateError);
-                throw updateError;
-              }
+            if (updateByEmailError) {
+              console.error("[REGISTRO] Erro ao sincronizar usuário por email:", updateByEmailError);
+              throw new Error(
+                "Este email já está cadastrado. Se você já ativou a conta, faça login. Caso contrário, execute no Supabase o script fix-users-rls-read-own.sql (política de UPDATE)."
+              );
             }
           } else {
-            // Outro tipo de erro
+            console.error("[REGISTRO] Erro ao criar usuário na tabela:", insertError);
             throw insertError;
           }
-        } else {
         }
       } else {
-        // Usuário já existe e o ID já corresponde ao Auth, apenas atualizar
+        const updatePayload: Record<string, unknown> = {
+          name: formData.name,
+          telefone: formData.telefone,
+          role,
+          account_status: "active",
+          ativo: true,
+        };
+        if (Array.isArray(roles) && roles.length > 0) {
+          updatePayload.roles = roles;
+        }
         const { error: updateError } = await supabase
           .from("users")
-          .update({
-            name: formData.name,
-            telefone: formData.telefone,
-            account_status: "active",
-            ativo: true,
-          })
+          .update(updatePayload)
           .eq("id", authUserId);
 
         if (updateError) {
@@ -502,59 +494,22 @@ function RegistroForm() {
       }
 
       
-      // Se a senha foi definida via API, fazer login automático
       if (passwordWasSetViaAPI) {
-        toast.success("Conta criada com sucesso! Fazendo login...");
-        
-        try {
-          // Aguardar um pouco para garantir que tudo está sincronizado
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          // Fazer login automático
-          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-            email: formData.email,
-            password: formData.password,
-          });
-
-          if (signInError) {
-            console.error("[REGISTRO] Erro ao fazer login automático:", signInError);
-            // Se der erro no login automático, redirecionar para login manual
-            toast.info("Conta criada! Faça login para continuar.");
-            setTimeout(() => {
-              router.push("/login");
-            }, 1500);
-          } else if (signInData?.user) {
-            toast.success("Login realizado com sucesso!");
-            
-            // Aguardar um pouco para o toast aparecer
-            setTimeout(() => {
-              router.push("/dashboard");
-            }, 500);
-          }
-        } catch (loginError: any) {
-          console.error("[REGISTRO] Erro ao fazer login automático:", loginError);
-          toast.info("Conta criada! Faça login para continuar.");
-          setTimeout(() => {
-            router.push("/login");
-          }, 1500);
-        }
+        toast.success("Conta ativada com sucesso!");
+        await refetchUserProfile();
+        const defaultRoute = roles.includes("financeiro") && !roles.includes("admin") ? "/contas" : "/dashboard";
+        router.push(defaultRoute);
       } else {
-        // Se foi criado via signUp normal, pode já ter sessão
-        // Verificar se há sessão ativa
         const { data: { session } } = await supabase.auth.getSession();
-        
+        const defaultRoute = roles.includes("financeiro") && !roles.includes("admin") ? "/contas" : "/dashboard";
         if (session?.user) {
           toast.success("Conta criada com sucesso!");
-          setTimeout(() => {
-            router.push("/dashboard");
-          }, 500);
+          await refetchUserProfile();
+          router.push(defaultRoute);
         } else {
-          // Não há sessão, fazer login automático
           toast.success("Conta criada com sucesso! Fazendo login...");
-          
           try {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
+            await new Promise(resolve => setTimeout(resolve, 800));
             const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
               email: formData.email,
               password: formData.password,
@@ -568,9 +523,8 @@ function RegistroForm() {
               }, 1500);
             } else if (signInData?.user) {
               toast.success("Login realizado com sucesso!");
-              setTimeout(() => {
-                router.push("/dashboard");
-              }, 500);
+              await refetchUserProfile();
+              router.push(defaultRoute);
             }
           } catch (loginError: any) {
             console.error("[REGISTRO] Erro ao fazer login automático:", loginError);

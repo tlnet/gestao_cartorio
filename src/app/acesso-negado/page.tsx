@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { usePermissions } from "@/hooks/use-permissions";
 
 /**
  * Página de Acesso Negado (403)
@@ -18,13 +19,17 @@ import {
  */
 export default function AcessoNegadoPage() {
   const router = useRouter();
+  const { userRoles } = usePermissions();
 
   const handleVoltar = () => {
     router.back();
   };
 
-  const handleDashboard = () => {
-    router.push("/dashboard");
+  const handleIrParaInicio = () => {
+    const rotaInicial = userRoles?.includes("financeiro") && !userRoles?.includes("admin")
+      ? "/contas"
+      : "/dashboard";
+    router.push(rotaInicial);
   };
 
   return (
@@ -51,11 +56,11 @@ export default function AcessoNegadoPage() {
           </p>
           <div className="flex flex-col gap-2 pt-4">
             <Button
-              onClick={handleDashboard}
+              onClick={handleIrParaInicio}
               className="w-full"
               size="lg"
             >
-              Voltar ao Dashboard
+              Ir para minha página inicial
             </Button>
             <Button
               onClick={handleVoltar}

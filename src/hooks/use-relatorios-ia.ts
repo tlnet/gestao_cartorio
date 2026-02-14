@@ -8,7 +8,7 @@ export interface RelatorioIA {
   id: string;
   tipo: "resumo_matricula" | "analise_malote" | "minuta_documento";
   nome_arquivo: string;
-  status: "processando" | "concluido" | "erro";
+  status: "processando" | "concluido" | "erro" | "analise_incompleta";
   usuario_id: string;
   cartorio_id: string;
   dados_processamento?: any;
@@ -16,6 +16,7 @@ export interface RelatorioIA {
   arquivo_resultado?: string;
   relatorio_pdf?: string;
   relatorio_doc?: string;
+  resumo?: any; // JSONB - pode conter campos_pendentes, mensagens_erro, etc.
   created_at: string;
   updated_at: string;
   // Campos relacionados

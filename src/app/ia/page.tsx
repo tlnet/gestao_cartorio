@@ -48,6 +48,7 @@ import {
   CheckCircle,
   BarChart3,
   AlertCircle,
+  Edit,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRelatoriosIA, RelatorioIA } from "@/hooks/use-relatorios-ia";
@@ -56,6 +57,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { supabase } from "@/lib/supabase";
 import { getWebhookUrl as getDefaultWebhookUrl } from "@/lib/webhooks-config";
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
+import { CamposPendentesDialog } from "@/components/ia/campos-pendentes-dialog";
 
 const AnaliseIA = () => {
   const { user } = useAuth();
@@ -88,6 +90,21 @@ const AnaliseIA = () => {
     analisesHoje: 0,
     tempoMedio: "N/A",
     taxaSucesso: "0%",
+  });
+  
+  // Estado para controle do popup de campos pendentes
+  const [camposPendentesDialog, setCamposPendentesDialog] = useState<{
+    open: boolean;
+    relatorioId: string | null;
+    camposPendentes: string[];
+    mensagensErro: string[];
+    mensagensAlerta: string[];
+  }>({
+    open: false,
+    relatorioId: null,
+    camposPendentes: [],
+    mensagensErro: [],
+    mensagensAlerta: [],
   });
 
   const tiposAnaliseSimples = [
@@ -128,6 +145,8 @@ const AnaliseIA = () => {
         return "bg-yellow-100 text-yellow-800 hover:bg-yellow-100";
       case "erro":
         return "bg-red-100 text-red-800 hover:bg-red-100";
+      case "analise_incompleta":
+        return "bg-amber-100 text-amber-800 hover:bg-amber-100";
       default:
         return "bg-gray-100 text-gray-800 hover:bg-gray-100";
     }
@@ -141,8 +160,25 @@ const AnaliseIA = () => {
         return <Clock className="h-4 w-4" />;
       case "erro":
         return <AlertCircle className="h-4 w-4" />;
+      case "analise_incompleta":
+        return <Edit className="h-4 w-4" />;
       default:
         return null;
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "concluido":
+        return "Concluído";
+      case "processando":
+        return "Processando";
+      case "erro":
+        return "Erro";
+      case "analise_incompleta":
+        return "Análise Incompleta";
+      default:
+        return status;
     }
   };
 
@@ -249,6 +285,33 @@ const AnaliseIA = () => {
     });
   }, [relatorios]);
 
+  // Função para verificar se um relatório tem campos pendentes
+  const temCamposPendentes = (relatorio: RelatorioIA): boolean => {
+    if (relatorio.tipo !== "minuta_documento") return false;
+    if (relatorio.status !== "analise_incompleta") return false;
+    
+    const resumo = (relatorio as any).resumo;
+    if (!resumo || typeof resumo !== "object") return false;
+    
+    const resumoObj = resumo as any;
+    const requerPreenchimento = resumoObj.requer_preenchimento;
+    const camposPendentes = resumoObj.campos_pendentes;
+    
+    return requerPreenchimento && Array.isArray(camposPendentes) && camposPendentes.length > 0;
+  };
+
+  // Função para abrir o popup de campos pendentes
+  const abrirPopupCamposPendentes = (relatorio: RelatorioIA) => {
+    const resumo = (relatorio as any).resumo as any;
+    setCamposPendentesDialog({
+      open: true,
+      relatorioId: relatorio.id,
+      camposPendentes: resumo.campos_pendentes || [],
+      mensagensErro: resumo.mensagens_erro || [],
+      mensagensAlerta: resumo.mensagens_alerta || [],
+    });
+  };
+
   // Verificar timeout e atualizar status automaticamente
   useEffect(() => {
     let timeoutCheckId: NodeJS.Timeout;
@@ -257,13 +320,13 @@ const AnaliseIA = () => {
       try {
         // Buscar relatórios processando diretamente do banco
         const agora = new Date();
-        const doisMinutosAtras = new Date(agora.getTime() - 2 * 60 * 1000);
+        const vinteMinutosAtras = new Date(agora.getTime() - 20 * 60 * 1000);
 
         const { data: relatoriosComTimeout, error } = await supabase
           .from("relatorios_ia")
           .select("id, nome_arquivo, created_at")
           .eq("status", "processando")
-          .lt("created_at", doisMinutosAtras.toISOString());
+          .lt("created_at", vinteMinutosAtras.toISOString());
 
         if (error) {
           console.error("Erro ao buscar relatórios com timeout:", error);
@@ -271,7 +334,7 @@ const AnaliseIA = () => {
         }
 
         if (relatoriosComTimeout && relatoriosComTimeout.length > 0) {
-          console.log(`⏱️ Detectados ${relatoriosComTimeout.length} relatório(s) com timeout (>2min)`);
+          console.log(`⏱️ Detectados ${relatoriosComTimeout.length} relatório(s) com timeout (>20min)`);
 
           await Promise.all(
             relatoriosComTimeout.map(async (relatorio) => {
@@ -285,7 +348,7 @@ const AnaliseIA = () => {
                   {
                     status: "erro" as const,
                     resultado_final: {
-                      erro: "Timeout: A análise demorou mais de 2 minutos para ser concluída e foi cancelada automaticamente.",
+                      erro: "Timeout: A análise demorou mais de 20 minutos para ser concluída e foi cancelada automaticamente.",
                       motivo: "timeout",
                       tempo_decorrido: `${tempoDecorrido} minutos`,
                     },
@@ -294,9 +357,9 @@ const AnaliseIA = () => {
                 );
 
                 toast.error(
-                  `Análise "${relatorio.nome_arquivo}" cancelada por timeout (>2min)`,
+                  `Análise "${relatorio.nome_arquivo}" cancelada por timeout (>20min)`,
                   {
-                    description: "A análise demorou mais de 2 minutos e foi automaticamente marcada como erro.",
+                    description: "A análise demorou mais de 20 minutos e foi automaticamente marcada como erro.",
                     duration: 5000,
                   }
                 );
@@ -619,6 +682,56 @@ const AnaliseIA = () => {
     toast.success("Novo relatório adicionado ao histórico!");
   };
 
+  // Função para lidar com campos preenchidos pelo usuário
+  const handleCamposPreenchidos = async (dados: Record<string, string>) => {
+    if (!camposPendentesDialog.relatorioId) return;
+
+    try {
+      // Buscar o relatório atual
+      const relatorio = relatorios.find((r) => r.id === camposPendentesDialog.relatorioId);
+      if (!relatorio) {
+        toast.error("Relatório não encontrado");
+        return;
+      }
+
+      // Por enquanto, apenas salvar os dados preenchidos no resumo do relatório
+      // Não enviar para nenhum lugar ainda (será implementado mais pra frente)
+      const resumoAtual = (relatorio as any).resumo || {};
+      const resumoAtualizado = {
+        ...resumoAtual,
+        campos_preenchidos: dados,
+        data_preenchimento: new Date().toISOString(),
+        // Manter requer_preenchimento como true por enquanto, até implementar o envio
+        requer_preenchimento: true,
+      };
+      
+      await updateRelatorio(
+        camposPendentesDialog.relatorioId,
+        {
+          resumo: resumoAtualizado,
+        } as any,
+        { silent: true }
+      );
+
+      toast.success("Dados salvos com sucesso!");
+      
+      // Fechar dialog
+      setCamposPendentesDialog({
+        open: false,
+        relatorioId: null,
+        camposPendentes: [],
+        mensagensErro: [],
+        mensagensAlerta: [],
+      });
+
+      // Recarregar relatórios
+      await fetchRelatorios();
+    } catch (error) {
+      console.error("Erro ao salvar campos preenchidos:", error);
+      toast.error("Erro ao salvar os dados. Tente novamente.");
+    }
+  };
+
   return (
     <MainLayout
       title="Análise Inteligente de Documentos"
@@ -875,6 +988,47 @@ const AnaliseIA = () => {
                               <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-yellow-700"></div>
                               Processando...
                             </Badge>
+                          ) : relatorio.status === "analise_incompleta" ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="cursor-default inline-block">
+                                  <Badge 
+                                    className={`${getStatusColor(relatorio.status)} cursor-default`}
+                                    style={{ 
+                                      transition: "none",
+                                      backgroundColor: "rgb(254 243 199)",
+                                      color: "rgb(146 64 14)"
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.backgroundColor = "rgb(254 243 199)";
+                                    }}
+                                  >
+                                    <div className="flex items-center space-x-1">
+                                      {getStatusIcon(relatorio.status)}
+                                      <span>Análise Incompleta</span>
+                                    </div>
+                                  </Badge>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent 
+                                side="top" 
+                                className="max-w-md bg-white border border-gray-200 shadow-lg z-50 text-gray-900"
+                              >
+                                <div className="space-y-2">
+                                  <p className="font-semibold text-sm text-gray-900">Análise Incompleta</p>
+                                  <div className="text-sm text-gray-800">
+                                    <p>Esta análise requer informações adicionais para ser concluída.</p>
+                                    {(relatorio.resumo as any)?.campos_pendentes && (
+                                      <p className="mt-1">
+                                        <span className="font-medium">Campos pendentes:</span> {
+                                          ((relatorio.resumo as any).campos_pendentes as string[]).length
+                                        }
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
                           ) : relatorio.status === "erro" ? (
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -1088,10 +1242,31 @@ const AnaliseIA = () => {
                               <Clock className="h-4 w-4" />
                             </Button>
                           )}
-                          {relatorio.status === "erro" && (
-                            <Button variant="ghost" size="sm" disabled>
-                              <AlertCircle className="h-4 w-4" />
-                            </Button>
+                          {(relatorio.status === "analise_incompleta" || relatorio.status === "erro") && (
+                            <>
+                              {temCamposPendentes(relatorio) ? (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => abrirPopupCamposPendentes(relatorio)}
+                                      className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                                      title="Preencher informações faltantes"
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Preencher informações faltantes</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              ) : (
+                                <Button variant="ghost" size="sm" disabled>
+                                  <AlertCircle className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </>
                           )}
                         </div>
                       </TableCell>
@@ -1154,6 +1329,22 @@ const AnaliseIA = () => {
           </Card>
         </div>
       </div>
+
+      {/* Dialog de Campos Pendentes */}
+      <CamposPendentesDialog
+        open={camposPendentesDialog.open}
+        onOpenChange={(open) => {
+          setCamposPendentesDialog((prev) => ({
+            ...prev,
+            open,
+          }));
+        }}
+        camposPendentes={camposPendentesDialog.camposPendentes}
+        mensagensErro={camposPendentesDialog.mensagensErro}
+        mensagensAlerta={camposPendentesDialog.mensagensAlerta}
+        relatorioId={camposPendentesDialog.relatorioId || ""}
+        onCamposPreenchidos={handleCamposPreenchidos}
+      />
     </MainLayout>
   );
 };

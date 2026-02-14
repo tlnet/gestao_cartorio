@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { TipoUsuario, isAdmin } from "@/types";
+import { TipoUsuario, isAdmin, normalizarRoles, getTipoPrincipal } from "@/types";
 
 /**
  * Interface para dados do usuário autenticado
@@ -9,6 +9,7 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   userType: TipoUsuario;
+  userRoles: TipoUsuario[];
   profile: any;
 }
 
@@ -49,7 +50,7 @@ export async function getAuthenticatedUser(
 
     const { data: profileData, error: profileErr } = await supabase
       .from("users")
-      .select("id, name, email, telefone, role, cartorio_id, ativo")
+      .select("id, name, email, telefone, role, roles, cartorio_id, ativo")
       .eq("id", user.id)
       .single();
 
@@ -60,7 +61,7 @@ export async function getAuthenticatedUser(
     if (profileError && profileError.code === "42703") {
       const { data: fallbackData, error: fallbackError } = await supabase
         .from("users")
-        .select("id, name, email, role, ativo")
+        .select("id, name, email, role, roles, ativo")
         .eq("id", user.id)
         .single();
 
@@ -74,19 +75,20 @@ export async function getAuthenticatedUser(
       return {
         id: user.id,
         email: user.email || "",
-        userType: "atendente", // Fallback seguro
+        userType: "atendente",
+        userRoles: ["atendente"],
         profile: null,
       };
     }
 
-    // Usar role como tipo de usuário (mapear para TipoUsuario)
-    const userRole = profile.role || "atendente";
-    const userType: TipoUsuario = userRole === "admin" ? "admin" : "atendente";
+    const userRoles = normalizarRoles(profile.role, profile.roles);
+    const userType = getTipoPrincipal(userRoles);
 
     return {
       id: user.id,
       email: user.email || "",
       userType,
+      userRoles,
       profile,
     };
   } catch (error) {

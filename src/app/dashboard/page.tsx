@@ -283,7 +283,7 @@ const Dashboard = () => {
         <MainLayout
           title="Dashboard"
           subtitle="Visão geral dos processos e métricas do cartório"
-          userType="supervisor"
+          userType="atendente"
         >
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -322,7 +322,7 @@ const Dashboard = () => {
       <MainLayout
         title="Dashboard"
         subtitle="Visão geral dos processos e métricas do cartório"
-        userType="supervisor"
+        userType="atendente"
       >
         <div className="space-y-6">
           {/* Cards de Métricas */}

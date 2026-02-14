@@ -47,7 +47,7 @@ export function RequirePermission({
   children,
 }: RequirePermissionProps) {
   const { user, loading } = useAuth();
-  const { userType, canAccess } = usePermissions();
+  const { userType, userRoles, canAccess } = usePermissions();
   const router = useRouter();
 
   useEffect(() => {
@@ -66,11 +66,9 @@ export function RequirePermission({
       return;
     }
 
-    // Verificar permissão por tipo de usuário
     if (requiredRole) {
       const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
-      const hasRole = userType && roles.includes(userType);
-      
+      const hasRole = (userRoles?.length ? userRoles : (userType ? [userType] : [])).some((r) => roles.includes(r));
       if (!hasRole) {
         if (!fallback) {
           router.push(redirectTo);
@@ -91,7 +89,7 @@ export function RequirePermission({
       }
     }
 
-  }, [loading, user, userType, requiredRole, requiredPage, canAccess, router, redirectTo, fallback]);
+  }, [loading, user, userType, userRoles, requiredRole, requiredPage, canAccess, router, redirectTo, fallback]);
 
   // Exibir loading enquanto verifica autenticação OU enquanto userType não está carregado
   // Se o usuário está autenticado mas userType ainda é null, ainda está carregando
@@ -110,11 +108,9 @@ export function RequirePermission({
     return null;
   }
 
-  // Verificar permissão por tipo de usuário
   if (requiredRole) {
     const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
-    const hasRole = userType && roles.includes(userType);
-    
+    const hasRole = (userRoles?.length ? userRoles : (userType ? [userType] : [])).some((r) => roles.includes(r));
     if (!hasRole) {
       return fallback ? <>{fallback}</> : null;
     }

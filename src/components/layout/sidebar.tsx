@@ -31,18 +31,18 @@ import { useEffect, useState } from "react";
 import { useCartorioValidation } from "@/hooks/use-cartorio-validation";
 
 interface SidebarProps {
-  userType?: "admin" | "supervisor" | "atendente";
+  userType?: "admin" | "atendente" | "financeiro";
 }
 
 const Sidebar: React.FC<SidebarProps> = () => {
   const pathname = usePathname();
-  const { user, signOut, userProfile: contextUserProfile, userType: contextUserType } = useAuth();
+  const { user, loading: authLoading, signOut, userProfile: contextUserProfile, userType: contextUserType, userRoles: contextUserRoles } = useAuth();
   const { canAccess } = usePermissions();
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const { isValid: isCartorioValid } = useCartorioValidation();
-  
-  // Usar tipo de usuário do contexto
+
+  const permissionsReady = !authLoading && (contextUserRoles?.length > 0 || contextUserType != null);
   const userType = contextUserType || "atendente";
 
   // Usar perfil do contexto ou buscar se necessário
@@ -148,8 +148,9 @@ const Sidebar: React.FC<SidebarProps> = () => {
     },
   ];
 
-  // Filtrar menu baseado em permissões
-  const filteredMenuItems = menuItems.filter((item) => canAccess(item.href));
+  const filteredMenuItems = permissionsReady
+    ? menuItems.filter((item) => canAccess(item.href))
+    : [];
 
   const getUserInitials = (name: string) => {
     if (!name) return "U";
@@ -164,10 +165,10 @@ const Sidebar: React.FC<SidebarProps> = () => {
     switch (role) {
       case "admin":
         return "Administrador";
-      case "supervisor":
-        return "Supervisor";
       case "atendente":
         return "Atendente";
+      case "financeiro":
+        return "Financeiro";
       default:
         return role;
     }
@@ -177,10 +178,10 @@ const Sidebar: React.FC<SidebarProps> = () => {
     switch (role) {
       case "admin":
         return "bg-purple-100 text-purple-800";
-      case "supervisor":
-        return "bg-blue-100 text-blue-800";
       case "atendente":
         return "bg-green-100 text-green-800";
+      case "financeiro":
+        return "bg-amber-100 text-amber-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -212,31 +213,41 @@ const Sidebar: React.FC<SidebarProps> = () => {
 
       <Separator />
 
-      {/* Navigation */}
+      {/* Navigation - só exibe itens quando permissões estiverem carregadas */}
       <nav className="flex-1 p-4 space-y-2">
-        {filteredMenuItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = pathname === item.href;
-          const showWarning = item.href === "/configuracoes" && !isCartorioValid;
+        {!permissionsReady ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-10 w-full rounded-md bg-gray-100 animate-pulse"
+              style={{ animationDelay: `${i * 50}ms` }}
+            />
+          ))
+        ) : (
+          filteredMenuItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = pathname === item.href;
+            const showWarning = item.href === "/configuracoes" && !isCartorioValid;
 
-          return (
-            <Link key={item.href} href={item.href}>
-              <Button
-                variant={isActive ? "default" : "ghost"}
-                className={cn(
-                  "w-full justify-start relative",
-                  isActive && "bg-blue-600 text-white hover:bg-blue-700"
-                )}
-              >
-                <Icon className="mr-3 h-4 w-4" />
-                {item.title}
-                {showWarning && (
-                  <span className="ml-auto h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
-                )}
-              </Button>
-            </Link>
-          );
-        })}
+            return (
+              <Link key={item.href} href={item.href}>
+                <Button
+                  variant={isActive ? "default" : "ghost"}
+                  className={cn(
+                    "w-full justify-start relative",
+                    isActive && "bg-blue-600 text-white hover:bg-blue-700"
+                  )}
+                >
+                  <Icon className="mr-3 h-4 w-4" />
+                  {item.title}
+                  {showWarning && (
+                    <span className="ml-auto h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
+                  )}
+                </Button>
+              </Link>
+            );
+          })
+        )}
       </nav>
 
       <Separator />
@@ -264,13 +275,16 @@ const Sidebar: React.FC<SidebarProps> = () => {
               </div>
             </div>
 
-            <div className="flex justify-center">
-              <Badge
-                className={getRoleColor(userProfile?.role || userType)}
-                variant="secondary"
-              >
-                {getRoleLabel(userProfile?.role || userType)}
-              </Badge>
+            <div className="flex flex-wrap justify-center gap-1.5">
+              {(contextUserRoles?.length ? contextUserRoles : [userType]).map((role) => (
+                <Badge
+                  key={role}
+                  className={getRoleColor(role)}
+                  variant="secondary"
+                >
+                  {getRoleLabel(role)}
+                </Badge>
+              ))}
             </div>
 
             <Button

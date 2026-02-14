@@ -5,6 +5,7 @@ import {
   podeAcessarRota,
   isAdmin as checkIsAdmin,
   isAtendente as checkIsAtendente,
+  isFinanceiro as checkIsFinanceiro,
   getPermissoes 
 } from "@/types";
 
@@ -27,26 +28,31 @@ import {
  * ```
  */
 export function usePermissions() {
-  const { userType, permissions } = useAuth();
+  const { userType, userRoles, permissions } = useAuth();
 
   /**
-   * Verifica se o usuário pode acessar uma rota específica
+   * Verifica se o usuário pode acessar uma rota específica (considera todas as permissões)
    * @param rota - Caminho da rota a ser verificada
    * @returns true se pode acessar, false caso contrário
    */
   const canAccess = (rota: string): boolean => {
-    return podeAcessarRota(userType, rota);
+    return podeAcessarRota(userRoles?.length ? userRoles : userType, rota);
   };
 
   /**
-   * Verifica se o usuário é administrador
+   * Verifica se o usuário tem o role administrador (em qualquer uma das permissões)
    */
-  const isAdmin = checkIsAdmin(userType);
+  const isAdmin = userRoles?.includes("admin") ?? checkIsAdmin(userType);
 
   /**
-   * Verifica se o usuário é atendente
+   * Verifica se o usuário tem o role atendente
    */
-  const isAtendente = checkIsAtendente(userType);
+  const isAtendente = userRoles?.includes("atendente") ?? checkIsAtendente(userType);
+
+  /**
+   * Verifica se o usuário tem o role financeiro
+   */
+  const isFinanceiro = userRoles?.includes("financeiro") ?? checkIsFinanceiro(userType);
 
   /**
    * Verifica se o usuário tem uma permissão específica
@@ -64,9 +70,11 @@ export function usePermissions() {
   };
 
   return {
-    /** Tipo do usuário atual */
+    /** Tipo principal do usuário (para exibição) */
     userType,
-    /** Objeto completo de permissões */
+    /** Lista de permissões/roles do usuário */
+    userRoles: userRoles ?? [],
+    /** Objeto completo de permissões (união de todos os roles) */
     permissions,
     /** Verifica se pode acessar uma rota */
     canAccess,
@@ -74,6 +82,8 @@ export function usePermissions() {
     isAdmin,
     /** Verifica se é atendente */
     isAtendente,
+    /** Verifica se é financeiro */
+    isFinanceiro,
     /** Verifica se tem uma permissão específica */
     hasPermission,
   };

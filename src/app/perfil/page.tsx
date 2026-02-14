@@ -52,7 +52,7 @@ const profileSchema = z.object({
 type ProfileFormData = z.infer<typeof profileSchema>;
 
 const PerfilPage = () => {
-  const { user } = useAuth();
+  const { user, userRoles } = useAuth();
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -78,7 +78,7 @@ const PerfilPage = () => {
           setLoading(true);
           const { data, error } = await supabase
             .from("users")
-            .select("*")
+            .select("*, cartorio:cartorios(nome)")
             .eq("id", user.id)
             .single();
 
@@ -88,11 +88,20 @@ const PerfilPage = () => {
             return;
           }
 
-          setUserProfile(data);
-          setProfileImage(data.avatar_url);
+          let profile = data as any;
+          if (profile?.cartorio_id && !profile?.cartorio?.nome) {
+            const { data: cartorio } = await supabase
+              .from("cartorios")
+              .select("nome")
+              .eq("id", profile.cartorio_id)
+              .single();
+            if (cartorio?.nome) profile = { ...profile, cartorio: { nome: cartorio.nome } };
+          }
+          setUserProfile(profile);
+          setProfileImage(profile.avatar_url);
           form.reset({
-            name: data.name || "",
-            telefone: data.telefone || "",
+            name: profile.name || "",
+            telefone: profile.telefone || "",
           });
         } catch (error) {
           console.error("Erro ao buscar perfil:", error);
@@ -119,10 +128,10 @@ const PerfilPage = () => {
     switch (role) {
       case "admin":
         return "Administrador";
-      case "supervisor":
-        return "Supervisor";
       case "atendente":
         return "Atendente";
+      case "financeiro":
+        return "Financeiro";
       default:
         return role;
     }
@@ -132,10 +141,10 @@ const PerfilPage = () => {
     switch (role) {
       case "admin":
         return "bg-purple-100 text-purple-800";
-      case "supervisor":
-        return "bg-blue-100 text-blue-800";
       case "atendente":
         return "bg-green-100 text-green-800";
+      case "financeiro":
+        return "bg-amber-100 text-amber-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -452,16 +461,14 @@ const PerfilPage = () => {
                     <Shield className="h-4 w-4 text-gray-500" />
                     <div>
                       <Label className="text-sm font-medium text-gray-500">
-                        Tipo de Usuário
+                        Permissões
                       </Label>
-                      <div className="mt-1">
-                        <Badge
-                          className={getRoleColor(
-                            userProfile?.role || "atendente"
-                          )}
-                        >
-                          {getRoleLabel(userProfile?.role || "atendente")}
-                        </Badge>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {(userRoles?.length ? userRoles : [userProfile?.role || "atendente"]).map((r: string) => (
+                          <Badge key={r} className={getRoleColor(r)} variant="secondary">
+                            {getRoleLabel(r)}
+                          </Badge>
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -491,7 +498,7 @@ const PerfilPage = () => {
                         Cartório
                       </Label>
                       <p className="text-sm text-gray-900 mt-1">
-                        {userProfile?.cartorio?.nome || "Não atribuído"}
+                        {userProfile?.cartorio?.nome || (userProfile as any)?.cartorios?.nome || "Não atribuído"}
                       </p>
                     </div>
                   </div>

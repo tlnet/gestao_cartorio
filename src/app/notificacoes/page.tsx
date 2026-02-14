@@ -134,7 +134,7 @@ const NotificacoesPage = () => {
         <MainLayout
           title="Notificações"
           subtitle="Gerencie suas notificações e alertas"
-          userType="supervisor"
+          userType="atendente"
         >
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -175,7 +175,7 @@ const NotificacoesPage = () => {
       <MainLayout
         title="Notificações"
         subtitle="Gerencie suas notificações e alertas"
-        userType="supervisor"
+        userType="atendente"
       >
         <div className="space-y-6">
           {/* Estatísticas */}
