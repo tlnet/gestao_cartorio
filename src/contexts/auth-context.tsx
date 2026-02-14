@@ -110,7 +110,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Verificar sessão inicial
+    // Verificar sessão inicial (com timeout para evitar loading infinito em F5 com cache)
+    const LOADING_TIMEOUT_MS = 10000;
+    let loadingCleared = false;
+    const clearLoadingOnce = () => {
+      if (!loadingCleared) {
+        loadingCleared = true;
+        setLoading(false);
+      }
+    };
+
     const getInitialSession = async () => {
       try {
         const {
@@ -122,14 +131,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
 
-        // Buscar perfil e permissões se houver usuário
         if (session?.user) {
           await fetchUserProfile(session.user.id);
         }
       } catch (error: any) {
         console.error("Erro ao verificar sessão:", error);
         setError(error);
-        // Não mostrar toast em desenvolvimento se for erro de configuração
         if (!error?.message?.includes("placeholder")) {
           try {
             toast.error("Erro ao verificar sessão: " + (error?.message || "Erro desconhecido"));
@@ -138,11 +145,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } finally {
-        setLoading(false);
+        clearLoadingOnce();
       }
     };
 
-    getInitialSession();
+    const timeoutId = window.setTimeout(() => {
+      clearLoadingOnce();
+    }, LOADING_TIMEOUT_MS);
+
+    getInitialSession().finally(() => {
+      window.clearTimeout(timeoutId);
+    });
 
     // Escutar mudanças de autenticação
     try {
@@ -158,13 +171,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setError(null);
             await fetchUserProfile(session.user.id);
             setLoading(false);
-            // Não fazer redirecionamento aqui para evitar conflitos
-            // O redirecionamento será feito pela função de login
           }
 
           if (event === "SIGNED_OUT") {
             setError(null);
-            // Limpar dados de perfil e permissões
             setUserProfile(null);
             setUserType(null);
             setPermissions(null);
@@ -186,7 +196,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setError(error);
                 toast.error("Erro ao atualizar sessão: " + error.message);
               } else if (session?.user) {
-                // Recarregar perfil ao atualizar usuário
                 await fetchUserProfile(session.user.id);
               }
             } catch (sessionError) {
@@ -194,8 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
             setLoading(false);
           }
-          
-          // Para outros eventos, apenas finalizar loading
+
           if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") {
             setLoading(false);
           }
@@ -203,6 +211,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
 
       return () => {
+        window.clearTimeout(timeoutId);
         if (subscription) {
           try {
             subscription.unsubscribe();
