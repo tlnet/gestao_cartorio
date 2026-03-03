@@ -542,12 +542,18 @@ export const useRelatoriosIA = () => {
         console.log(`Arquivo ${arquivo.name} enviado para:`, arquivoUrl);
       }
 
-      // 2. Criar relatório no banco
+      // 2. Próximo número sequencial para nome do arquivo (01, 02, 03...)
+      const { count } = await supabase
+        .from("relatorios_ia")
+        .select("*", { count: "exact", head: true });
+      const seq = String((count ?? 0) + 1).padStart(2, "0");
+      const nomeArquivo =
+        Array.isArray(arquivos) ? `analise_${tipo}_${seq}.pdf` : arquivos.name;
+
+      // 3. Criar relatório no banco
       const relatorio = await createRelatorio({
         tipo,
-        nome_arquivo: Array.isArray(arquivos)
-          ? `analise_${tipo}_${Date.now()}.pdf`
-          : arquivos.name,
+        nome_arquivo: nomeArquivo,
         usuario_id: usuarioId,
         cartorio_id: cartorioId,
         dados_processamento: {
@@ -562,7 +568,7 @@ export const useRelatoriosIA = () => {
 
       console.log("Relatório criado:", relatorio);
 
-      // 3. Obter webhook específico para o tipo
+      // 4. Obter webhook específico para o tipo
       // Prioridade: webhookUrl passado > configuração do banco > webhook padrão interno
       const finalWebhookUrl =
         webhookUrl ||
@@ -616,7 +622,7 @@ export const useRelatoriosIA = () => {
         throw new Error(`URL do webhook inválida: ${finalWebhookUrl}`);
       }
 
-      // 4. Preparar payload específico por tipo
+      // 5. Preparar payload específico por tipo
       let payload: any;
 
       if (tipo === "minuta_documento" && dadosAdicionais?.dadosFormulario) {
@@ -770,7 +776,7 @@ export const useRelatoriosIA = () => {
         };
       }
 
-      // 5. Enviar para webhook (tentando contornar CORS)
+      // 6. Enviar para webhook (tentando contornar CORS)
       console.log("🌐 Tentando enviar para webhook:", finalWebhookUrl);
       console.log("📦 Payload a ser enviado:", {
         relatorio_id: payload.relatorio_id,

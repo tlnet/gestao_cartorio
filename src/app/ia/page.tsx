@@ -182,26 +182,14 @@ const AnaliseIA = () => {
     }
   };
 
-  // Função para obter URL do arquivo original
-  const getArquivoOriginalUrl = (relatorio: any) => {
-    // Tentar obter URL do arquivo original dos dados de processamento
-    const dadosProcessamento = relatorio.dados_processamento;
-
-    if (dadosProcessamento) {
-      // Se há dados de processamento, tentar obter a URL do arquivo original
-      if (
-        dadosProcessamento.arquivos_urls &&
-        dadosProcessamento.arquivos_urls.length > 0
-      ) {
-        return dadosProcessamento.arquivos_urls[0];
-      }
-    }
-
-    // Se não encontrou nos dados de processamento, tentar arquivo_resultado
+  /** URL do arquivo gerado (PDF/DOC) para abrir ao clicar na coluna Arquivo. Completo ou incompleto. */
+  const getArquivoGeradoUrl = (relatorio: any): string | null => {
+    if (relatorio.relatorio_pdf) return relatorio.relatorio_pdf;
+    if (relatorio.relatorio_doc) return relatorio.relatorio_doc;
     if (relatorio.arquivo_resultado) {
-      return relatorio.arquivo_resultado;
+      const url = relatorio.arquivo_resultado;
+      return typeof url === "string" ? url.split(",")[0]?.trim() || url : null;
     }
-
     return null;
   };
 
@@ -1029,29 +1017,18 @@ const AnaliseIA = () => {
                       </TableCell>
                       <TableCell className="font-medium">
                         {(() => {
-                          const arquivoOriginalUrl =
-                            getArquivoOriginalUrl(relatorio);
-
-                          return arquivoOriginalUrl ? (
+                          const arquivoGeradoUrl = getArquivoGeradoUrl(relatorio);
+                          return arquivoGeradoUrl ? (
                             <button
-                              onClick={() => {
-                                console.log(
-                                  "🔍 Abrindo arquivo original:",
-                                  arquivoOriginalUrl
-                                );
-                                // Abrir o arquivo original em uma nova aba
-                                window.open(arquivoOriginalUrl, "_blank");
-                              }}
-                              className="text-gray-600 hover:text-gray-800 hover:font-bold cursor-pointer text-left transition-all duration-200"
-                              title="Clique para visualizar o arquivo original"
+                              type="button"
+                              onClick={() => window.open(arquivoGeradoUrl, "_blank")}
+                              className="text-primary hover:underline cursor-pointer text-left font-medium"
+                              title="Clique para abrir o arquivo gerado"
                             >
                               📄 {relatorio.nome_arquivo}
                             </button>
                           ) : (
-                            <span
-                              className="text-gray-500"
-                              title="Arquivo original não disponível"
-                            >
+                            <span className="text-muted-foreground" title="Arquivo ainda não disponível">
                               📄 {relatorio.nome_arquivo}
                             </span>
                           );
