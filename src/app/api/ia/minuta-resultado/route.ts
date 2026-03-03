@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
+
+/** Cliente com Service Role para ler/atualizar relatorios_ia sem RLS (callback do N8N não envia JWT). */
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY não configurado. Necessário para o callback de minuta.");
+  }
+  return createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+}
 
 /**
  * Endpoint unificado para resultado da minuta de documento.
@@ -68,15 +78,14 @@ function parsePayload(payload: unknown): {
 
 export async function POST(request: NextRequest) {
   try {
-    if (
-      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    ) {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
       return NextResponse.json(
-        { error: "Variáveis de ambiente do Supabase não configuradas" },
+        { error: "Supabase não configurado (NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY)." },
         { status: 503 }
       );
     }
+
+    const supabase = getSupabaseAdmin();
 
     const contentType = request.headers.get("content-type") || "";
     let payload: ReturnType<typeof parsePayload>;
@@ -120,8 +129,19 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (fetchError || !relatorioExistente) {
+      console.warn("❌ Relatório não encontrado no callback minuta-resultado:", {
+        relatorio_id,
+        fetchError: fetchError?.message,
+        code: fetchError?.code,
+      });
       return NextResponse.json(
-        { error: "Relatório não encontrado" },
+        {
+          error: "Relatório não encontrado",
+          relatorio_id_recebido: relatorio_id,
+          detalhe: fetchError?.code === "PGRST116"
+            ? "Nenhuma linha com esse id na tabela relatorios_ia. Confira no N8N se o relatorio_id vem de $('Webhook').first().json.body.relatorio_id (ou .json.relatorio_id conforme a estrutura do nó Webhook)."
+            : fetchError?.message,
+        },
         { status: 404 }
       );
     }
