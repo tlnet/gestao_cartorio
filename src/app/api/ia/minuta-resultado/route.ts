@@ -55,7 +55,7 @@ function parsePayload(payload: unknown): {
   const status = (p.status as string).toLowerCase();
   if (status === "concluido") {
     return {
-      relatorio_id: p.relatorio_id as string,
+      relatorio_id: (p.relatorio_id as string).trim(),
       status: "concluido",
       resumo: p.resumo as object | undefined,
     };
@@ -66,7 +66,7 @@ function parsePayload(payload: unknown): {
       throw new Error("campos_pendentes é obrigatório e deve ser um array não vazio quando status é incompleto/error");
     }
     return {
-      relatorio_id: p.relatorio_id as string,
+      relatorio_id: (p.relatorio_id as string).trim(),
       status: p.status as string,
       campos_pendentes: campos as string[],
       mensagens_erro: Array.isArray(p.mensagens_erro) ? (p.mensagens_erro as string[]) : undefined,
@@ -197,17 +197,79 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { data: updated, error: updateError } = await supabase
-      .from("relatorios_ia")
-      .update(updates)
-      .eq("id", relatorio_id)
-      .select()
-      .single();
+    // Atualização resiliente para ambientes com schema legado
+    let updatePayload: Record<string, unknown> = { ...updates };
+    let updated: any = null;
+    let updateError: any = null;
 
-    if (updateError) {
-      console.error("❌ Erro ao atualizar relatório:", updateError);
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      const result = await supabase
+        .from("relatorios_ia")
+        .update(updatePayload)
+        .eq("id", relatorio_id)
+        .select()
+        .single();
+
+      updated = result.data;
+      updateError = result.error;
+      if (!updateError) break;
+
+      const message = String(updateError.message || "");
+      const details = String(updateError.details || "");
+      const combined = `${message} ${details}`.toLowerCase();
+
+      // Tabelas antigas podem não ter updated_at
+      if (combined.includes("updated_at") && "updated_at" in updatePayload) {
+        const { updated_at, ...rest } = updatePayload as any;
+        updatePayload = rest;
+        continue;
+      }
+
+      // Tabelas antigas podem não ter resumo
+      if (combined.includes("resumo") && "resumo" in updatePayload) {
+        const { resumo, ...rest } = updatePayload as any;
+        updatePayload = rest;
+        continue;
+      }
+
+      // Schema antigo pode não ter relatorio_pdf
+      if (combined.includes("relatorio_pdf") && "relatorio_pdf" in updatePayload) {
+        const { relatorio_pdf, ...rest } = updatePayload as any;
+        updatePayload = rest;
+        continue;
+      }
+
+      // Constraint legado pode não aceitar analise_incompleta
+      if (
+        updatePayload.status === "analise_incompleta" &&
+        (updateError.code === "23514" ||
+          combined.includes("violates check constraint") ||
+          combined.includes("relatorios_ia_status_check"))
+      ) {
+        updatePayload = { ...updatePayload, status: "erro" };
+        continue;
+      }
+
+      break;
+    }
+
+    if (updateError || !updated) {
+      console.error("❌ Erro ao atualizar relatório:", {
+        relatorio_id,
+        updatePayload,
+        updateError,
+      });
       return NextResponse.json(
-        { error: "Erro ao atualizar relatório no banco de dados", details: updateError.message },
+        {
+          error: "Erro ao atualizar relatório no banco de dados",
+          relatorio_id_recebido: relatorio_id,
+          details: updateError?.message || "Erro desconhecido",
+          code: updateError?.code,
+          hint:
+            updateError?.code === "23514"
+              ? "Constraint de status pode estar antiga. Execute add-analise-incompleta-status.sql."
+              : "Se faltar coluna, execute os scripts de estrutura: add-updated-at-relatorios-ia.sql e fix-relatorios-ia-table.sql.",
+        },
         { status: 500 }
       );
     }
