@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 import { TipoUsuario, isAdmin, normalizarRoles, getTipoPrincipal } from "@/types";
+
+function getServiceClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
 
 /**
  * Interface para dados do usuário autenticado
@@ -43,12 +52,12 @@ export async function getAuthenticatedUser(
       return null;
     }
 
-    // Buscar perfil do usuário
-    // Tentar buscar com campos opcionais primeiro
+    // Buscar perfil do usuário usando service role para contornar RLS
+    const serviceClient = getServiceClient();
     let profile: any = null;
     let profileError: any = null;
 
-    const { data: profileData, error: profileErr } = await supabase
+    const { data: profileData, error: profileErr } = await serviceClient
       .from("users")
       .select("id, name, email, telefone, role, roles, cartorio_id, ativo")
       .eq("id", user.id)
@@ -59,7 +68,7 @@ export async function getAuthenticatedUser(
 
     // Se erro for de coluna não existir, tentar novamente sem campos opcionais
     if (profileError && profileError.code === "42703") {
-      const { data: fallbackData, error: fallbackError } = await supabase
+      const { data: fallbackData, error: fallbackError } = await serviceClient
         .from("users")
         .select("id, name, email, role, roles, ativo")
         .eq("id", user.id)

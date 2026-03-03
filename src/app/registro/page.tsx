@@ -497,11 +497,19 @@ function RegistroForm() {
       if (passwordWasSetViaAPI) {
         toast.success("Conta ativada com sucesso!");
         await refetchUserProfile();
-        const defaultRoute = roles.includes("financeiro") && !roles.includes("admin") ? "/contas" : "/dashboard";
+        const defaultRoute = roles.includes("admin_geral")
+          ? "/admin"
+          : roles.includes("financeiro") && !roles.includes("admin")
+          ? "/contas"
+          : "/dashboard";
         router.push(defaultRoute);
       } else {
         const { data: { session } } = await supabase.auth.getSession();
-        const defaultRoute = roles.includes("financeiro") && !roles.includes("admin") ? "/contas" : "/dashboard";
+        const defaultRoute = roles.includes("admin_geral")
+          ? "/admin"
+          : roles.includes("financeiro") && !roles.includes("admin")
+          ? "/contas"
+          : "/dashboard";
         if (session?.user) {
           toast.success("Conta criada com sucesso!");
           await refetchUserProfile();

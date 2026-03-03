@@ -109,7 +109,11 @@ export default function LoginPage() {
             toast.success("Login realizado com sucesso!");
 
             const roles = (userProfile as any)?.roles?.length ? (userProfile as any).roles : [(userProfile as any)?.role || "atendente"];
-            const defaultRoute = roles.includes("financeiro") && !roles.includes("admin") ? "/contas" : "/dashboard";
+            const defaultRoute = roles.includes("admin_geral")
+              ? "/admin"
+              : roles.includes("financeiro") && !roles.includes("admin")
+              ? "/contas"
+              : "/dashboard";
             setTimeout(() => {
               router.push(defaultRoute);
             }, 100);
@@ -140,7 +144,11 @@ export default function LoginPage() {
 
         // Usuário financeiro vai para Contas a Pagar; demais para Dashboard
         const roles = (userProfile as any)?.roles?.length ? (userProfile as any).roles : [(userProfile as any)?.role || "atendente"];
-        const defaultRoute = roles.includes("financeiro") && !roles.includes("admin") ? "/contas" : "/dashboard";
+        const defaultRoute = roles.includes("admin_geral")
+          ? "/admin"
+          : roles.includes("financeiro") && !roles.includes("admin")
+          ? "/contas"
+          : "/dashboard";
         setTimeout(() => {
           router.push(defaultRoute);
         }, 100);

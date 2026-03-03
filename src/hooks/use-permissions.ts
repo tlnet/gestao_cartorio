@@ -4,6 +4,7 @@ import {
   PermissoesUsuario, 
   podeAcessarRota,
   isAdmin as checkIsAdmin,
+  isSuperAdmin as checkIsSuperAdmin,
   isAtendente as checkIsAtendente,
   isFinanceiro as checkIsFinanceiro,
   getPermissoes 
@@ -42,7 +43,13 @@ export function usePermissions() {
   /**
    * Verifica se o usuário tem o role administrador (em qualquer uma das permissões)
    */
-  const isAdmin = userRoles?.includes("admin") ?? checkIsAdmin(userType);
+  const hasRoles = !!userRoles?.length;
+  const isAdmin = hasRoles
+    ? userRoles.some((r) => r === "admin" || r === "admin_geral")
+    : checkIsAdmin(userType);
+  const isSuperAdmin = hasRoles
+    ? userRoles.includes("admin_geral")
+    : checkIsSuperAdmin(userType);
 
   /**
    * Verifica se o usuário tem o role atendente
@@ -80,6 +87,8 @@ export function usePermissions() {
     canAccess,
     /** Verifica se é administrador */
     isAdmin,
+    /** Verifica se é super administrador */
+    isSuperAdmin,
     /** Verifica se é atendente */
     isAtendente,
     /** Verifica se é financeiro */

@@ -12,7 +12,7 @@ interface MainLayoutProps {
   children: React.ReactNode;
   title: string;
   subtitle?: string;
-  userType?: "admin" | "atendente" | "financeiro";
+  userType?: "admin_geral" | "admin" | "atendente" | "financeiro";
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({
@@ -31,7 +31,9 @@ const MainLayout: React.FC<MainLayoutProps> = ({
     if (authLoading) return;
     if (!userRoles?.length) return;
     if (canAccess(pathname)) return;
-    if (userRoles.includes("financeiro") && !userRoles.includes("admin")) {
+    if (userRoles.includes("admin_geral")) {
+      router.replace("/admin");
+    } else if (userRoles.includes("financeiro") && !userRoles.includes("admin")) {
       router.replace("/contas");
     } else {
       router.replace("/acesso-negado");

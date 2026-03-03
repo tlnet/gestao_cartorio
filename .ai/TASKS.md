@@ -192,3 +192,27 @@
   > Feature: Sistema de Convite de Usuários
   > Dependencies: 32, 33, 34, 35, 36, 37, 38, 39, 40
   > Testar fluxo completo, segurança, edge cases e validar todas as user stories
+
+- [x] **ID 42: Definir RBAC de Super Adm para painel global** (Priority: critical)
+  > Feature: Painel Administrativo Global
+  > Atualizar tipos e permissões para suportar role admin_geral com acesso a /admin
+
+- [x] **ID 43: Implementar rota /admin com identidade visual existente** (Priority: high)
+  > Feature: Painel Administrativo Global
+  > Dependencies: 42
+  > Construir painel com cards, tabelas e modal de cartórios reutilizando MainLayout e componentes atuais
+
+- [x] **ID 44: Integrar navegação e redirecionamentos para Super Adm** (Priority: high)
+  > Feature: Painel Administrativo Global
+  > Dependencies: 42, 43
+  > Exibir item de menu /admin e ajustar login/registro para redirecionar admin_geral
+
+- [x] **ID 45: Criar scripts SQL de banco para admin_geral** (Priority: critical)
+  > Feature: Painel Administrativo Global
+  > Dependencies: 42
+  > Gerar scripts para constraints de role, políticas RLS globais e bootstrap de Super Adm
+
+- [x] **ID 46: Validar implementação e consistência do Task Magic** (Priority: medium)
+  > Feature: Painel Administrativo Global
+  > Dependencies: 42, 43, 44, 45
+  > Executar verificação de lint e garantir sincronização entre plano, tarefas e código

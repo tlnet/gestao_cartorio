@@ -33,16 +33,18 @@ export interface HistoricoProtocolo {
 
 /**
  * Tipos de usuário disponíveis no sistema.
- * - admin: Acesso total ao sistema, incluindo gerenciamento de usuários e configurações
+ * - admin_geral: Acesso global ao sistema (todos os cartórios e painel /admin)
+ * - admin: Acesso total ao sistema no contexto do cartório
  * - atendente: Acesso limitado às funcionalidades operacionais
  * - financeiro: Acesso apenas a Contas a Pagar e Notificações (apenas de contas a pagar)
  */
-export type TipoUsuario = "admin" | "atendente" | "financeiro";
+export type TipoUsuario = "admin_geral" | "admin" | "atendente" | "financeiro";
 
 /**
  * Rotas protegidas do sistema que requerem permissões específicas
  */
 export type RotaProtegida = 
+  | "/admin"
   | "/usuarios"
   | "/configuracoes";
 
@@ -68,6 +70,16 @@ export interface PermissoesUsuario {
  * Mapeamento de permissões por tipo de usuário
  */
 export const PERMISSOES_POR_TIPO: Record<TipoUsuario, PermissoesUsuario> = {
+  admin_geral: {
+    podeGerenciarUsuarios: true,
+    podeAcessarConfiguracoes: true,
+    podeModificarConfiguracoes: true,
+    podeGerenciarPermissoes: true,
+    rotasPermitidas: [
+      "/admin",
+    ],
+    rotasBloqueadas: [],
+  },
   admin: {
     podeGerenciarUsuarios: true,
     podeAcessarConfiguracoes: true,
@@ -117,7 +129,14 @@ export const PERMISSOES_POR_TIPO: Record<TipoUsuario, PermissoesUsuario> = {
  * Type guard: verifica se o usuário é administrador
  */
 export function isAdmin(tipo: TipoUsuario | null | undefined): boolean {
-  return tipo === "admin";
+  return tipo === "admin" || tipo === "admin_geral";
+}
+
+/**
+ * Type guard: verifica se o usuário é super administrador
+ */
+export function isSuperAdmin(tipo: TipoUsuario | null | undefined): boolean {
+  return tipo === "admin_geral";
 }
 
 /**
@@ -157,6 +176,10 @@ export function getPermissoesForRoles(roles: TipoUsuario[] | null | undefined): 
   }
   const tipos = roles.filter((t): t is TipoUsuario => t in PERMISSOES_POR_TIPO) as TipoUsuario[];
   if (tipos.length === 0) return PERMISSOES_POR_TIPO.atendente;
+  // admin_geral é um perfil dedicado ao painel administrativo, sem herdar permissões de outros perfis.
+  if (tipos.includes("admin_geral")) {
+    return PERMISSOES_POR_TIPO.admin_geral;
+  }
 
   const merged: PermissoesUsuario = {
     podeGerenciarUsuarios: false,
@@ -187,6 +210,7 @@ export function getPermissoesForRoles(roles: TipoUsuario[] | null | undefined): 
 
 /** Ordem de prioridade para exibição do "tipo principal" (maior = mais importante) */
 const ORDEM_TIPO_PRIORIDADE: Record<TipoUsuario, number> = {
+  admin_geral: 4,
   admin: 3,
   financeiro: 2,
   atendente: 1,
@@ -207,9 +231,15 @@ export function getTipoPrincipal(roles: TipoUsuario[] | null | undefined): TipoU
  */
 export function normalizarRoles(role: string | null | undefined, roles: string[] | null | undefined): TipoUsuario[] {
   if (roles?.length) {
-    return roles.filter((r): r is TipoUsuario => r === "admin" || r === "atendente" || r === "financeiro");
+    return roles.filter(
+      (r): r is TipoUsuario =>
+        r === "admin_geral" || r === "admin" || r === "atendente" || r === "financeiro"
+    );
   }
-  if (role && (role === "admin" || role === "atendente" || role === "financeiro")) {
+  if (
+    role &&
+    (role === "admin_geral" || role === "admin" || role === "atendente" || role === "financeiro")
+  ) {
     return [role];
   }
   return ["atendente"];

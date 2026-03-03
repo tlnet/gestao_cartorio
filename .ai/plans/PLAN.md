@@ -31,3 +31,4 @@ Para ver os planos detalhados de cada funcionalidade, consulte:
 - `.ai/plans/features/` - Planos de funcionalidades específicas
   - [CNIB - Consulta de Indisponibilidade](./features/cnib-plan.md) - Página para consultas ao sistema CNIB
   - [Sistema de Hierarquia de Usuários](./features/hierarquia-usuarios-plan.md) - Controle de acesso baseado em tipos de usuário
+  - [Painel Administrativo Global](./features/painel-admin-geral-plan.md) - Gestão centralizada de cartórios e usuários Super Adm

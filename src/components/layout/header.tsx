@@ -39,7 +39,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
 import { supabase } from "@/lib/supabase";
@@ -64,6 +64,8 @@ interface Notification {
 
 const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
   const router = useRouter();
+  const pathname = usePathname();
+  const isAdminPanel = pathname?.startsWith("/admin");
   const { user, signOut, userProfile: contextUserProfile, loading: authLoading } = useAuth();
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
@@ -305,22 +307,24 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
 
           {/* Actions Section */}
           <div className="flex items-center space-x-4">
-            {/* Search */}
-            <form onSubmit={handleSearch} className="relative">
-              <Search
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4 cursor-pointer hover:text-gray-600 transition-colors"
-                onClick={handleSearchIconClick}
-              />
-              <Input
-                placeholder="Buscar protocolos"
-                className="pl-10 w-64"
-                value={searchTerm}
-                onChange={handleSearchChange}
-              />
-            </form>
+            {/* Search — oculto no painel admin */}
+            {!isAdminPanel && (
+              <form onSubmit={handleSearch} className="relative">
+                <Search
+                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4 cursor-pointer hover:text-gray-600 transition-colors"
+                  onClick={handleSearchIconClick}
+                />
+                <Input
+                  placeholder="Buscar protocolos"
+                  className="pl-10 w-64"
+                  value={searchTerm}
+                  onChange={handleSearchChange}
+                />
+              </form>
+            )}
 
-            {/* Notifications */}
-            <NotificationBell />
+            {/* Notifications — oculto no painel admin */}
+            {!isAdminPanel && <NotificationBell />}
 
             {/* User Menu */}
             {isLoadingProfile ? (
@@ -362,15 +366,19 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleProfileClick}>
-                    <User className="mr-2 h-4 w-4" />
-                    Meu Perfil
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleSettingsClick}>
-                    <SettingsIcon className="mr-2 h-4 w-4" />
-                    Configurações
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
+                  {!isAdminPanel && (
+                    <>
+                      <DropdownMenuItem onClick={handleProfileClick}>
+                        <User className="mr-2 h-4 w-4" />
+                        Meu Perfil
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleSettingsClick}>
+                        <SettingsIcon className="mr-2 h-4 w-4" />
+                        Configurações
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
                   <DropdownMenuItem
                     onClick={handleSignOut}
                     className="text-red-600"
