@@ -322,11 +322,31 @@ const AnaliseIA = () => {
         const agora = new Date();
         const vinteMinutosAtras = new Date(agora.getTime() - 20 * 60 * 1000);
 
-        const { data: relatoriosComTimeout, error } = await supabase
+        // Regra de timeout:
+        // - Base principal: updated_at (reinicia ao voltar para "processando")
+        // - Fallback: created_at (ambientes legados sem updated_at)
+        let relatoriosComTimeout: any[] | null = null;
+        let error: any = null;
+
+        const porUpdatedAt = await supabase
           .from("relatorios_ia")
-          .select("id, nome_arquivo, created_at")
+          .select("id, nome_arquivo, created_at, updated_at, resumo")
           .eq("status", "processando")
-          .lt("created_at", vinteMinutosAtras.toISOString());
+          .lt("updated_at", vinteMinutosAtras.toISOString());
+
+        if (porUpdatedAt.error) {
+          // Fallback para ambientes sem coluna updated_at
+          const porCreatedAt = await supabase
+            .from("relatorios_ia")
+            .select("id, nome_arquivo, created_at, resumo")
+            .eq("status", "processando")
+            .lt("created_at", vinteMinutosAtras.toISOString());
+          relatoriosComTimeout = porCreatedAt.data;
+          error = porCreatedAt.error;
+        } else {
+          relatoriosComTimeout = porUpdatedAt.data;
+          error = null;
+        }
 
         if (error) {
           console.error("Erro ao buscar relatórios com timeout:", error);
@@ -339,8 +359,13 @@ const AnaliseIA = () => {
           await Promise.all(
             relatoriosComTimeout.map(async (relatorio) => {
               try {
+                const dataReprocessamento =
+                  typeof (relatorio as any)?.resumo === "object"
+                    ? (relatorio as any).resumo?.data_reprocessamento_inicio
+                    : null;
+                const baseTempo = dataReprocessamento || (relatorio as any).updated_at || relatorio.created_at;
                 const tempoDecorrido = Math.round(
-                  (agora.getTime() - new Date(relatorio.created_at).getTime()) / 1000 / 60
+                  (agora.getTime() - new Date(baseTempo).getTime()) / 1000 / 60
                 );
 
                 await updateRelatorio(
@@ -677,9 +702,9 @@ const AnaliseIA = () => {
     }
   };
 
-  const handleProcessComplete = (result: any) => {
-    // Esta função será chamada quando o N8N retornar o resultado
+  const handleProcessComplete = async (result: any) => {
     toast.success("Novo relatório adicionado ao histórico!");
+    await fetchRelatorios();
   };
 
   // Função para lidar com campos preenchidos pelo usuário
@@ -694,26 +719,91 @@ const AnaliseIA = () => {
         return;
       }
 
-      // Por enquanto, apenas salvar os dados preenchidos no resumo do relatório
-      // Não enviar para nenhum lugar ainda (será implementado mais pra frente)
+      const webhookBaseUrl =
+        getWebhookUrl("minuta_documento") || getDefaultWebhookUrl("minuta_documento");
+      if (!webhookBaseUrl) {
+        toast.error("Webhook de minuta não configurado.");
+        return;
+      }
+      const webhookUrl = `${webhookBaseUrl}${
+        webhookBaseUrl.includes("?") ? "&" : "?"
+      }dados_faltantes=true`;
+
+      const arquivoUrl =
+        relatorio.relatorio_pdf || relatorio.relatorio_doc || relatorio.arquivo_resultado;
+      if (!arquivoUrl) {
+        toast.error("Arquivo da minuta não encontrado para reenviar ao webhook.");
+        return;
+      }
+
+      toast.loading("Enviando dados faltantes para reprocessamento...", {
+        id: "reenviar-dados-faltantes",
+      });
+
+      // Baixar o arquivo para reenviar em binário ao webhook
+      const fileResp = await fetch(arquivoUrl);
+      if (!fileResp.ok) {
+        throw new Error(`Falha ao baixar arquivo da minuta (${fileResp.status})`);
+      }
+      const fileBlob = await fileResp.blob();
+      const fileName = `minuta_${relatorio.id}.pdf`;
+      const file = new File([fileBlob], fileName, {
+        type: fileBlob.type || "application/pdf",
+      });
+
+      // Payload de reprocessamento com marcador de dados faltantes
+      const payloadReenvio = {
+        relatorio_id: relatorio.id,
+        origem: "preenchimento_usuario",
+        data_reenvio: new Date().toISOString(),
+        campos_preenchidos: dados,
+        campos_pendentes_originais: camposPendentesDialog.camposPendentes,
+      };
+
+      // Envio via proxy para evitar problemas de CORS e manter padrão do projeto
+      const formData = new FormData();
+      formData.append("webhookUrl", webhookUrl);
+      formData.append("payload", JSON.stringify(payloadReenvio));
+      formData.append("file", file, file.name);
+      const proxyResp = await fetch("/api/webhook-proxy", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!proxyResp.ok) {
+        let errorText = "Falha ao reenviar dados faltantes para o webhook";
+        try {
+          const errJson = await proxyResp.json();
+          errorText = errJson?.details || errJson?.error || errorText;
+        } catch {
+          // ignore parse error
+        }
+        throw new Error(errorText);
+      }
+
       const resumoAtual = (relatorio as any).resumo || {};
       const resumoAtualizado = {
         ...resumoAtual,
         campos_preenchidos: dados,
         data_preenchimento: new Date().toISOString(),
-        // Manter requer_preenchimento como true por enquanto, até implementar o envio
-        requer_preenchimento: true,
+        data_reprocessamento_inicio: new Date().toISOString(),
+        dados_faltantes_enviados: true,
+        data_reenvio_dados_faltantes: new Date().toISOString(),
+        requer_preenchimento: false,
       };
       
       await updateRelatorio(
         camposPendentesDialog.relatorioId,
         {
+          status: "processando" as any,
           resumo: resumoAtualizado,
         } as any,
         { silent: true }
       );
 
-      toast.success("Dados salvos com sucesso!");
+      toast.success("Dados faltantes enviados para reprocessamento!", {
+        id: "reenviar-dados-faltantes",
+      });
       
       // Fechar dialog
       setCamposPendentesDialog({
@@ -728,7 +818,10 @@ const AnaliseIA = () => {
       await fetchRelatorios();
     } catch (error) {
       console.error("Erro ao salvar campos preenchidos:", error);
-      toast.error("Erro ao salvar os dados. Tente novamente.");
+      toast.error(
+        error instanceof Error ? error.message : "Erro ao reenviar os dados. Tente novamente.",
+        { id: "reenviar-dados-faltantes" }
+      );
     }
   };
 
@@ -1119,7 +1212,7 @@ const AnaliseIA = () => {
                       </TableCell>
                       <TableCell>
                         <div className="flex space-x-1">
-                          {relatorio.status === "concluido" && (
+                          {(relatorio.status === "concluido" || relatorio.status === "analise_incompleta") && (
                             <>
                               {/* Priorizar relatorio_pdf, depois relatorio_doc, depois arquivo_resultado */}
                               {relatorio.relatorio_pdf && (

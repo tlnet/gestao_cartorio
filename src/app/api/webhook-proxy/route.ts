@@ -24,41 +24,78 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Request sem body" }, { status: 400 });
     }
 
-    const body = await request.json();
-    console.log("📦 Proxy API: Body recebido:", body);
-    console.log("📦 Proxy API: Tipo do body:", typeof body);
-    console.log("📦 Proxy API: Keys do body:", Object.keys(body));
+    const contentType = request.headers.get("content-type") || "";
+    let response: Response;
+    let webhookUrl = "";
 
-    const { webhookUrl, payload } = body;
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData();
+      const webhookUrlRaw = formData.get("webhookUrl");
+      const payloadRaw = formData.get("payload");
+      const file = formData.get("file");
 
-    if (!webhookUrl) {
-      console.error("❌ Proxy API: webhookUrl não fornecido");
-      return NextResponse.json(
-        { error: "webhookUrl é obrigatório" },
-        { status: 400 }
-      );
+      if (!webhookUrlRaw || typeof webhookUrlRaw !== "string") {
+        return NextResponse.json(
+          { error: "webhookUrl é obrigatório no multipart" },
+          { status: 400 }
+        );
+      }
+      if (!payloadRaw || typeof payloadRaw !== "string") {
+        return NextResponse.json(
+          { error: "payload é obrigatório no multipart (JSON string)" },
+          { status: 400 }
+        );
+      }
+
+      webhookUrl = webhookUrlRaw;
+      const forwardFormData = new FormData();
+      forwardFormData.append("payload", payloadRaw);
+      if (file instanceof File && file.size > 0) {
+        forwardFormData.append("file", file, file.name || "documento.pdf");
+      }
+
+      console.log("🌐 Proxy API (multipart): Enviando para webhook:", webhookUrl);
+      response = await fetch(webhookUrl, {
+        method: "POST",
+        body: forwardFormData,
+      });
+    } else {
+      const body = await request.json();
+      console.log("📦 Proxy API: Body recebido:", body);
+      console.log("📦 Proxy API: Tipo do body:", typeof body);
+      console.log("📦 Proxy API: Keys do body:", Object.keys(body));
+
+      const { webhookUrl: jsonWebhookUrl, payload } = body;
+
+      if (!jsonWebhookUrl) {
+        console.error("❌ Proxy API: webhookUrl não fornecido");
+        return NextResponse.json(
+          { error: "webhookUrl é obrigatório" },
+          { status: 400 }
+        );
+      }
+
+      if (!payload) {
+        console.error("❌ Proxy API: payload não fornecido");
+        return NextResponse.json(
+          { error: "payload é obrigatório" },
+          { status: 400 }
+        );
+      }
+
+      webhookUrl = jsonWebhookUrl;
+      console.log("🌐 Proxy API: Enviando para webhook:", webhookUrl);
+      console.log("📋 Proxy API: Payload:", payload);
+
+      response = await fetch(webhookUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "GestaoCartorio/1.0",
+        },
+        body: JSON.stringify(payload),
+      });
     }
-
-    if (!payload) {
-      console.error("❌ Proxy API: payload não fornecido");
-      return NextResponse.json(
-        { error: "payload é obrigatório" },
-        { status: 400 }
-      );
-    }
-
-    console.log("🌐 Proxy API: Enviando para webhook:", webhookUrl);
-    console.log("📋 Proxy API: Payload:", payload);
-
-    // Fazer a requisição para o webhook N8N
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "GestaoCartorio/1.0",
-      },
-      body: JSON.stringify(payload),
-    });
 
     console.log("📊 Proxy API: Status da resposta:", response.status);
 
