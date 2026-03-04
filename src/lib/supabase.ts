@@ -256,6 +256,7 @@ export interface Database {
           relatorio_doc: string | null;
           relatorio_docx: string | null;
           resumo: any;
+          dados_minuta: Record<string, unknown> | null;
           status: "processando" | "concluido" | "erro" | "analise_incompleta";
           usuario_id: string;
           cartorio_id: string;
@@ -270,6 +271,7 @@ export interface Database {
           relatorio_doc?: string | null;
           relatorio_docx?: string | null;
           resumo?: any;
+          dados_minuta?: Record<string, unknown> | null;
           status?: "processando" | "concluido" | "erro" | "analise_incompleta";
           usuario_id: string;
           cartorio_id: string;
@@ -284,6 +286,7 @@ export interface Database {
           relatorio_doc?: string | null;
           relatorio_docx?: string | null;
           resumo?: any;
+          dados_minuta?: Record<string, unknown> | null;
           status?: "processando" | "concluido" | "erro" | "analise_incompleta";
           usuario_id?: string;
           cartorio_id?: string;

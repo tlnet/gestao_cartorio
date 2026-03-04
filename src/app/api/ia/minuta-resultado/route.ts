@@ -34,14 +34,17 @@ function getSupabaseAdmin() {
  * Em ambos: envio do arquivo PDF pelo campo "file" (multipart) para exibir ao cliente.
  */
 
-function parsePayload(payload: unknown): {
+interface ParsedPayload {
   relatorio_id: string;
   status: string;
+  dados_minuta?: Record<string, unknown>;
   resumo?: object;
   campos_pendentes?: string[];
   mensagens_erro?: string[];
   mensagens_alerta?: string[];
-} {
+}
+
+function parsePayload(payload: unknown): ParsedPayload {
   if (payload == null || typeof payload !== "object" || !("relatorio_id" in payload)) {
     throw new Error("payload inválido: relatorio_id é obrigatório");
   }
@@ -52,27 +55,37 @@ function parsePayload(payload: unknown): {
   if (typeof p.status !== "string" || !p.status.trim()) {
     throw new Error("status é obrigatório");
   }
+
+  // dados_minuta é aceito em qualquer status — deve ser objeto se presente
+  const dados_minuta =
+    p.dados_minuta != null && typeof p.dados_minuta === "object" && !Array.isArray(p.dados_minuta)
+      ? (p.dados_minuta as Record<string, unknown>)
+      : undefined;
+
   const status = (p.status as string).toLowerCase();
+
   if (status === "concluido") {
     return {
       relatorio_id: (p.relatorio_id as string).trim(),
       status: "concluido",
+      dados_minuta,
       resumo: p.resumo as object | undefined,
     };
   }
+
   if (status === "error" || status === "incompleto") {
     const campos = p.campos_pendentes;
-    if (!Array.isArray(campos) || campos.length === 0) {
-      throw new Error("campos_pendentes é obrigatório e deve ser um array não vazio quando status é incompleto/error");
-    }
+    // campos_pendentes é opcional quando dados_minuta está presente
     return {
       relatorio_id: (p.relatorio_id as string).trim(),
       status: p.status as string,
-      campos_pendentes: campos as string[],
+      dados_minuta,
+      campos_pendentes: Array.isArray(campos) ? (campos as string[]) : undefined,
       mensagens_erro: Array.isArray(p.mensagens_erro) ? (p.mensagens_erro as string[]) : undefined,
       mensagens_alerta: Array.isArray(p.mensagens_alerta) ? (p.mensagens_alerta as string[]) : undefined,
     };
   }
+
   throw new Error('status deve ser "concluido", "ERROR", "error" ou "incompleto"');
 }
 
@@ -152,6 +165,11 @@ export async function POST(request: NextRequest) {
 
     const isConcluido = payload.status === "concluido";
 
+    // dados_minuta é salvo em qualquer status quando presente
+    if (payload.dados_minuta && typeof payload.dados_minuta === "object") {
+      updates.dados_minuta = payload.dados_minuta;
+    }
+
     if (isConcluido) {
       updates.status = "concluido";
       if (payload.resumo && typeof payload.resumo === "object") {
@@ -164,7 +182,7 @@ export async function POST(request: NextRequest) {
       updates.resumo = {
         ...resumoAtual,
         requer_preenchimento: true,
-        campos_pendentes: payload.campos_pendentes,
+        ...(payload.campos_pendentes?.length && { campos_pendentes: payload.campos_pendentes }),
         ...(payload.mensagens_erro?.length && { mensagens_erro: payload.mensagens_erro }),
         ...(payload.mensagens_alerta?.length && { mensagens_alerta: payload.mensagens_alerta }),
       };
@@ -235,6 +253,13 @@ export async function POST(request: NextRequest) {
       // Schema antigo pode não ter relatorio_pdf
       if (combined.includes("relatorio_pdf") && "relatorio_pdf" in updatePayload) {
         const { relatorio_pdf, ...rest } = updatePayload as any;
+        updatePayload = rest;
+        continue;
+      }
+
+      // Schema antigo pode não ter dados_minuta
+      if (combined.includes("dados_minuta") && "dados_minuta" in updatePayload) {
+        const { dados_minuta, ...rest } = updatePayload as any;
         updatePayload = rest;
         continue;
       }
@@ -315,9 +340,10 @@ export async function GET() {
     payload_format: {
       relatorio_id: "string (obrigatório)",
       status: '"concluido" | "ERROR" | "error" | "incompleto"',
+      dados_minuta: "object (opcional, aceito em qualquer status — armazenado na coluna dados_minuta)",
       concluido: { resumo: "object (opcional)" },
       incompleto: {
-        campos_pendentes: "string[] (obrigatório)",
+        campos_pendentes: "string[] (opcional quando dados_minuta presente)",
         mensagens_erro: "string[] (opcional)",
         mensagens_alerta: "string[] (opcional)",
       },

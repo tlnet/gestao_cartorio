@@ -700,7 +700,6 @@ const AnaliseIA = () => {
     if (!camposPendentesDialog.relatorioId) return;
 
     try {
-      // Buscar o relatório atual
       const relatorio = relatorios.find((r) => r.id === camposPendentesDialog.relatorioId);
       if (!relatorio) {
         toast.error("Relatório não encontrado");
@@ -717,45 +716,25 @@ const AnaliseIA = () => {
         webhookBaseUrl.includes("?") ? "&" : "?"
       }dados_faltantes=true`;
 
-      const arquivoUrl =
-        relatorio.relatorio_pdf || relatorio.relatorio_doc || relatorio.arquivo_resultado;
-      if (!arquivoUrl) {
-        toast.error("Arquivo da minuta não encontrado para reenviar ao webhook.");
-        return;
-      }
-
       toast.loading("Enviando dados faltantes para reprocessamento...", {
         id: "reenviar-dados-faltantes",
       });
 
-      // Baixar o arquivo para reenviar em binário ao webhook
-      const fileResp = await fetch(arquivoUrl);
-      if (!fileResp.ok) {
-        throw new Error(`Falha ao baixar arquivo da minuta (${fileResp.status})`);
-      }
-      const fileBlob = await fileResp.blob();
-      const fileName = `minuta_${relatorio.id}.pdf`;
-      const file = new File([fileBlob], fileName, {
-        type: fileBlob.type || "application/pdf",
-      });
-
-      // Payload de reprocessamento com marcador de dados faltantes
+      // Payload com os campos preenchidos pelo usuário + dados_minuta do banco
       const payloadReenvio = {
         relatorio_id: relatorio.id,
         origem: "preenchimento_usuario",
         data_reenvio: new Date().toISOString(),
+        dados_minuta: (relatorio as any).dados_minuta ?? null,
         campos_preenchidos: dados,
         campos_pendentes_originais: camposPendentesDialog.camposPendentes,
       };
 
-      // Envio via proxy para evitar problemas de CORS e manter padrão do projeto
-      const formData = new FormData();
-      formData.append("webhookUrl", webhookUrl);
-      formData.append("payload", JSON.stringify(payloadReenvio));
-      formData.append("file", file, file.name);
+      // Envio como JSON via proxy (sem arquivo binário)
       const proxyResp = await fetch("/api/webhook-proxy", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ webhookUrl, payload: payloadReenvio }),
       });
 
       if (!proxyResp.ok) {
@@ -764,36 +743,34 @@ const AnaliseIA = () => {
           const errJson = await proxyResp.json();
           errorText = errJson?.details || errJson?.error || errorText;
         } catch {
-          // ignore parse error
+          // ignore
         }
         throw new Error(errorText);
       }
 
+      // Atualiza o banco marcando como processando
       const resumoAtual = (relatorio as any).resumo || {};
-      const resumoAtualizado = {
-        ...resumoAtual,
-        campos_preenchidos: dados,
-        data_preenchimento: new Date().toISOString(),
-        data_reprocessamento_inicio: new Date().toISOString(),
-        dados_faltantes_enviados: true,
-        data_reenvio_dados_faltantes: new Date().toISOString(),
-        requer_preenchimento: false,
-      };
-      
       await updateRelatorio(
         camposPendentesDialog.relatorioId,
         {
           status: "processando" as any,
-          resumo: resumoAtualizado,
+          resumo: {
+            ...resumoAtual,
+            campos_preenchidos: dados,
+            data_preenchimento: new Date().toISOString(),
+            data_reprocessamento_inicio: new Date().toISOString(),
+            dados_faltantes_enviados: true,
+            data_reenvio_dados_faltantes: new Date().toISOString(),
+            requer_preenchimento: false,
+          },
         } as any,
         { silent: true }
       );
 
-      toast.success("Dados faltantes enviados para reprocessamento!", {
+      toast.success("Dados enviados para reprocessamento!", {
         id: "reenviar-dados-faltantes",
       });
-      
-      // Fechar dialog
+
       setCamposPendentesDialog({
         open: false,
         relatorioId: null,
@@ -802,10 +779,9 @@ const AnaliseIA = () => {
         mensagensAlerta: [],
       });
 
-      // Recarregar relatórios
       await fetchRelatorios();
     } catch (error) {
-      console.error("Erro ao salvar campos preenchidos:", error);
+      console.error("Erro ao reenviar campos preenchidos:", error);
       toast.error(
         error instanceof Error ? error.message : "Erro ao reenviar os dados. Tente novamente.",
         { id: "reenviar-dados-faltantes" }
