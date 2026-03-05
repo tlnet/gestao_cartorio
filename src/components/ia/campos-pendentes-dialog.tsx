@@ -128,6 +128,16 @@ export const CamposPendentesDialog: React.FC<CamposPendentesDialogProps> = ({
           </DialogDescription>
         </DialogHeader>
 
+        <Alert className="border-amber-300 bg-amber-50 text-amber-800">
+          <AlertCircle className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-amber-800 text-sm">
+            Os dados abaixo não puderam ser obtidos automaticamente porque{" "}
+            <strong>não foram enviados</strong> nos documentos ou estavam{" "}
+            <strong>ilegíveis</strong>. Por favor, preencha-os manualmente para
+            que a minuta possa ser gerada.
+          </AlertDescription>
+        </Alert>
+
         <div className="space-y-4">
           {/* Mensagens de Erro */}
           {mensagensErro.length > 0 && (
