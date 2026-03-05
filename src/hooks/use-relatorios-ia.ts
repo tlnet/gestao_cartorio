@@ -786,33 +786,43 @@ export const useRelatoriosIA = () => {
         webhook_callback: payload.webhook_callback,
       });
 
+      const WEBHOOK_TIMEOUT_MS = 60_000; // 60 segundos
+
       let response;
       try {
         // Tentar envio direto primeiro (POST)
         console.log("🔄 Tentativa 1: Envio direto...");
-        response = await fetch(finalWebhookUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "User-Agent": "GestaoCartorio/1.0",
-          },
-          body: JSON.stringify(payload),
-        });
+        const directAbort = new AbortController();
+        const directTimer = setTimeout(() => directAbort.abort(), WEBHOOK_TIMEOUT_MS);
+        try {
+          response = await fetch(finalWebhookUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+            signal: directAbort.signal,
+          });
+        } finally {
+          clearTimeout(directTimer);
+        }
         console.log("✅ Envio direto funcionou!");
         console.log("📊 Status da resposta:", response.status, response.statusText);
-        console.log(
-          "📋 Headers da resposta:",
-          Object.fromEntries(response.headers.entries())
-        );
-      } catch (corsError) {
-        console.log("⚠️ CORS bloqueado, tentando via proxy...");
-        console.log("🔍 Erro CORS:", corsError);
+      } catch (directError) {
+        if ((directError as any)?.name === "AbortError") {
+          console.error("⏱️ Timeout no envio direto (60s), tentando via proxy...");
+        } else {
+          console.log("⚠️ Envio direto falhou (possível CORS), tentando via proxy...");
+          console.log("🔍 Erro:", directError);
+        }
 
-        // Se CORS falhar, tentar via proxy
+        // Se direto falhar (CORS ou timeout), tentar via proxy
         const proxyUrl = `${window.location.origin}/api/webhook-proxy`;
         console.log("🔄 Tentativa 2: Envio via proxy...");
         console.log("🔗 URL do proxy:", proxyUrl);
 
+        const proxyAbort = new AbortController();
+        const proxyTimer = setTimeout(() => proxyAbort.abort(), WEBHOOK_TIMEOUT_MS);
         try {
           response = await fetch(proxyUrl, {
             method: "POST",
@@ -823,9 +833,16 @@ export const useRelatoriosIA = () => {
               webhookUrl: finalWebhookUrl,
               payload: payload,
             }),
+            signal: proxyAbort.signal,
           });
           console.log("✅ Envio via proxy funcionou! Status:", response.status, response.statusText);
         } catch (proxyError) {
+          clearTimeout(proxyTimer);
+          if ((proxyError as any)?.name === "AbortError") {
+            throw new Error(
+              "Tempo limite excedido (60s) ao enviar para o webhook. Verifique se o N8N está acessível e o workflow está ativo."
+            );
+          }
           console.error("❌ Erro no proxy:", proxyError);
           throw new Error(
             `Erro no proxy: ${
@@ -834,6 +851,8 @@ export const useRelatoriosIA = () => {
                 : "Erro desconhecido"
             }`
           );
+        } finally {
+          clearTimeout(proxyTimer);
         }
       }
 

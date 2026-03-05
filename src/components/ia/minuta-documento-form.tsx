@@ -886,21 +886,68 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
       
       onProcessComplete(relatorio);
 
-      // Limpar formulário
+      // Limpar formulário principal
       setFormData({
         compradores: null,
         vendedores: null,
         certidoes: null,
         documentosImovel: null,
       });
-      
+
       setCardStatus({
         compradores: "pending",
         vendedores: "pending",
         certidoes: "pending",
         documentosImovel: "pending",
       });
-      
+
+      // Limpar todos os estados temporários dos modais
+      setTempCompradorData({
+        rg: null,
+        cpf: null,
+        comprovanteEndereco: null,
+        email: "",
+        qualificacaoProfissional: "",
+        casado: false,
+        conjuge: null,
+      });
+      setTempConjugeData({
+        rg: null,
+        cpf: null,
+        email: "",
+        qualificacaoProfissional: "",
+        certidaoCasamento: null,
+      });
+      setTempVendedoresData([
+        {
+          id: crypto.randomUUID(),
+          rg: null,
+          cpf: null,
+          comprovanteEndereco: null,
+          email: "",
+          qualificacaoProfissional: "",
+          casado: false,
+          conjuge: null,
+        },
+      ]);
+      setMultiplosVendedores(false);
+      setTempCertidoesData({
+        cndt: null,
+        cndFederal: null,
+        casado: false,
+        conjuge: null,
+      });
+      setTempCertidoesConjugeData({
+        cndt: null,
+        cndFederal: null,
+      });
+      setTempDocumentosImovelData({
+        matricula: null,
+        guiaITBI: null,
+        certidaoOnus: null,
+        certidaoNegativaImovel: null,
+      });
+
       setShowMainDialog(false);
       setSelectedMinutaType(null);
       

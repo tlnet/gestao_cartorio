@@ -55,10 +55,17 @@ export async function POST(request: NextRequest) {
       }
 
       console.log("🌐 Proxy API (multipart): Enviando para webhook:", webhookUrl);
-      response = await fetch(webhookUrl, {
-        method: "POST",
-        body: forwardFormData,
-      });
+      const multipartAbort = new AbortController();
+      const multipartTimer = setTimeout(() => multipartAbort.abort(), 55_000);
+      try {
+        response = await fetch(webhookUrl, {
+          method: "POST",
+          body: forwardFormData,
+          signal: multipartAbort.signal,
+        });
+      } finally {
+        clearTimeout(multipartTimer);
+      }
     } else {
       const body = await request.json();
       console.log("📦 Proxy API: Body recebido:", body);
@@ -87,14 +94,20 @@ export async function POST(request: NextRequest) {
       console.log("🌐 Proxy API: Enviando para webhook:", webhookUrl);
       console.log("📋 Proxy API: Payload:", payload);
 
-      response = await fetch(webhookUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "User-Agent": "GestaoCartorio/1.0",
-        },
-        body: JSON.stringify(payload),
-      });
+      const jsonAbort = new AbortController();
+      const jsonTimer = setTimeout(() => jsonAbort.abort(), 55_000);
+      try {
+        response = await fetch(webhookUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+          signal: jsonAbort.signal,
+        });
+      } finally {
+        clearTimeout(jsonTimer);
+      }
     }
 
     console.log("📊 Proxy API: Status da resposta:", response.status);
@@ -158,6 +171,17 @@ export async function POST(request: NextRequest) {
       response: responseData,
     });
   } catch (error) {
+    if ((error as any)?.name === "AbortError") {
+      console.error("⏱️ Proxy API: Timeout ao chamar webhook (55s)");
+      return NextResponse.json(
+        {
+          error: "Tempo limite excedido",
+          details:
+            "O webhook não respondeu dentro de 55 segundos. Verifique se o N8N está acessível e o workflow está ativo.",
+        },
+        { status: 504 }
+      );
+    }
     console.error("💥 Proxy API: Erro interno:", error);
     return NextResponse.json(
       {
