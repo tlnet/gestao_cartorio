@@ -107,6 +107,12 @@ const AnaliseIA = () => {
     mensagensAlerta: [],
   });
 
+  // Estado para controle do popup de escolha de formato de download
+  const [downloadDialog, setDownloadDialog] = useState<{
+    open: boolean;
+    relatorio: RelatorioIA | null;
+  }>({ open: false, relatorio: null });
+
   const tiposAnaliseSimples = [
     {
       id: "resumo_matricula",
@@ -225,6 +231,31 @@ const AnaliseIA = () => {
     } catch (error) {
       console.error("Erro no download:", error);
       toast.error("Erro ao baixar arquivo");
+    }
+  };
+
+  // Abre popup de escolha de formato ou faz download direto se só há um formato
+  const handleDownloadClick = (relatorio: RelatorioIA) => {
+    const hasPdf = !!relatorio.relatorio_pdf;
+    const hasDoc = !!relatorio.relatorio_doc;
+
+    if (hasPdf && hasDoc) {
+      setDownloadDialog({ open: true, relatorio });
+    } else if (hasPdf) {
+      downloadFile(
+        relatorio.relatorio_pdf!,
+        `analise_${relatorio.nome_arquivo || relatorio.id}.pdf`
+      );
+    } else if (hasDoc) {
+      downloadFile(
+        relatorio.relatorio_doc!,
+        `analise_${relatorio.nome_arquivo || relatorio.id}.doc`
+      );
+    } else if (relatorio.arquivo_resultado) {
+      const url =
+        relatorio.arquivo_resultado.split(",")[0]?.trim() ||
+        relatorio.arquivo_resultado;
+      downloadFile(url, `analise_${relatorio.nome_arquivo || relatorio.id}`);
     }
   };
 
@@ -1167,120 +1198,59 @@ const AnaliseIA = () => {
                         <div className="flex space-x-1">
                           {(relatorio.status === "concluido" || relatorio.status === "analise_incompleta") && (
                             <>
-                              {/* Priorizar relatorio_pdf, depois relatorio_doc, depois arquivo_resultado */}
-                              {relatorio.relatorio_pdf && (
-                                <>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => {
-                                      if (relatorio.relatorio_pdf) {
-                                        window.open(
-                                          relatorio.relatorio_pdf,
-                                          "_blank"
-                                        );
-                                      }
-                                    }}
-                                    disabled={!relatorio.relatorio_pdf}
-                                    title="Visualizar análise PDF"
-                                    className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => {
-                                      if (relatorio.relatorio_pdf) {
-                                        downloadFile(
-                                          relatorio.relatorio_pdf,
-                                          `analise_${relatorio.nome_arquivo || relatorio.id}.pdf`
-                                        );
-                                      }
-                                    }}
-                                    title="Download análise PDF"
-                                    className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
-                                  >
-                                    <Download className="h-4 w-4" />
-                                  </Button>
-                                </>
-                              )}
-                              {!relatorio.relatorio_pdf &&
-                                relatorio.relatorio_doc && (
-                                  <>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => {
-                                        if (relatorio.relatorio_doc) {
-                                          window.open(
-                                            relatorio.relatorio_doc,
-                                            "_blank"
-                                          );
-                                        }
-                                      }}
-                                      disabled={!relatorio.relatorio_doc}
-                                      title="Visualizar análise DOC"
-                                      className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
-                                    >
-                                      <FileText className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => {
-                                        if (relatorio.relatorio_doc) {
-                                          downloadFile(
-                                            relatorio.relatorio_doc,
-                                            `analise_${relatorio.nome_arquivo || relatorio.id}.doc`
-                                          );
-                                        }
-                                      }}
-                                      disabled={!relatorio.relatorio_doc}
-                                      title="Download análise DOC"
-                                      className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
-                                    >
-                                      <Download className="h-4 w-4" />
-                                    </Button>
-                                  </>
-                                )}
-                              {!relatorio.relatorio_pdf &&
-                                !relatorio.relatorio_doc &&
-                                relatorio.arquivo_resultado && (
-                                  <>
+                              {/* Botão de visualizar — abre o melhor formato disponível */}
+                              {getArquivoGeradoUrl(relatorio) && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
                                     <Button
                                       variant="ghost"
                                       size="sm"
                                       onClick={() =>
                                         window.open(
-                                          relatorio.arquivo_resultado,
+                                          getArquivoGeradoUrl(relatorio)!,
                                           "_blank"
                                         )
                                       }
-                                      title="Visualizar análise"
+                                      title="Visualizar arquivo"
                                       className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
                                     >
                                       <Eye className="h-4 w-4" />
                                     </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Visualizar arquivo</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
+
+                              {/* Botão de download unificado — abre popup quando há PDF e DOC */}
+                              {(relatorio.relatorio_pdf ||
+                                relatorio.relatorio_doc ||
+                                relatorio.arquivo_resultado) && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
                                     <Button
                                       variant="ghost"
                                       size="sm"
-                                      onClick={() => {
-                                        if (relatorio.arquivo_resultado) {
-                                          downloadFile(
-                                            relatorio.arquivo_resultado,
-                                            `analise_${relatorio.nome_arquivo || relatorio.id}`
-                                          );
-                                        }
-                                      }}
-                                      disabled={!relatorio.arquivo_resultado}
-                                      title="Download análise"
+                                      onClick={() =>
+                                        handleDownloadClick(relatorio)
+                                      }
+                                      title="Baixar arquivo"
                                       className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
                                     >
                                       <Download className="h-4 w-4" />
                                     </Button>
-                                  </>
-                                )}
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>
+                                      {relatorio.relatorio_pdf &&
+                                      relatorio.relatorio_doc
+                                        ? "Baixar arquivo (PDF ou DOC)"
+                                        : "Baixar arquivo"}
+                                    </p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
                             </>
                           )}
                           {relatorio.status === "processando" && (
@@ -1375,6 +1345,72 @@ const AnaliseIA = () => {
           </Card>
         </div>
       </div>
+
+      {/* Dialog de escolha de formato de download */}
+      <Dialog
+        open={downloadDialog.open}
+        onOpenChange={(open) =>
+          setDownloadDialog((prev) => ({ ...prev, open }))
+        }
+      >
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Baixar Arquivo</DialogTitle>
+            <DialogDescription>
+              Escolha o formato que deseja baixar.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            {downloadDialog.relatorio?.relatorio_pdf && (
+              <Button
+                variant="outline"
+                className="flex flex-col h-24 gap-2 border-red-200 hover:border-red-400 hover:bg-red-50"
+                onClick={() => {
+                  if (downloadDialog.relatorio?.relatorio_pdf) {
+                    downloadFile(
+                      downloadDialog.relatorio.relatorio_pdf,
+                      `analise_${
+                        downloadDialog.relatorio.nome_arquivo ||
+                        downloadDialog.relatorio.id
+                      }.pdf`
+                    );
+                    setDownloadDialog((prev) => ({ ...prev, open: false }));
+                  }
+                }}
+              >
+                <FileText className="h-7 w-7 text-red-500" />
+                <span className="text-sm font-semibold text-red-700">PDF</span>
+              </Button>
+            )}
+            {downloadDialog.relatorio?.relatorio_doc && (
+              <Button
+                variant="outline"
+                className="flex flex-col h-24 gap-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50"
+                onClick={() => {
+                  if (downloadDialog.relatorio?.relatorio_doc) {
+                    const ext =
+                      downloadDialog.relatorio.relatorio_doc
+                        .split(".")
+                        .pop()
+                        ?.toLowerCase() || "doc";
+                    downloadFile(
+                      downloadDialog.relatorio.relatorio_doc,
+                      `analise_${
+                        downloadDialog.relatorio.nome_arquivo ||
+                        downloadDialog.relatorio.id
+                      }.${ext}`
+                    );
+                    setDownloadDialog((prev) => ({ ...prev, open: false }));
+                  }
+                }}
+              >
+                <FileText className="h-7 w-7 text-blue-500" />
+                <span className="text-sm font-semibold text-blue-700">DOC</span>
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog de Campos Pendentes */}
       <CamposPendentesDialog
