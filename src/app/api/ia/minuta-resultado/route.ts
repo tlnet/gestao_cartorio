@@ -294,23 +294,25 @@ export async function POST(request: NextRequest) {
         const timestamp = Date.now();
         const ext = docFile.name.split(".").pop() || "doc";
         const fileName = `minuta-doc-${relatorio_id}-${timestamp}.${ext}`;
+        console.log("📤 Iniciando upload do DOC:", { fileName, size: docFile.size, type: docFile.type });
         const { error: uploadError } = await supabase.storage
           .from("documentos-ia")
           .upload(fileName, docFile, {
             contentType: docFile.type || "application/msword",
-            upsert: false,
+            upsert: true,
           });
         if (uploadError) throw uploadError;
         const { data: { publicUrl } } = supabase.storage
           .from("documentos-ia")
           .getPublicUrl(fileName);
+        console.log("✅ DOC enviado ao Storage:", publicUrl);
         updates.relatorio_doc = publicUrl;
       } catch (uploadError) {
         console.error("❌ Erro no upload do DOC da minuta:", uploadError);
         const resumoAtual = (updates.resumo as Record<string, unknown>) || {};
         updates.resumo = {
           ...resumoAtual,
-          error_upload_doc: "Falha no upload do DOC; o restante foi registrado.",
+          error_upload_doc: uploadError instanceof Error ? uploadError.message : "Falha no upload do DOC",
         };
       }
     }
@@ -320,7 +322,16 @@ export async function POST(request: NextRequest) {
     let updated: any = null;
     let updateError: any = null;
 
+    console.log("📝 updatePayload antes do loop:", {
+      relatorio_id,
+      status: updatePayload.status,
+      relatorio_pdf: updatePayload.relatorio_pdf ? "✅ preenchido" : "❌ vazio",
+      relatorio_doc: updatePayload.relatorio_doc ? "✅ preenchido" : "❌ vazio",
+      campos: Object.keys(updatePayload),
+    });
+
     for (let attempt = 1; attempt <= 4; attempt++) {
+      console.log(`🔄 Tentativa ${attempt} de update — campos: ${Object.keys(updatePayload).join(", ")}`);
       const result = await supabase
         .from("relatorios_ia")
         .update(updatePayload)
@@ -330,7 +341,11 @@ export async function POST(request: NextRequest) {
 
       updated = result.data;
       updateError = result.error;
-      if (!updateError) break;
+      if (!updateError) {
+        console.log("✅ Update OK — relatorio_doc no banco:", updated?.relatorio_doc ?? "null/undefined");
+        break;
+      }
+      console.warn(`⚠️ Erro na tentativa ${attempt}:`, updateError?.message);
 
       const message = String(updateError.message || "");
       const details = String(updateError.details || "");
@@ -406,14 +421,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const hasPdf = !!(updates.relatorio_pdf);
-    const hasDoc = !!(updates.relatorio_doc);
+    // Usa dados reais do banco para garantir que o que foi salvo é o que é reportado
+    const pdfSalvo = updated?.relatorio_pdf ?? null;
+    const docSalvo = updated?.relatorio_doc ?? null;
+
+    // Alerta se o arquivo foi recebido mas não foi salvo
+    if (file && !pdfSalvo) {
+      console.error("⚠️ PDF recebido mas relatorio_pdf está null no banco após update!");
+    }
+    if (docFile && !docSalvo) {
+      console.error("⚠️ DOC recebido mas relatorio_doc está null no banco após update! updates.relatorio_doc era:", updates.relatorio_doc);
+    }
 
     console.log("✅ Minuta resultado processado:", {
       relatorio_id,
       status: updates.status,
-      pdf: hasPdf ? (file ? `binário(${file.name})` : `url`) : "nenhum",
-      doc: hasDoc ? (docFile ? `binário(${docFile.name})` : `url`) : "nenhum",
+      pdf_no_banco: pdfSalvo ? "✅" : "❌",
+      doc_no_banco: docSalvo ? "✅" : "❌",
       timestamp: new Date().toISOString(),
     });
 
@@ -427,8 +451,8 @@ export async function POST(request: NextRequest) {
         status: updates.status,
         requer_preenchimento: !isConcluido,
         arquivos_recebidos: {
-          pdf: hasPdf ? (file ? `binário: ${file.name}` : `url: ${updates.relatorio_pdf}`) : null,
-          doc: hasDoc ? (docFile ? `binário: ${docFile.name}` : `url: ${updates.relatorio_doc}`) : null,
+          pdf: pdfSalvo ? (file ? `salvo: ${file.name}` : `url: ${pdfSalvo}`) : (file ? "ERRO: arquivo recebido mas NÃO salvo" : null),
+          doc: docSalvo ? (docFile ? `salvo: ${docFile.name}` : `url: ${docSalvo}`) : (docFile ? "ERRO: arquivo recebido mas NÃO salvo" : null),
         },
       },
     });
