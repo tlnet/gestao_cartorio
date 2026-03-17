@@ -520,13 +520,14 @@ export default function LoginClient() {
       setResetPasswordData({ password: "", confirmPassword: "" });
       setResetError("");
 
-      // Opcionalmente, redirecionar para o dashboard se a sessão já estiver ativa
-      const { data } = await supabase.auth.getSession();
-      if (data.session?.user) {
-        router.replace("/dashboard");
-      } else {
-        router.replace("/login");
+      // Encerrar sessão de recovery e voltar ao login (evita ficar preso em modo recovery)
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.warn("[RESET-PASSWORD] signOut falhou (ignorado):", e);
       }
+
+      router.replace("/login");
     } catch (error: any) {
       console.error("[RESET-PASSWORD] Erro inesperado:", error);
       const msg = error?.message || "Erro inesperado ao redefinir senha. Tente novamente.";
