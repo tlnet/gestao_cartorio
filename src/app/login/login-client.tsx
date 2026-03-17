@@ -78,6 +78,7 @@ export default function LoginClient() {
     }
 
     setShowResetPassword(true);
+    setRecoveryReady(false);
 
     // Quando o usuário vem do link de recuperação do Supabase, precisamos
     // trocar o código pelo token de sessão antes de atualizar a senha
@@ -104,20 +105,57 @@ export default function LoginClient() {
           router.replace("/login");
         });
     } else {
-      // Pode já existir uma sessão ativa (por exemplo, o usuário clicou
-      // no link no mesmo navegador onde já estava autenticado)
-      supabase.auth.getSession().then(({ data, error }) => {
-        if (error || !data.session) {
-          console.error("[RECOVERY] Sessão de recuperação não encontrada:", error);
-          toast.error(
-            "Sessão de recuperação não encontrada. Solicite um novo link."
-          );
+      // Alguns links do Supabase chegam via hash (#access_token=...),
+      // que não aparece em useSearchParams(). Precisamos capturar e criar a sessão.
+      const ensureRecoverySession = async () => {
+        try {
+          const hash =
+            typeof window !== "undefined" ? window.location.hash : "";
+
+          if (hash && hash.includes("access_token=") && hash.includes("refresh_token=")) {
+            const params = new URLSearchParams(hash.replace(/^#/, ""));
+            const access_token = params.get("access_token");
+            const refresh_token = params.get("refresh_token");
+
+            if (access_token && refresh_token) {
+              const { error } = await supabase.auth.setSession({
+                access_token,
+                refresh_token,
+              });
+
+              if (error) {
+                console.error("[RECOVERY] Erro ao setar sessão via hash:", error);
+              } else {
+                // Limpar hash da URL após processar
+                router.replace("/login?type=recovery");
+                setRecoveryReady(true);
+                return;
+              }
+            }
+          }
+
+          // Fallback: pode já existir uma sessão ativa (ex.: mesmo navegador)
+          const { data, error } = await supabase.auth.getSession();
+          if (error || !data.session) {
+            console.error("[RECOVERY] Sessão de recuperação não encontrada:", error);
+            toast.error(
+              "Sessão de recuperação não encontrada. Solicite um novo link."
+            );
+            setShowResetPassword(false);
+            router.replace("/login");
+            return;
+          }
+
+          setRecoveryReady(true);
+        } catch (error) {
+          console.error("[RECOVERY] Erro inesperado ao preparar sessão:", error);
+          toast.error("Erro ao processar link de recuperação.");
           setShowResetPassword(false);
           router.replace("/login");
-          return;
         }
-        setRecoveryReady(true);
-      });
+      };
+
+      void ensureRecoverySession();
     }
   }, [router, searchParams]);
 
