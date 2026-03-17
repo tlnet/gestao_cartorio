@@ -292,6 +292,62 @@ export default function LoginClient() {
     return json;
   };
 
+  const signInViaRest = async (email: string, password: string) => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !anon) {
+      throw new Error("Supabase não configurado (URL/ANON).");
+    }
+
+    const endpoint = `${url}/auth/v1/token?grant_type=password`;
+    console.log("[LOGIN][REST] Iniciando POST /auth/v1/token", { endpoint });
+
+    const res = await fetchWithAbort(
+      endpoint,
+      {
+        method: "POST",
+        headers: {
+          apikey: anon,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      },
+      20000
+    );
+
+    const text = await res.text();
+    let json: any = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      // ignore
+    }
+
+    if (!res.ok) {
+      const message =
+        json?.msg ||
+        json?.message ||
+        json?.error_description ||
+        json?.error ||
+        text ||
+        `HTTP ${res.status}`;
+      console.error("[LOGIN][REST] Falhou", { status: res.status, body: json ?? text });
+      throw new Error(message);
+    }
+
+    console.log("[LOGIN][REST] Sucesso", {
+      hasAccessToken: !!json?.access_token,
+      hasRefreshToken: !!json?.refresh_token,
+      userId: json?.user?.id ?? null,
+    });
+
+    return json as {
+      access_token: string;
+      refresh_token: string;
+      user: { id: string; email: string };
+    };
+  };
+
   // Detectar modo de recuperação de senha a partir dos parâmetros da URL
   useEffect(() => {
     if (!isRecoveryLink()) {
@@ -388,6 +444,50 @@ export default function LoginClient() {
       ])) as any;
 
       if (error) {
+        // Se travou/timeout, tentar fallback via REST (com AbortController)
+        if (String(error?.message || "").includes("Tempo de espera excedido")) {
+          console.warn("[LOGIN] signInWithPassword demorou demais. Tentando via REST...");
+          const rest = await signInViaRest(loginData.email, loginData.password);
+          const { error: setSessionError } = await withTimeout(
+            supabase.auth.setSession({
+              access_token: rest.access_token,
+              refresh_token: rest.refresh_token,
+            }),
+            10000,
+            "Timeout ao persistir sessão após login."
+          );
+          if (setSessionError) {
+            console.error("[LOGIN] setSession falhou após REST:", setSessionError);
+            throw new Error(
+              "Login validado, mas não foi possível salvar a sessão no navegador. Desative extensões (adblock/antitracker) e tente novamente."
+            );
+          }
+
+          // Segue fluxo normal usando o user retornado
+          const userId = rest.user.id;
+          const { data: userProfile, error: profileError } = await supabase
+            .from("users")
+            .select("*")
+            .eq("id", userId)
+            .single();
+
+          if (profileError) {
+            console.warn("Erro ao buscar perfil do usuário:", profileError);
+          }
+
+          toast.success("Login realizado com sucesso!");
+          const roles = (userProfile as any)?.roles?.length
+            ? (userProfile as any).roles
+            : [(userProfile as any)?.role || "atendente"];
+          const defaultRoute = roles.includes("admin_geral")
+            ? "/admin"
+            : roles.includes("financeiro") && !roles.includes("admin")
+              ? "/contas"
+              : "/dashboard";
+          router.push(defaultRoute);
+          return;
+        }
+
         // Se o erro for "Invalid login credentials" e o usuário acabou de ser criado,
         // pode ser um problema de sincronização - tentar novamente após um delay
         if (error.message?.includes("Invalid login credentials")) {
@@ -600,12 +700,26 @@ export default function LoginClient() {
 
       // Encerrar sessão de recovery e voltar ao login (evita ficar preso em modo recovery)
       try {
-        await supabase.auth.signOut();
+        // Em alguns ambientes o signOut pode travar por storage/locks.
+        // Não bloquear o redirecionamento por causa disso.
+        await withTimeout(
+          supabase.auth.signOut(),
+          5000,
+          "Timeout ao finalizar sessão."
+        );
       } catch (e) {
         console.warn("[RESET-PASSWORD] signOut falhou (ignorado):", e);
       }
 
       router.replace("/login");
+      // Fallback: se o router estiver travado, forçar navegação.
+      if (typeof window !== "undefined") {
+        window.setTimeout(() => {
+          if (window.location.pathname !== "/login") {
+            window.location.href = "/login";
+          }
+        }, 300);
+      }
     } catch (error: any) {
       console.error("[RESET-PASSWORD] Erro inesperado:", error);
       const msg = error?.message || "Erro inesperado ao redefinir senha. Tente novamente.";
