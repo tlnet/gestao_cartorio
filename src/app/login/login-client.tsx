@@ -78,6 +78,40 @@ export default function LoginClient() {
     );
   };
 
+  const mask = (value: string, keepStart = 6, keepEnd = 4) => {
+    if (!value) return value;
+    if (value.length <= keepStart + keepEnd) return "***";
+    return `${value.slice(0, keepStart)}***${value.slice(-keepEnd)}`;
+  };
+
+  const logRecoveryContext = () => {
+    try {
+      if (typeof window === "undefined") return;
+      const type = searchParams.get("type") || "";
+      const code = searchParams.get("code") || "";
+      const tokenHash = searchParams.get("token_hash") || "";
+      const hash = window.location.hash || "";
+
+      const hasAccessToken = hash.includes("access_token=");
+      const hasRefreshToken = hash.includes("refresh_token=");
+
+      console.log("[RECOVERY][CTX]", {
+        pathname: window.location.pathname,
+        search: window.location.search,
+        hasTypeRecovery: type === "recovery",
+        hasCode: !!code,
+        codeMasked: code ? mask(code) : null,
+        hasTokenHash: !!tokenHash,
+        tokenHashMasked: tokenHash ? mask(tokenHash) : null,
+        hashHasAccessToken: hasAccessToken,
+        hashHasRefreshToken: hasRefreshToken,
+        hashLength: hash.length,
+      });
+    } catch (e) {
+      console.warn("[RECOVERY][CTX] Falha ao logar contexto:", e);
+    }
+  };
+
   // Detectar modo de recuperação de senha a partir dos parâmetros da URL
   useEffect(() => {
     if (!isRecoveryLink()) {
@@ -89,6 +123,9 @@ export default function LoginClient() {
     setRecoveryReady(false);
 
     void (async () => {
+      console.log("[RECOVERY] Iniciando processamento do link de recuperação...");
+      logRecoveryContext();
+
       // O método correto do Supabase para links de recovery é getSessionFromUrl().
       // Ele lida com ?code=... e também com #access_token=... automaticamente.
       const { data, error } = await supabase.auth.getSessionFromUrl({
@@ -106,14 +143,30 @@ export default function LoginClient() {
 
       // Se já houver sessão, ok. Se não houver, pode ser um link já consumido/expirado.
       const session = data?.session ?? null;
+      console.log("[RECOVERY] getSessionFromUrl OK. Sessão retornada?", {
+        hasSession: !!session,
+        userId: session?.user?.id ?? null,
+        expiresAt: session?.expires_at ?? null,
+      });
       if (!session) {
         console.warn("[RECOVERY] Nenhuma sessão retornada pelo link.");
-        setResetError("Sessão de recuperação inválida/expirada. Solicite um novo link.");
-        toast.error("Sessão de recuperação inválida/expirada. Solicite um novo link.");
+        setResetError(
+          "Não foi possível iniciar a sessão de recuperação. Solicite um novo link e abra o e-mail novamente."
+        );
+        toast.error(
+          "Sessão de recuperação não iniciada. Solicite um novo link."
+        );
         setShowResetPassword(false);
         router.replace("/login");
         return;
       }
+
+      // Checagem extra: sessão persistida
+      const { data: persisted } = await supabase.auth.getSession();
+      console.log("[RECOVERY] Sessão persistida após getSessionFromUrl?", {
+        hasSession: !!persisted.session,
+        userId: persisted.session?.user?.id ?? null,
+      });
 
       setRecoveryReady(true);
     })();
@@ -331,13 +384,29 @@ export default function LoginClient() {
 
     try {
       setResetLoading(true);
+      console.log("[RESET-PASSWORD] Submit iniciado.");
 
       // Precisamos de uma sessão válida (definida pelo getSessionFromUrl no useEffect).
       // Caso o usuário tenha recarregado e perdido o contexto, tentamos novamente.
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
+      const { data: sessionDataBefore, error: sessionBeforeError } =
+        await supabase.auth.getSession();
+      console.log("[RESET-PASSWORD] Sessão antes de consumir URL:", {
+        hasSession: !!sessionDataBefore.session,
+        userId: sessionDataBefore.session?.user?.id ?? null,
+        error: sessionBeforeError?.message ?? null,
+      });
+
+      if (!sessionDataBefore.session) {
+        console.log(
+          "[RESET-PASSWORD] Sem sessão. Tentando consumir URL novamente via getSessionFromUrl..."
+        );
         const { data, error } = await supabase.auth.getSessionFromUrl({
           storeSession: true,
+        });
+        console.log("[RESET-PASSWORD] getSessionFromUrl no submit:", {
+          hasSession: !!data.session,
+          userId: data.session?.user?.id ?? null,
+          error: error?.message ?? null,
         });
         if (error || !data.session) {
           const message =
@@ -347,6 +416,12 @@ export default function LoginClient() {
           return;
         }
       }
+
+      const { data: sessionDataAfter } = await supabase.auth.getSession();
+      console.log("[RESET-PASSWORD] Sessão confirmada antes do updateUser:", {
+        hasSession: !!sessionDataAfter.session,
+        userId: sessionDataAfter.session?.user?.id ?? null,
+      });
 
       const { error } = await supabase.auth.updateUser({
         password: resetPasswordData.password,
@@ -359,6 +434,7 @@ export default function LoginClient() {
         return;
       }
 
+      console.log("[RESET-PASSWORD] updateUser OK. Senha atualizada.");
       toast.success("Senha redefinida com sucesso! Você já pode fazer login.");
       setShowResetPassword(false);
       setResetPasswordData({ password: "", confirmPassword: "" });

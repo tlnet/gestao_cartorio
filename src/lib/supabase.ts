@@ -28,9 +28,6 @@ const finalKey = supabaseAnonKey || "placeholder-key";
 
 export const supabase = createClient(finalUrl, finalKey, {
   auth: {
-    // Usar PKCE para links de e-mail (recovery/confirm/invite) no Next.js.
-    // Evita o fluxo implícito via hash (#access_token=...), que é mais frágil e causa problemas em alguns browsers.
-    flowType: "pkce",
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
