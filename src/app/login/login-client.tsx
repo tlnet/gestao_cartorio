@@ -64,82 +64,23 @@ export default function LoginClient() {
     }
   };
 
-  const prepareRecoverySession = async (): Promise<boolean> => {
-    try {
-      const code = searchParams.get("code");
-      const tokenHash = searchParams.get("token_hash");
-      const type = searchParams.get("type") || "recovery";
-
-      // 1) Fluxo PKCE (Supabase envia ?code=...)
-      if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) {
-          console.error("[RECOVERY] exchangeCodeForSession falhou:", error);
-          return false;
-        }
-        return true;
-      }
-
-      // 2) Fluxo token_hash (mais comum em alguns templates/links)
-      if (tokenHash) {
-        const { error } = await supabase.auth.verifyOtp({
-          type: type as any,
-          token_hash: tokenHash,
-        });
-        if (error) {
-          console.error("[RECOVERY] verifyOtp falhou:", error);
-          return false;
-        }
-        return true;
-      }
-
-      // 3) Fluxo implícito via hash (#access_token=...&refresh_token=...)
-      const hash = typeof window !== "undefined" ? window.location.hash : "";
-      if (hash && hash.includes("access_token=")) {
-        const params = new URLSearchParams(hash.replace(/^#/, ""));
-        const access_token = params.get("access_token");
-        const refresh_token = params.get("refresh_token");
-
-        if (access_token && refresh_token) {
-          const { error } = await supabase.auth.setSession({
-            access_token,
-            refresh_token,
-          });
-
-          if (error) {
-            console.error("[RECOVERY] setSession via hash falhou:", error);
-            return false;
-          }
-
-          // Limpar hash sem navegar (evita resetar estado no meio do submit)
-          if (typeof window !== "undefined") {
-            window.history.replaceState(
-              null,
-              "",
-              `${window.location.pathname}${window.location.search}`
-            );
-          }
-          return true;
-        }
-      }
-
-      // 4) Fallback: se já existe sessão no navegador
-      const { data } = await supabase.auth.getSession();
-      return !!data.session;
-    } catch (error) {
-      console.error("[RECOVERY] Erro ao preparar sessão:", error);
-      return false;
-    }
+  const isRecoveryLink = () => {
+    const type = searchParams.get("type");
+    const recovery = searchParams.get("recovery");
+    if (type === "recovery" || recovery === "1") return true;
+    if (typeof window === "undefined") return false;
+    const hash = window.location.hash || "";
+    // Links de recovery do Supabase podem vir com tokens no hash.
+    return (
+      hash.includes("type=recovery") ||
+      hash.includes("access_token=") ||
+      hash.includes("token=")
+    );
   };
 
   // Detectar modo de recuperação de senha a partir dos parâmetros da URL
   useEffect(() => {
-    const type = searchParams.get("type");
-    const recovery = searchParams.get("recovery");
-
-    const isRecoveryMode = type === "recovery" || recovery === "1";
-
-    if (!isRecoveryMode) {
+    if (!isRecoveryLink()) {
       setShowResetPassword(false);
       return;
     }
@@ -148,12 +89,32 @@ export default function LoginClient() {
     setRecoveryReady(false);
 
     void (async () => {
-      const ok = await prepareRecoverySession();
-      if (!ok) {
-        // Não travar a UI aqui; o clique em "Redefinir senha" tentará novamente
-        console.warn("[RECOVERY] Sessão ainda não pronta; aguardando interação do usuário.");
+      // O método correto do Supabase para links de recovery é getSessionFromUrl().
+      // Ele lida com ?code=... e também com #access_token=... automaticamente.
+      const { data, error } = await supabase.auth.getSessionFromUrl({
+        storeSession: true,
+      });
+
+      if (error) {
+        console.error("[RECOVERY] getSessionFromUrl falhou:", error);
+        setResetError("Link de recuperação inválido ou expirado.");
+        toast.error("Link de recuperação inválido ou expirado.");
+        setShowResetPassword(false);
+        router.replace("/login");
         return;
       }
+
+      // Se já houver sessão, ok. Se não houver, pode ser um link já consumido/expirado.
+      const session = data?.session ?? null;
+      if (!session) {
+        console.warn("[RECOVERY] Nenhuma sessão retornada pelo link.");
+        setResetError("Sessão de recuperação inválida/expirada. Solicite um novo link.");
+        toast.error("Sessão de recuperação inválida/expirada. Solicite um novo link.");
+        setShowResetPassword(false);
+        router.replace("/login");
+        return;
+      }
+
       setRecoveryReady(true);
     })();
   }, [router, searchParams]);
@@ -371,26 +332,20 @@ export default function LoginClient() {
     try {
       setResetLoading(true);
 
-      // Garantir sessão de recovery antes de atualizar a senha (links variam: code, token_hash, hash)
-      const hasSession = await prepareRecoverySession();
-      if (!hasSession) {
-        const message =
-          "Não foi possível validar a sessão de recuperação. Reabra o link do e-mail ou solicite uma nova recuperação.";
-        setResetError(message);
-        toast.error(message);
-        return;
-      }
-
-      // Confirmar que a sessão existe mesmo após preparar
-      const { data: sessionData, error: sessionError } =
-        await supabase.auth.getSession();
-      if (sessionError || !sessionData.session) {
-        console.error("[RESET-PASSWORD] Sessão ausente após preparar:", sessionError);
-        const message =
-          "Sessão de recuperação inválida/expirada. Solicite um novo link e tente novamente.";
-        setResetError(message);
-        toast.error(message);
-        return;
+      // Precisamos de uma sessão válida (definida pelo getSessionFromUrl no useEffect).
+      // Caso o usuário tenha recarregado e perdido o contexto, tentamos novamente.
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        const { data, error } = await supabase.auth.getSessionFromUrl({
+          storeSession: true,
+        });
+        if (error || !data.session) {
+          const message =
+            "Sessão de recuperação inválida/expirada. Solicite um novo link e tente novamente.";
+          setResetError(message);
+          toast.error(message);
+          return;
+        }
       }
 
       const { error } = await supabase.auth.updateUser({
@@ -418,8 +373,9 @@ export default function LoginClient() {
       }
     } catch (error: any) {
       console.error("[RESET-PASSWORD] Erro inesperado:", error);
-      setResetError("Erro inesperado ao redefinir senha.");
-      toast.error("Erro inesperado ao redefinir senha.");
+      const msg = error?.message || "Erro inesperado ao redefinir senha. Tente novamente.";
+      setResetError(msg);
+      toast.error(msg);
     } finally {
       setResetLoading(false);
     }
