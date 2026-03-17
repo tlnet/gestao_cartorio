@@ -50,8 +50,12 @@ export function RequirePermission({
   const { userType, userRoles, canAccess } = usePermissions();
   const router = useRouter();
 
+  // Em reload, a sessão pode existir antes do perfil/permissões estarem disponíveis.
+  // Para evitar falso "Acesso negado", aguardamos até termos userType ou userRoles.
+  const permissionsResolved = !user || !!userType || (userRoles?.length ?? 0) > 0;
+
   useEffect(() => {
-    // Não fazer nada enquanto está carregando
+    // Não fazer nada enquanto autenticação está carregando
     if (loading) return;
 
     // Se não está autenticado, redirecionar para login
@@ -60,11 +64,8 @@ export function RequirePermission({
       return;
     }
 
-    // Se usuário está autenticado mas userType ainda não foi carregado, aguardar
-    // Isso pode acontecer quando o perfil ainda está sendo buscado do banco
-    if (requiredRole && userType === null) {
-      return;
-    }
+    // Se está autenticado mas as permissões ainda não foram resolvidas, aguardar.
+    if (!permissionsResolved) return;
 
     if (requiredRole) {
       const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
@@ -91,9 +92,9 @@ export function RequirePermission({
 
   }, [loading, user, userType, userRoles, requiredRole, requiredPage, canAccess, router, redirectTo, fallback]);
 
-  // Exibir loading enquanto verifica autenticação OU enquanto userType não está carregado
-  // Se o usuário está autenticado mas userType ainda é null, ainda está carregando
-  if (loading || (user && userType === null && requiredRole)) {
+  // Exibir loading apenas enquanto autenticação está sendo verificada.
+  // O AuthProvider já tem timeout próprio para evitar loading infinito.
+  if (loading) {
     return (
       <div className="flex flex-col space-y-4 p-8">
         <Skeleton className="h-8 w-64" />
@@ -106,6 +107,17 @@ export function RequirePermission({
   // Se não está autenticado, não renderizar nada (vai redirecionar)
   if (!user) {
     return null;
+  }
+
+  // Sessão existe, mas ainda carregando perfil/permissões.
+  if (!permissionsResolved) {
+    return (
+      <div className="flex flex-col space-y-4 p-8">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
   }
 
   if (requiredRole) {

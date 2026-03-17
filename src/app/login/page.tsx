@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import {
   Card,
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Eye, EyeOff } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 
@@ -21,10 +21,20 @@ interface LoginFormData {
   password: string;
 }
 
+interface ResetPasswordFormData {
+  password: string;
+  confirmPassword: string;
+}
+
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [loginError, setLoginError] = useState<string>("");
+  const [resetError, setResetError] = useState<string>("");
+
+  const [recoveryReady, setRecoveryReady] = useState(false);
 
   // Formulário de login
   const [loginData, setLoginData] = useState<LoginFormData>({
@@ -32,7 +42,14 @@ export default function LoginPage() {
     password: "",
   });
 
+  const [resetPasswordData, setResetPasswordData] =
+    useState<ResetPasswordFormData>({
+      password: "",
+      confirmPassword: "",
+    });
+
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Função para limpar erro quando o usuário começar a digitar
   const clearLoginError = () => {
@@ -40,6 +57,64 @@ export default function LoginPage() {
       setLoginError("");
     }
   };
+
+  const clearResetError = () => {
+    if (resetError) {
+      setResetError("");
+    }
+  };
+
+  // Detectar modo de recuperação de senha a partir dos parâmetros da URL
+  useEffect(() => {
+    const type = searchParams.get("type");
+    const recovery = searchParams.get("recovery");
+    const code = searchParams.get("code");
+
+    const isRecoveryMode = type === "recovery" || recovery === "1";
+
+    if (!isRecoveryMode) {
+      setShowResetPassword(false);
+      return;
+    }
+
+    setShowResetPassword(true);
+
+    // Quando o usuário vem do link de recuperação do Supabase, precisamos
+    // trocar o código pelo token de sessão antes de atualizar a senha
+    if (code) {
+      supabase.auth
+        .exchangeCodeForSession(code)
+        .then(({ error }) => {
+          if (error) {
+            console.error("[RECOVERY] Erro ao criar sessão de recuperação:", error);
+            toast.error("Link de recuperação inválido ou expirado.");
+            setShowResetPassword(false);
+            router.replace("/login");
+            return;
+          }
+          setRecoveryReady(true);
+        })
+        .catch((error) => {
+          console.error("[RECOVERY] Erro inesperado ao processar link:", error);
+          toast.error("Erro ao processar link de recuperação.");
+          setShowResetPassword(false);
+          router.replace("/login");
+        });
+    } else {
+      // Pode já existir uma sessão ativa (por exemplo, o usuário clicou
+      // no link no mesmo navegador onde já estava autenticado)
+      supabase.auth.getSession().then(({ data, error }) => {
+        if (error || !data.session) {
+          console.error("[RECOVERY] Sessão de recuperação não encontrada:", error);
+          toast.error("Sessão de recuperação não encontrada. Solicite um novo link.");
+          setShowResetPassword(false);
+          router.replace("/login");
+          return;
+        }
+        setRecoveryReady(true);
+      });
+    }
+  }, [router, searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -177,6 +252,108 @@ export default function LoginPage() {
     }
   };
 
+  const handleForgotPassword = async () => {
+    setResetError("");
+
+    if (!loginData.email) {
+      const message = "Informe o e-mail para recuperar a senha.";
+      setResetError(message);
+      toast.error(message);
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const siteUrl =
+        process.env.NEXT_PUBLIC_SITE_URL ||
+        (typeof window !== "undefined" ? window.location.origin : "");
+
+      const redirectTo = siteUrl ? `${siteUrl}/login?type=recovery` : undefined;
+
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        loginData.email,
+        redirectTo ? { redirectTo } : undefined
+      );
+
+      if (error) {
+        console.error("[FORGOT-PASSWORD] Erro ao solicitar recuperação:", error);
+        toast.error("Erro ao enviar e-mail de recuperação: " + error.message);
+        return;
+      }
+
+      toast.success(
+        "Se o e-mail informado estiver cadastrado, você receberá um link para redefinir sua senha."
+      );
+    } catch (error: any) {
+      console.error("[FORGOT-PASSWORD] Erro inesperado:", error);
+      toast.error("Erro inesperado ao solicitar recuperação de senha.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetError("");
+
+    if (!resetPasswordData.password || !resetPasswordData.confirmPassword) {
+      const message = "Preencha e confirme a nova senha.";
+      setResetError(message);
+      toast.error(message);
+      return;
+    }
+
+    if (resetPasswordData.password !== resetPasswordData.confirmPassword) {
+      const message = "As senhas não conferem.";
+      setResetError(message);
+      toast.error(message);
+      return;
+    }
+
+    if (!recoveryReady) {
+      const message =
+        "Sessão de recuperação ainda não está pronta. Reabra o link do e-mail ou solicite uma nova recuperação.";
+      setResetError(message);
+      toast.error(message);
+      return;
+    }
+
+    try {
+      setResetLoading(true);
+
+      const { error } = await supabase.auth.updateUser({
+        password: resetPasswordData.password,
+      });
+
+      if (error) {
+        console.error("[RESET-PASSWORD] Erro ao redefinir senha:", error);
+        setResetError("Erro ao redefinir senha: " + error.message);
+        toast.error("Erro ao redefinir senha: " + error.message);
+        return;
+      }
+
+      toast.success("Senha redefinida com sucesso! Você já pode fazer login.");
+      setShowResetPassword(false);
+      setResetPasswordData({ password: "", confirmPassword: "" });
+      setResetError("");
+
+      // Opcionalmente, redirecionar para o dashboard se a sessão já estiver ativa
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.user) {
+        router.replace("/dashboard");
+      } else {
+        router.replace("/login");
+      }
+    } catch (error: any) {
+      console.error("[RESET-PASSWORD] Erro inesperado:", error);
+      setResetError("Erro inesperado ao redefinir senha.");
+      toast.error("Erro inesperado ao redefinir senha.");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   const handleInputChange = (field: keyof LoginFormData, value: string) => {
     setLoginData((prev) => ({ ...prev, [field]: value }));
   };
@@ -202,7 +379,89 @@ export default function LoginPage() {
           </CardHeader>
 
           <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
+            {showResetPassword ? (
+              <form onSubmit={handleResetPassword} className="space-y-4">
+                {resetError && (
+                  <div
+                    className="bg-red-50 border border-red-200 rounded-md p-3 transform transition-all duration-300 ease-in-out"
+                    style={{
+                      animation: "fadeInSlideDown 0.3s ease-out",
+                    }}
+                  >
+                    <p className="text-red-600 text-sm font-medium">
+                      {resetError}
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <Label htmlFor="reset-password">Nova senha</Label>
+                  <Input
+                    id="reset-password"
+                    type="password"
+                    placeholder="Nova senha segura"
+                    value={resetPasswordData.password}
+                    onChange={(e) => {
+                      setResetPasswordData((prev) => ({
+                        ...prev,
+                        password: e.target.value,
+                      }));
+                      clearResetError();
+                    }}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="reset-password-confirm">
+                    Confirmar nova senha
+                  </Label>
+                  <Input
+                    id="reset-password-confirm"
+                    type="password"
+                    placeholder="Confirme a nova senha"
+                    value={resetPasswordData.confirmPassword}
+                    onChange={(e) => {
+                      setResetPasswordData((prev) => ({
+                        ...prev,
+                        confirmPassword: e.target.value,
+                      }));
+                      clearResetError();
+                    }}
+                    required
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={resetLoading || !recoveryReady}
+                >
+                  {resetLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Salvando nova senha...
+                    </>
+                  ) : (
+                    "Redefinir senha"
+                  )}
+                </Button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowResetPassword(false);
+                    setResetPasswordData({ password: "", confirmPassword: "" });
+                    setResetError("");
+                    router.replace("/login");
+                  }}
+                  className="w-full text-sm text-gray-500 hover:text-gray-700 mt-2"
+                >
+                  Voltar para o login
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleLogin} className="space-y-4">
                 {/* Exibição de erro com animação */}
                 {loginError && (
                   <div
@@ -232,8 +491,17 @@ export default function LoginPage() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="login-password">Senha</Label>
-                  <div className="relative">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="login-password">Senha</Label>
+                    <button
+                      type="button"
+                      onClick={handleForgotPassword}
+                      className="text-xs text-blue-600 hover:underline"
+                    >
+                      Esqueci minha senha
+                    </button>
+                  </div>
+                  <div className="relative mt-1">
                     <Input
                       id="login-password"
                       type={showPassword ? "text" : "password"}
@@ -270,6 +538,7 @@ export default function LoginPage() {
                   )}
                 </Button>
               </form>
+            )}
           </CardContent>
         </Card>
 

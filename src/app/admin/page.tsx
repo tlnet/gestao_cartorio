@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -98,6 +99,14 @@ type NovoUsuarioForm = {
   confirmaSenha: string;
 };
 
+type EditUsuarioForm = {
+  name: string;
+  email: string;
+  telefone: string;
+  roles: string[];
+  ativo: boolean;
+};
+
 const DEFAULT_NOVO_USUARIO: NovoUsuarioForm = {
   name: "",
   email: "",
@@ -105,6 +114,14 @@ const DEFAULT_NOVO_USUARIO: NovoUsuarioForm = {
   role: "atendente",
   senha: "",
   confirmaSenha: "",
+};
+
+const DEFAULT_EDIT_USUARIO: EditUsuarioForm = {
+  name: "",
+  email: "",
+  telefone: "",
+  roles: ["atendente"],
+  ativo: true,
 };
 
 // ─── componente ──────────────────────────────────────────────────────────────
@@ -150,6 +167,14 @@ export default function AdminPage() {
   const [novoUsuarioSenhaVis, setNovoUsuarioSenhaVis] = useState(false);
   const [novoUsuarioConfVis, setNovoUsuarioConfVis] = useState(false);
   const [novoUsuarioSubmitting, setNovoUsuarioSubmitting] = useState(false);
+
+  // modal editar usuário
+  const [editUsuarioOpen, setEditUsuarioOpen] = useState(false);
+  const [editingUsuario, setEditingUsuario] = useState<any | null>(null);
+  const [editUsuarioForm, setEditUsuarioForm] =
+    useState<EditUsuarioForm>(DEFAULT_EDIT_USUARIO);
+  const [editUsuarioSubmitting, setEditUsuarioSubmitting] = useState(false);
+  const [sendingResetEmail, setSendingResetEmail] = useState(false);
 
   // dialog de dupla confirmação para delete
   type ConfirmTarget =
@@ -524,6 +549,87 @@ export default function AdminPage() {
     await updateUsuario(usuario.id, { ativo });
   };
 
+  const openEditUsuarioDialog = (usuario: any) => {
+    const roles = Array.isArray((usuario as any).roles) && (usuario as any).roles.length
+      ? (usuario as any).roles
+      : usuario.role
+      ? [usuario.role]
+      : ["atendente"];
+
+    setEditingUsuario(usuario);
+    setEditUsuarioForm({
+      name: usuario.name || "",
+      email: usuario.email || "",
+      telefone: (usuario as any).telefone || "",
+      roles,
+      ativo: !!usuario.ativo,
+    });
+    setEditUsuarioOpen(true);
+  };
+
+  const saveEditUsuario = async () => {
+    if (!editingUsuario?.id) return;
+    setEditUsuarioSubmitting(true);
+    try {
+      const nextRoles = editUsuarioForm.roles?.length
+        ? editUsuarioForm.roles
+        : ["atendente"];
+
+      const updates: any = {
+        name: editUsuarioForm.name,
+        email: editUsuarioForm.email,
+        telefone: editUsuarioForm.telefone,
+        ativo: editUsuarioForm.ativo,
+      };
+
+      // Não permitir alterar permissões de Super Administrador por aqui
+      if (!nextRoles.includes("admin_geral")) {
+        updates.role = nextRoles[0];
+        updates.roles = nextRoles;
+      }
+
+      await updateUsuario(editingUsuario.id, updates);
+      setEditUsuarioOpen(false);
+      setEditingUsuario(null);
+      await refetchUsuarios?.();
+    } finally {
+      setEditUsuarioSubmitting(false);
+    }
+  };
+
+  const sendResetPasswordEmail = async () => {
+    if (!editUsuarioForm.email?.trim()) {
+      toast.error("E-mail do usuário não informado.");
+      return;
+    }
+
+    setSendingResetEmail(true);
+    try {
+      const siteUrl =
+        process.env.NEXT_PUBLIC_SITE_URL ||
+        (typeof window !== "undefined" ? window.location.origin : "");
+      const redirectTo = siteUrl ? `${siteUrl}/login?type=recovery` : undefined;
+
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        editUsuarioForm.email.trim(),
+        redirectTo ? { redirectTo } : undefined
+      );
+
+      if (error) {
+        toast.error("Erro ao enviar e-mail de redefinição: " + error.message);
+        return;
+      }
+
+      toast.success(
+        "E-mail de redefinição enviado (se o endereço estiver válido no Auth)."
+      );
+    } catch (err: any) {
+      toast.error(err?.message || "Erro inesperado ao enviar e-mail.");
+    } finally {
+      setSendingResetEmail(false);
+    }
+  };
+
   // ─── render ──────────────────────────────────────────────────────────────
 
   return (
@@ -619,6 +725,13 @@ export default function AdminPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEditUsuarioDialog(u)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -811,6 +924,13 @@ export default function AdminPage() {
                                             />
                                           </TableCell>
                                           <TableCell>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => openEditUsuarioDialog(u)}
+                                            >
+                                              <Pencil className="h-4 w-4" />
+                                            </Button>
                                             <Button
                                               variant="ghost"
                                               size="sm"
@@ -1357,6 +1477,136 @@ export default function AdminPage() {
               </Button>
               <Button disabled={!novoUsuarioValid || novoUsuarioSubmitting} onClick={handleCriarUsuario}>
                 {novoUsuarioSubmitting ? "Criando..." : "Criar usuário"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Modal editar usuário ── */}
+        <Dialog
+          open={editUsuarioOpen}
+          onOpenChange={(open) => {
+            if (!editUsuarioSubmitting) setEditUsuarioOpen(open);
+          }}
+        >
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Editar usuário</DialogTitle>
+              <DialogDescription>
+                Atualize as informações do usuário selecionado.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-4 py-2">
+              <div className="space-y-1.5">
+                <Label>Nome completo <span className="text-destructive">*</span></Label>
+                <Input
+                  value={editUsuarioForm.name}
+                  onChange={(e) =>
+                    setEditUsuarioForm((p) => ({ ...p, name: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Email <span className="text-destructive">*</span></Label>
+                <Input
+                  type="email"
+                  value={editUsuarioForm.email}
+                  onChange={(e) =>
+                    setEditUsuarioForm((p) => ({ ...p, email: formatEmail(e.target.value) }))
+                  }
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Telefone</Label>
+                <Input
+                  value={editUsuarioForm.telefone}
+                  inputMode="numeric"
+                  maxLength={15}
+                  onChange={(e) =>
+                    setEditUsuarioForm((p) => ({
+                      ...p,
+                      telefone: formatPhone(e.target.value),
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Permissões</Label>
+                {Array.isArray(editUsuarioForm.roles) &&
+                editUsuarioForm.roles.includes("admin_geral") ? (
+                  <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
+                    Este usuário é <strong>Super Administrador</strong>. As permissões não podem ser alteradas aqui.
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-4">
+                    {(["admin", "atendente", "financeiro"] as const).map((r) => (
+                      <div key={r} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`edit-role-${r}`}
+                          checked={editUsuarioForm.roles.includes(r)}
+                          onCheckedChange={(checked) => {
+                            setEditUsuarioForm((prev) => {
+                              const current = prev.roles || [];
+                              if (checked) {
+                                return { ...prev, roles: Array.from(new Set([...current, r])) };
+                              }
+                              const next = current.filter((x) => x !== r);
+                              return { ...prev, roles: next.length ? next : ["atendente"] };
+                            });
+                          }}
+                        />
+                        <label
+                          htmlFor={`edit-role-${r}`}
+                          className="text-sm font-medium leading-none cursor-pointer"
+                        >
+                          {getRoleLabel(r)}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <Label>Usuário ativo</Label>
+                <Switch
+                  checked={!!editUsuarioForm.ativo}
+                  onCheckedChange={(v) =>
+                    setEditUsuarioForm((p) => ({ ...p, ativo: v }))
+                  }
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setEditUsuarioOpen(false)}
+                disabled={editUsuarioSubmitting}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={sendResetPasswordEmail}
+                disabled={sendingResetEmail || editUsuarioSubmitting}
+              >
+                {sendingResetEmail ? "Enviando..." : "Enviar redefinição de senha"}
+              </Button>
+              <Button
+                disabled={
+                  editUsuarioSubmitting ||
+                  !editUsuarioForm.name.trim() ||
+                  !editUsuarioForm.email.trim()
+                }
+                onClick={saveEditUsuario}
+              >
+                {editUsuarioSubmitting ? "Salvando..." : "Salvar alterações"}
               </Button>
             </DialogFooter>
           </DialogContent>
