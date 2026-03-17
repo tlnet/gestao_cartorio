@@ -220,6 +220,25 @@ export default function LoginClient() {
     );
   };
 
+  const clearSupabaseAuthStorage = () => {
+    try {
+      if (typeof window === "undefined") return;
+      const ls = window.localStorage;
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < ls.length; i++) {
+        const k = ls.key(i);
+        if (!k) continue;
+        if (k.startsWith("sb-") && k.endsWith("-auth-token")) keysToRemove.push(k);
+      }
+      keysToRemove.forEach((k) => ls.removeItem(k));
+      if (keysToRemove.length) {
+        console.log("[AUTH][STORAGE] Limpou chaves de auth:", keysToRemove);
+      }
+    } catch (e) {
+      console.warn("[AUTH][STORAGE] Falha ao limpar storage:", e);
+    }
+  };
+
   const fetchWithAbort = async (
     input: RequestInfo | URL,
     init: RequestInit,
@@ -426,10 +445,13 @@ export default function LoginClient() {
       console.log("Tentando fazer login com:", loginData.email);
 
       // Adicionar timeout para evitar travamento
-      const loginPromise = supabase.auth.signInWithPassword({
-        email: loginData.email,
-        password: loginData.password,
-      });
+      const doSignIn = () =>
+        supabase.auth.signInWithPassword({
+          email: loginData.email,
+          password: loginData.password,
+        });
+
+      const loginPromise = doSignIn();
 
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(
@@ -486,6 +508,39 @@ export default function LoginClient() {
               : "/dashboard";
           router.push(defaultRoute);
           return;
+        }
+
+        // Se der timeout/lock intermitente, fazer uma segunda tentativa automática limpando sessão/storage
+        if (String(error?.message || "").includes("Tempo de espera excedido")) {
+          console.warn("[LOGIN] Timeout detectado. Limpando sessão/storage e tentando novamente...");
+          try {
+            await withTimeout(supabase.auth.signOut(), 5000, "Timeout ao finalizar sessão.");
+          } catch {
+            // ignore
+          }
+          clearSupabaseAuthStorage();
+          await new Promise((r) => setTimeout(r, 300));
+          const { data: retryData2, error: retryError2 } = await doSignIn();
+          if (retryError2) throw retryError2;
+          if (retryData2?.user) {
+            const { data: userProfile } = await supabase
+              .from("users")
+              .select("*")
+              .eq("id", retryData2.user.id)
+              .single();
+
+            toast.success("Login realizado com sucesso!");
+            const roles = (userProfile as any)?.roles?.length
+              ? (userProfile as any).roles
+              : [(userProfile as any)?.role || "atendente"];
+            const defaultRoute = roles.includes("admin_geral")
+              ? "/admin"
+              : roles.includes("financeiro") && !roles.includes("admin")
+                ? "/contas"
+                : "/dashboard";
+            router.push(defaultRoute);
+            return;
+          }
         }
 
         // Se o erro for "Invalid login credentials" e o usuário acabou de ser criado,
@@ -710,6 +765,9 @@ export default function LoginClient() {
       } catch (e) {
         console.warn("[RESET-PASSWORD] signOut falhou (ignorado):", e);
       }
+
+      // Limpar storage do Supabase para evitar sessão antiga interferindo no próximo login
+      clearSupabaseAuthStorage();
 
       router.replace("/login");
       // Fallback: se o router estiver travado, forçar navegação.
