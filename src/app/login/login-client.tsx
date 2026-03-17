@@ -656,47 +656,7 @@ export default function LoginClient() {
   };
 
   const handleForgotPassword = async () => {
-    setResetError("");
-
-    if (!loginData.email) {
-      const message = "Informe o e-mail para recuperar a senha.";
-      setResetError(message);
-      toast.error(message);
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      const siteUrl =
-        process.env.NEXT_PUBLIC_SITE_URL ||
-        (typeof window !== "undefined" ? window.location.origin : "");
-
-      const redirectTo = siteUrl ? `${siteUrl}/login?type=recovery` : undefined;
-
-      const { error } = await supabase.auth.resetPasswordForEmail(
-        loginData.email,
-        redirectTo ? { redirectTo } : undefined
-      );
-
-      if (error) {
-        console.error(
-          "[FORGOT-PASSWORD] Erro ao solicitar recuperação:",
-          error
-        );
-        toast.error("Erro ao enviar e-mail de recuperação: " + error.message);
-        return;
-      }
-
-      toast.success(
-        "Se o e-mail informado estiver cadastrado, você receberá um link para redefinir sua senha."
-      );
-    } catch (error: any) {
-      console.error("[FORGOT-PASSWORD] Erro inesperado:", error);
-      toast.error("Erro inesperado ao solicitar recuperação de senha.");
-    } finally {
-      setLoading(false);
-    }
+    router.push("/esqueci-senha");
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
