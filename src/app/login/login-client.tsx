@@ -162,6 +162,54 @@ export default function LoginClient() {
     return token || null;
   };
 
+  const getAccessTokenFromStorage = (): string | null => {
+    try {
+      if (typeof window === "undefined") return null;
+      const ls = window.localStorage;
+      const keys: string[] = [];
+      for (let i = 0; i < ls.length; i++) {
+        const k = ls.key(i);
+        if (!k) continue;
+        // Padrão do supabase-js v2: sb-<project-ref>-auth-token
+        if (k.startsWith("sb-") && k.endsWith("-auth-token")) keys.push(k);
+      }
+
+      if (keys.length === 0) return null;
+
+      // Preferir o projeto atual se possível
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+      const ref = url ? url.replace(/^https?:\/\//, "").split(".")[0] : "";
+      const preferred =
+        ref && keys.find((k) => k.includes(`sb-${ref}-auth-token`));
+      const keyToUse = preferred || keys[0];
+
+      const raw = ls.getItem(keyToUse);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      const token =
+        parsed?.access_token ||
+        parsed?.currentSession?.access_token ||
+        parsed?.session?.access_token ||
+        null;
+
+      if (token) {
+        console.log("[AUTH][STORAGE] access_token encontrado no localStorage", {
+          key: keyToUse,
+          tokenMasked: mask(token),
+        });
+      } else {
+        console.warn("[AUTH][STORAGE] Chave encontrada mas sem access_token", {
+          key: keyToUse,
+        });
+      }
+
+      return token;
+    } catch (e) {
+      console.warn("[AUTH][STORAGE] Falha ao ler access_token do storage:", e);
+      return null;
+    }
+  };
+
   const clearUrlHash = () => {
     if (typeof window === "undefined") return;
     if (!window.location.hash) return;
@@ -519,7 +567,7 @@ export default function LoginClient() {
       console.log("[RESET-PASSWORD] Submit iniciado.");
 
       console.log("[RESET-PASSWORD] Chamando updateUser(password)...");
-      const accessToken = getAccessTokenFromUrl();
+      const accessToken = getAccessTokenFromUrl() || getAccessTokenFromStorage();
 
       if (accessToken) {
         console.log(
