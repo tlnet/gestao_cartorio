@@ -148,28 +148,68 @@ export default function LoginClient() {
     }
 
     const hash = window.location.hash || "";
-    if (hash.includes("access_token=") && hash.includes("refresh_token=")) {
-      console.log("[RECOVERY] Encontrou tokens no hash. Chamando setSession...");
-      const params = new URLSearchParams(hash.replace(/^#/, ""));
-      const access_token = params.get("access_token");
-      const refresh_token = params.get("refresh_token");
-
-      if (access_token && refresh_token) {
-        const { error } = await withTimeout(
-          supabase.auth.setSession({ access_token, refresh_token }),
-          15000,
-          "Timeout ao setar sessão via hash."
-        );
-        if (error) throw error;
-
-        // Limpar hash sem navegar
-        window.history.replaceState(
-          null,
-          "",
-          `${window.location.pathname}${window.location.search}`
-        );
-      }
+    if (hash.includes("access_token=")) {
+      console.log("[RECOVERY] Encontrou access_token no hash.");
     }
+  };
+
+  const getAccessTokenFromUrl = (): string | null => {
+    if (typeof window === "undefined") return null;
+    const hash = window.location.hash || "";
+    if (!hash.includes("access_token=")) return null;
+    const params = new URLSearchParams(hash.replace(/^#/, ""));
+    const token = params.get("access_token");
+    return token || null;
+  };
+
+  const clearUrlHash = () => {
+    if (typeof window === "undefined") return;
+    if (!window.location.hash) return;
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}`
+    );
+  };
+
+  const updatePasswordViaRest = async (accessToken: string, password: string) => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !anon) {
+      throw new Error("Supabase não configurado (URL/ANON).");
+    }
+
+    // Endpoint GoTrue: PUT /auth/v1/user
+    const res = await fetch(`${url}/auth/v1/user`, {
+      method: "PUT",
+      headers: {
+        apikey: anon,
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ password }),
+    });
+
+    const text = await res.text();
+    let json: any = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      // ignore
+    }
+
+    if (!res.ok) {
+      const message =
+        json?.msg ||
+        json?.message ||
+        json?.error_description ||
+        json?.error ||
+        text ||
+        `HTTP ${res.status}`;
+      throw new Error(message);
+    }
+
+    return json;
   };
 
   // Detectar modo de recuperação de senha a partir dos parâmetros da URL
@@ -197,8 +237,15 @@ export default function LoginClient() {
         return;
       }
 
-      // Em alguns casos, getSession pode travar por lock/Storage/Extensões.
-      // getUser faz request e é um bom indicador de sessão válida.
+      // Se temos access_token no hash, conseguimos atualizar senha via REST mesmo se o storage travar.
+      const accessToken = getAccessTokenFromUrl();
+      if (accessToken) {
+        console.log("[RECOVERY] Link contém access_token (masked):", mask(accessToken));
+        setRecoveryReady(true);
+        return;
+      }
+
+      // Caso contrário (ex.: PKCE), tentamos validar via getUser.
       const { data: userData, error: userError } = await withTimeout(
         supabase.auth.getUser(),
         15000,
@@ -439,82 +486,32 @@ export default function LoginClient() {
       setResetLoading(true);
       console.log("[RESET-PASSWORD] Submit iniciado.");
 
-      console.log("[RESET-PASSWORD] Buscando sessão (getSession)...");
-      const {
-        data: sessionDataBefore,
-        error: sessionBeforeError,
-      } = await withTimeout(
-        supabase.auth.getSession(),
-        15000,
-        "Timeout ao buscar sessão atual."
-      );
-      console.log("[RESET-PASSWORD] Sessão antes de consumir URL:", {
-        hasSession: !!sessionDataBefore.session,
-        userId: sessionDataBefore.session?.user?.id ?? null,
-        error: sessionBeforeError?.message ?? null,
-      });
+      console.log("[RESET-PASSWORD] Chamando updateUser(password)...");
+      const accessToken = getAccessTokenFromUrl();
 
-      if (!sessionDataBefore.session) {
-        console.log(
-          "[RESET-PASSWORD] Sem sessão. Tentando iniciar sessão pelo link..."
+      if (accessToken) {
+        console.log("[RESET-PASSWORD] Atualizando senha via REST (Bearer access_token).");
+        await withTimeout(
+          updatePasswordViaRest(accessToken, resetPasswordData.password),
+          20000,
+          "Timeout ao atualizar a senha (REST)."
         );
-        try {
-          await ensureSessionFromRecoveryLink();
-        } catch (error: any) {
-          console.error("[RESET-PASSWORD] Falha ao iniciar sessão:", error);
-          const message =
-            "Sessão de recuperação inválida/expirada. Solicite um novo link e tente novamente.";
-          setResetError(message);
-          toast.error(message);
+        clearUrlHash();
+      } else {
+        const { error } = await withTimeout(
+          supabase.auth.updateUser({
+            password: resetPasswordData.password,
+          }),
+          20000,
+          "Timeout ao atualizar a senha."
+        );
+
+        if (error) {
+          console.error("[RESET-PASSWORD] Erro ao redefinir senha:", error);
+          setResetError("Erro ao redefinir senha: " + error.message);
+          toast.error("Erro ao redefinir senha: " + error.message);
           return;
         }
-      }
-
-      // Validar usuário (mais confiável que getSession em ambientes com lock/storage)
-      const { data: userBeforeUpdate, error: userBeforeUpdateError } =
-        await withTimeout(
-          supabase.auth.getUser(),
-          15000,
-          "Timeout ao validar usuário antes do update."
-        );
-      console.log("[RESET-PASSWORD] Usuário antes do updateUser:", {
-        hasUser: !!userBeforeUpdate.user,
-        userId: userBeforeUpdate.user?.id ?? null,
-        error: userBeforeUpdateError?.message ?? null,
-      });
-
-      if (userBeforeUpdateError || !userBeforeUpdate.user) {
-        const message =
-          "Sessão de recuperação inválida/expirada. Solicite um novo link e tente novamente.";
-        setResetError(message);
-        toast.error(message);
-        return;
-      }
-
-      const { data: sessionDataAfter } = await withTimeout(
-        supabase.auth.getSession(),
-        15000,
-        "Timeout ao confirmar sessão antes do update."
-      );
-      console.log("[RESET-PASSWORD] Sessão confirmada antes do updateUser:", {
-        hasSession: !!sessionDataAfter.session,
-        userId: sessionDataAfter.session?.user?.id ?? null,
-      });
-
-      console.log("[RESET-PASSWORD] Chamando updateUser(password)...");
-      const { error } = await withTimeout(
-        supabase.auth.updateUser({
-          password: resetPasswordData.password,
-        }),
-        20000,
-        "Timeout ao atualizar a senha."
-      );
-
-      if (error) {
-        console.error("[RESET-PASSWORD] Erro ao redefinir senha:", error);
-        setResetError("Erro ao redefinir senha: " + error.message);
-        toast.error("Erro ao redefinir senha: " + error.message);
-        return;
       }
 
       console.log("[RESET-PASSWORD] updateUser OK. Senha atualizada.");
