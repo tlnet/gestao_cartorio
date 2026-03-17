@@ -172,6 +172,20 @@ export default function LoginClient() {
     );
   };
 
+  const fetchWithAbort = async (
+    input: RequestInfo | URL,
+    init: RequestInit,
+    ms: number
+  ) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), ms);
+    try {
+      return await fetch(input, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
   const updatePasswordViaRest = async (accessToken: string, password: string) => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -180,7 +194,15 @@ export default function LoginClient() {
     }
 
     // Endpoint GoTrue: PUT /auth/v1/user
-    const res = await fetch(`${url}/auth/v1/user`, {
+    const endpoint = `${url}/auth/v1/user`;
+    console.log("[RESET-PASSWORD][REST] Iniciando PUT /auth/v1/user", {
+      endpoint,
+      accessTokenMasked: mask(accessToken),
+    });
+
+    const res = await fetchWithAbort(
+      endpoint,
+      {
       method: "PUT",
       headers: {
         apikey: anon,
@@ -188,7 +210,9 @@ export default function LoginClient() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ password }),
-    });
+      },
+      20000
+    );
 
     const text = await res.text();
     let json: any = null;
@@ -206,9 +230,17 @@ export default function LoginClient() {
         json?.error ||
         text ||
         `HTTP ${res.status}`;
+      console.error("[RESET-PASSWORD][REST] Falhou", {
+        status: res.status,
+        body: json ?? text,
+      });
       throw new Error(message);
     }
 
+    console.log("[RESET-PASSWORD][REST] Sucesso", {
+      status: res.status,
+      hasBody: !!text,
+    });
     return json;
   };
 
@@ -490,12 +522,10 @@ export default function LoginClient() {
       const accessToken = getAccessTokenFromUrl();
 
       if (accessToken) {
-        console.log("[RESET-PASSWORD] Atualizando senha via REST (Bearer access_token).");
-        await withTimeout(
-          updatePasswordViaRest(accessToken, resetPasswordData.password),
-          20000,
-          "Timeout ao atualizar a senha (REST)."
+        console.log(
+          "[RESET-PASSWORD] Atualizando senha via REST (Bearer access_token)."
         );
+        await updatePasswordViaRest(accessToken, resetPasswordData.password);
         clearUrlHash();
       } else {
         const { error } = await withTimeout(
