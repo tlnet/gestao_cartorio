@@ -126,6 +126,52 @@ export default function LoginClient() {
     }
   };
 
+  const ensureSessionFromRecoveryLink = async (): Promise<void> => {
+    if (typeof window === "undefined") return;
+
+    const code = searchParams.get("code");
+    if (code) {
+      console.log(
+        "[RECOVERY] Encontrou code na URL. Chamando exchangeCodeForSession..."
+      );
+      const { error } = await withTimeout(
+        supabase.auth.exchangeCodeForSession(code),
+        15000,
+        "Timeout ao trocar code por sessão."
+      );
+      if (error) {
+        throw error;
+      }
+      // Limpar a query `code` para evitar reprocessamento
+      router.replace("/login?type=recovery");
+      return;
+    }
+
+    const hash = window.location.hash || "";
+    if (hash.includes("access_token=") && hash.includes("refresh_token=")) {
+      console.log("[RECOVERY] Encontrou tokens no hash. Chamando setSession...");
+      const params = new URLSearchParams(hash.replace(/^#/, ""));
+      const access_token = params.get("access_token");
+      const refresh_token = params.get("refresh_token");
+
+      if (access_token && refresh_token) {
+        const { error } = await withTimeout(
+          supabase.auth.setSession({ access_token, refresh_token }),
+          15000,
+          "Timeout ao setar sessão via hash."
+        );
+        if (error) throw error;
+
+        // Limpar hash sem navegar
+        window.history.replaceState(
+          null,
+          "",
+          `${window.location.pathname}${window.location.search}`
+        );
+      }
+    }
+  };
+
   // Detectar modo de recuperação de senha a partir dos parâmetros da URL
   useEffect(() => {
     if (!isRecoveryLink()) {
@@ -140,48 +186,32 @@ export default function LoginClient() {
       console.log("[RECOVERY] Iniciando processamento do link de recuperação...");
       logRecoveryContext();
 
-      // No Supabase JS v2, o parsing de URL é feito automaticamente quando
-      // `detectSessionInUrl: true`. Para links PKCE (com ?code=...), precisamos
-      // trocar o code por sessão via exchangeCodeForSession().
-      const code = searchParams.get("code");
-      if (code) {
-        console.log("[RECOVERY] Encontrou code na URL. Chamando exchangeCodeForSession...");
-        const { error } = await withTimeout(
-          supabase.auth.exchangeCodeForSession(code),
-          15000,
-          "Timeout ao trocar code por sessão."
-        );
-        if (error) {
-          console.error("[RECOVERY] exchangeCodeForSession falhou:", error);
-          setResetError("Link de recuperação inválido ou expirado.");
-          toast.error("Link de recuperação inválido ou expirado.");
-          setShowResetPassword(false);
-          router.replace("/login");
-          return;
-        }
-
-        // Limpar a query `code` para evitar reprocessamento
-        router.replace("/login?type=recovery");
-      } else {
-        console.log(
-          "[RECOVERY] Sem code. Aguardando sessão via hash (detectSessionInUrl) ou sessão já existente..."
-        );
+      try {
+        await ensureSessionFromRecoveryLink();
+      } catch (error: any) {
+        console.error("[RECOVERY] Falha ao iniciar sessão:", error);
+        setResetError("Link de recuperação inválido ou expirado.");
+        toast.error("Link de recuperação inválido ou expirado.");
+        setShowResetPassword(false);
+        router.replace("/login");
+        return;
       }
 
-      // Esperar a sessão ficar disponível
-      const { data: sessionData } = await withTimeout(
-        supabase.auth.getSession(),
+      // Em alguns casos, getSession pode travar por lock/Storage/Extensões.
+      // getUser faz request e é um bom indicador de sessão válida.
+      const { data: userData, error: userError } = await withTimeout(
+        supabase.auth.getUser(),
         15000,
-        "Timeout ao buscar sessão após consumir o link."
+        "Timeout ao validar usuário da sessão de recuperação."
       );
 
-      console.log("[RECOVERY] Sessão após processamento:", {
-        hasSession: !!sessionData.session,
-        userId: sessionData.session?.user?.id ?? null,
-        expiresAt: sessionData.session?.expires_at ?? null,
+      console.log("[RECOVERY] Usuário após processamento:", {
+        hasUser: !!userData.user,
+        userId: userData.user?.id ?? null,
+        error: userError?.message ?? null,
       });
 
-      if (!sessionData.session) {
+      if (userError || !userData.user) {
         setResetError(
           "Não foi possível iniciar a sessão de recuperação. Solicite um novo link e abra o e-mail novamente."
         );
@@ -409,8 +439,6 @@ export default function LoginClient() {
       setResetLoading(true);
       console.log("[RESET-PASSWORD] Submit iniciado.");
 
-      // Precisamos de uma sessão válida (definida pelo getSessionFromUrl no useEffect).
-      // Caso o usuário tenha recarregado e perdido o contexto, tentamos novamente.
       console.log("[RESET-PASSWORD] Buscando sessão (getSession)...");
       const {
         data: sessionDataBefore,
@@ -427,40 +455,40 @@ export default function LoginClient() {
       });
 
       if (!sessionDataBefore.session) {
-        const code = searchParams.get("code");
-        if (code) {
-          console.log(
-            "[RESET-PASSWORD] Sem sessão. Tentando exchangeCodeForSession no submit..."
-          );
-          const { error } = await withTimeout(
-            supabase.auth.exchangeCodeForSession(code),
-            15000,
-            "Timeout ao trocar code por sessão no submit."
-          );
-          console.log("[RESET-PASSWORD] exchangeCodeForSession no submit:", {
-            error: error?.message ?? null,
-          });
-          if (error) {
-            const message =
-              "Sessão de recuperação inválida/expirada. Solicite um novo link e tente novamente.";
-            setResetError(message);
-            toast.error(message);
-            return;
-          }
-        }
-
-        const { data: after } = await withTimeout(
-          supabase.auth.getSession(),
-          15000,
-          "Timeout ao buscar sessão após tentar validar link."
+        console.log(
+          "[RESET-PASSWORD] Sem sessão. Tentando iniciar sessão pelo link..."
         );
-        if (!after.session) {
+        try {
+          await ensureSessionFromRecoveryLink();
+        } catch (error: any) {
+          console.error("[RESET-PASSWORD] Falha ao iniciar sessão:", error);
           const message =
             "Sessão de recuperação inválida/expirada. Solicite um novo link e tente novamente.";
           setResetError(message);
           toast.error(message);
           return;
         }
+      }
+
+      // Validar usuário (mais confiável que getSession em ambientes com lock/storage)
+      const { data: userBeforeUpdate, error: userBeforeUpdateError } =
+        await withTimeout(
+          supabase.auth.getUser(),
+          15000,
+          "Timeout ao validar usuário antes do update."
+        );
+      console.log("[RESET-PASSWORD] Usuário antes do updateUser:", {
+        hasUser: !!userBeforeUpdate.user,
+        userId: userBeforeUpdate.user?.id ?? null,
+        error: userBeforeUpdateError?.message ?? null,
+      });
+
+      if (userBeforeUpdateError || !userBeforeUpdate.user) {
+        const message =
+          "Sessão de recuperação inválida/expirada. Solicite um novo link e tente novamente.";
+        setResetError(message);
+        toast.error(message);
+        return;
       }
 
       const { data: sessionDataAfter } = await withTimeout(
