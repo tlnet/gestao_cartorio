@@ -64,11 +64,72 @@ export default function LoginClient() {
     }
   };
 
+  const prepareRecoverySession = async (): Promise<boolean> => {
+    try {
+      const code = searchParams.get("code");
+      const tokenHash = searchParams.get("token_hash");
+      const type = searchParams.get("type") || "recovery";
+
+      // 1) Fluxo PKCE (Supabase envia ?code=...)
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) {
+          console.error("[RECOVERY] exchangeCodeForSession falhou:", error);
+          return false;
+        }
+        return true;
+      }
+
+      // 2) Fluxo token_hash (mais comum em alguns templates/links)
+      if (tokenHash) {
+        const { error } = await supabase.auth.verifyOtp({
+          type: type as any,
+          token_hash: tokenHash,
+        });
+        if (error) {
+          console.error("[RECOVERY] verifyOtp falhou:", error);
+          return false;
+        }
+        return true;
+      }
+
+      // 3) Fluxo implícito via hash (#access_token=...&refresh_token=...)
+      const hash = typeof window !== "undefined" ? window.location.hash : "";
+      if (hash && hash.includes("access_token=")) {
+        const params = new URLSearchParams(hash.replace(/^#/, ""));
+        const access_token = params.get("access_token");
+        const refresh_token = params.get("refresh_token");
+
+        if (access_token && refresh_token) {
+          const { error } = await supabase.auth.setSession({
+            access_token,
+            refresh_token,
+          });
+
+          if (error) {
+            console.error("[RECOVERY] setSession via hash falhou:", error);
+            return false;
+          }
+
+          // Limpar hash da URL após processar
+          router.replace("/login?type=recovery");
+          return true;
+        }
+      }
+
+      // 4) Fallback: se já existe sessão no navegador
+      const { data } = await supabase.auth.getSession();
+      return !!data.session;
+    } catch (error) {
+      console.error("[RECOVERY] Erro ao preparar sessão:", error);
+      return false;
+    }
+  };
+
   // Detectar modo de recuperação de senha a partir dos parâmetros da URL
   useEffect(() => {
     const type = searchParams.get("type");
     const recovery = searchParams.get("recovery");
-    const code = searchParams.get("code");
 
     const isRecoveryMode = type === "recovery" || recovery === "1";
 
@@ -80,83 +141,15 @@ export default function LoginClient() {
     setShowResetPassword(true);
     setRecoveryReady(false);
 
-    // Quando o usuário vem do link de recuperação do Supabase, precisamos
-    // trocar o código pelo token de sessão antes de atualizar a senha
-    if (code) {
-      supabase.auth
-        .exchangeCodeForSession(code)
-        .then(({ error }) => {
-          if (error) {
-            console.error(
-              "[RECOVERY] Erro ao criar sessão de recuperação:",
-              error
-            );
-            toast.error("Link de recuperação inválido ou expirado.");
-            setShowResetPassword(false);
-            router.replace("/login");
-            return;
-          }
-          setRecoveryReady(true);
-        })
-        .catch((error) => {
-          console.error("[RECOVERY] Erro inesperado ao processar link:", error);
-          toast.error("Erro ao processar link de recuperação.");
-          setShowResetPassword(false);
-          router.replace("/login");
-        });
-    } else {
-      // Alguns links do Supabase chegam via hash (#access_token=...),
-      // que não aparece em useSearchParams(). Precisamos capturar e criar a sessão.
-      const ensureRecoverySession = async () => {
-        try {
-          const hash =
-            typeof window !== "undefined" ? window.location.hash : "";
-
-          if (hash && hash.includes("access_token=") && hash.includes("refresh_token=")) {
-            const params = new URLSearchParams(hash.replace(/^#/, ""));
-            const access_token = params.get("access_token");
-            const refresh_token = params.get("refresh_token");
-
-            if (access_token && refresh_token) {
-              const { error } = await supabase.auth.setSession({
-                access_token,
-                refresh_token,
-              });
-
-              if (error) {
-                console.error("[RECOVERY] Erro ao setar sessão via hash:", error);
-              } else {
-                // Limpar hash da URL após processar
-                router.replace("/login?type=recovery");
-                setRecoveryReady(true);
-                return;
-              }
-            }
-          }
-
-          // Fallback: pode já existir uma sessão ativa (ex.: mesmo navegador)
-          const { data, error } = await supabase.auth.getSession();
-          if (error || !data.session) {
-            console.error("[RECOVERY] Sessão de recuperação não encontrada:", error);
-            toast.error(
-              "Sessão de recuperação não encontrada. Solicite um novo link."
-            );
-            setShowResetPassword(false);
-            router.replace("/login");
-            return;
-          }
-
-          setRecoveryReady(true);
-        } catch (error) {
-          console.error("[RECOVERY] Erro inesperado ao preparar sessão:", error);
-          toast.error("Erro ao processar link de recuperação.");
-          setShowResetPassword(false);
-          router.replace("/login");
-        }
-      };
-
-      void ensureRecoverySession();
-    }
+    void (async () => {
+      const ok = await prepareRecoverySession();
+      if (!ok) {
+        // Não travar a UI aqui; o clique em "Redefinir senha" tentará novamente
+        console.warn("[RECOVERY] Sessão ainda não pronta; aguardando interação do usuário.");
+        return;
+      }
+      setRecoveryReady(true);
+    })();
   }, [router, searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -369,9 +362,11 @@ export default function LoginClient() {
       return;
     }
 
-    if (!recoveryReady) {
+    // Garantir sessão de recovery antes de atualizar a senha (links variam: code, token_hash, hash)
+    const hasSession = await prepareRecoverySession();
+    if (!hasSession) {
       const message =
-        "Sessão de recuperação ainda não está pronta. Reabra o link do e-mail ou solicite uma nova recuperação.";
+        "Não foi possível validar a sessão de recuperação. Reabra o link do e-mail ou solicite uma nova recuperação.";
       setResetError(message);
       toast.error(message);
       return;
@@ -493,7 +488,7 @@ export default function LoginClient() {
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={resetLoading || !recoveryReady}
+                  disabled={resetLoading}
                 >
                   {resetLoading ? (
                     <>
