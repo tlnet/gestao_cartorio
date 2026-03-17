@@ -111,8 +111,14 @@ export default function LoginClient() {
             return false;
           }
 
-          // Limpar hash da URL após processar
-          router.replace("/login?type=recovery");
+          // Limpar hash sem navegar (evita resetar estado no meio do submit)
+          if (typeof window !== "undefined") {
+            window.history.replaceState(
+              null,
+              "",
+              `${window.location.pathname}${window.location.search}`
+            );
+          }
           return true;
         }
       }
@@ -362,18 +368,30 @@ export default function LoginClient() {
       return;
     }
 
-    // Garantir sessão de recovery antes de atualizar a senha (links variam: code, token_hash, hash)
-    const hasSession = await prepareRecoverySession();
-    if (!hasSession) {
-      const message =
-        "Não foi possível validar a sessão de recuperação. Reabra o link do e-mail ou solicite uma nova recuperação.";
-      setResetError(message);
-      toast.error(message);
-      return;
-    }
-
     try {
       setResetLoading(true);
+
+      // Garantir sessão de recovery antes de atualizar a senha (links variam: code, token_hash, hash)
+      const hasSession = await prepareRecoverySession();
+      if (!hasSession) {
+        const message =
+          "Não foi possível validar a sessão de recuperação. Reabra o link do e-mail ou solicite uma nova recuperação.";
+        setResetError(message);
+        toast.error(message);
+        return;
+      }
+
+      // Confirmar que a sessão existe mesmo após preparar
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
+      if (sessionError || !sessionData.session) {
+        console.error("[RESET-PASSWORD] Sessão ausente após preparar:", sessionError);
+        const message =
+          "Sessão de recuperação inválida/expirada. Solicite um novo link e tente novamente.";
+        setResetError(message);
+        toast.error(message);
+        return;
+      }
 
       const { error } = await supabase.auth.updateUser({
         password: resetPasswordData.password,
