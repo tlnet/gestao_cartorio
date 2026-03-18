@@ -443,14 +443,37 @@ const AnaliseIA = () => {
     const startPolling = () => {
       intervalId = setInterval(() => {
         // Verificar se há relatórios processando
-        const hasProcessing = relatorios.some(
-          (r) => r.status === "processando"
-        );
+        const resumoProcessando = relatorios
+          .filter(
+            (r) => r.tipo === "resumo_matricula" && r.status === "processando"
+          )
+          .map((r) => r.id);
+
+        const analiseMaloteProcessando = relatorios
+          .filter(
+            (r) => r.tipo === "analise_malote" && r.status === "processando"
+          )
+          .map((r) => r.id);
+
+        const hasProcessing = relatorios.some((r) => r.status === "processando");
+
         if (hasProcessing) {
-          // Atualização silenciosa - sem logs visíveis para o usuário
+          // Logs focados no resumo de matrícula e análise de malote
+          if (resumoProcessando.length > 0) {
+            console.log("[IA][POLL] resumo_matricula processando:", {
+              ids: resumoProcessando.slice(0, 10),
+              qtd: resumoProcessando.length,
+            });
+          }
+          if (analiseMaloteProcessando.length > 0) {
+            console.log("[IA][POLL] analise_malote processando:", {
+              ids: analiseMaloteProcessando.slice(0, 10),
+              qtd: analiseMaloteProcessando.length,
+            });
+          }
+          // Atualização silenciosa
           fetchRelatorios();
         } else {
-          // Se não há processando, parar o polling
           clearInterval(intervalId);
         }
       }, 30000); // Verificar a cada 30 segundos

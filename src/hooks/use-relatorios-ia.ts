@@ -128,6 +128,41 @@ export const useRelatoriosIA = () => {
         );
 
         setRelatorios(relatoriosComUsuarios);
+
+        // Logs resumidos para acompanhamento do processamento (evita spam)
+        try {
+          const resumo = relatoriosComUsuarios.filter(
+            (r) => r.tipo === "resumo_matricula"
+          );
+          const resumoProcessando = resumo.filter(
+            (r) => r.status === "processando"
+          );
+          console.log("[IA][RELATORIOS] status resumo_matricula", {
+            total: resumo.length,
+            processando: resumoProcessando.length,
+            concluidos: resumo.filter((r) => r.status === "concluido").length,
+            erros: resumo.filter((r) => r.status === "erro").length,
+            processandoIds: resumoProcessando.map((r) => r.id).slice(0, 10),
+          });
+
+          const analiseMalote = relatoriosComUsuarios.filter(
+            (r) => r.tipo === "analise_malote"
+          );
+          const analiseMaloteProcessando = analiseMalote.filter(
+            (r) => r.status === "processando"
+          );
+          console.log("[IA][RELATORIOS] status analise_malote", {
+            total: analiseMalote.length,
+            processando: analiseMaloteProcessando.length,
+            concluidos: analiseMalote.filter(
+              (r) => r.status === "concluido"
+            ).length,
+            erros: analiseMalote.filter((r) => r.status === "erro").length,
+            processandoIds: analiseMaloteProcessando.map((r) => r.id).slice(0, 10),
+          });
+        } catch (e) {
+          // ignore log falhou
+        }
       } else {
         setRelatorios(data || []);
       }
@@ -567,6 +602,25 @@ export const useRelatoriosIA = () => {
       });
 
       console.log("Relatório criado:", relatorio);
+      if (tipo === "resumo_matricula") {
+        console.log("[IA][RESUMO_MATRICULA] relatorio criado (processando):", {
+          id: relatorio?.id,
+          usuario_id: relatorio?.usuario_id,
+          cartorio_id: relatorio?.cartorio_id,
+          nome_arquivo: relatorio?.nome_arquivo,
+          status: relatorio?.status,
+        });
+      }
+
+      if (tipo === "analise_malote") {
+        console.log("[IA][ANALISE_MALOTE] relatorio criado (processando):", {
+          id: relatorio?.id,
+          usuario_id: relatorio?.usuario_id,
+          cartorio_id: relatorio?.cartorio_id,
+          nome_arquivo: relatorio?.nome_arquivo,
+          status: relatorio?.status,
+        });
+      }
 
       // 4. Obter webhook específico para o tipo
       // Prioridade: webhookUrl passado > configuração do banco > webhook padrão interno
@@ -787,6 +841,22 @@ export const useRelatoriosIA = () => {
       });
 
       const WEBHOOK_TIMEOUT_MS = 60_000; // 60 segundos
+
+      if (tipo === "resumo_matricula") {
+        console.log("[IA][RESUMO_MATRICULA] chamando webhook", {
+          relatorio_id: payload.relatorio_id,
+          webhookUrl: finalWebhookUrl,
+          tipo_processamento: payload?.dados_processamento?.tipo_processamento,
+        });
+      }
+
+      if (tipo === "analise_malote") {
+        console.log("[IA][ANALISE_MALOTE] chamando webhook", {
+          relatorio_id: payload.relatorio_id,
+          webhookUrl: finalWebhookUrl,
+          tipo_processamento: payload?.dados_processamento?.tipo_processamento,
+        });
+      }
 
       let response;
       try {

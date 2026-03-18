@@ -9,6 +9,35 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
 
+    const normalizeStatus = (raw: any): "processando" | "concluido" | "erro" => {
+      const s = String(raw ?? "").trim().toLowerCase();
+
+      if (!s) return "erro";
+
+      if (
+        ["concluido", "completed", "complete", "success", "sucesso", "done", "ok", "finalizado"].includes(
+          s
+        )
+      ) {
+        return "concluido";
+      }
+
+      if (
+        ["erro", "error", "failed", "failure", "falha"].includes(s)
+      ) {
+        return "erro";
+      }
+
+      if (
+        ["processando", "processing", "in_progress", "em_processamento"].includes(s)
+      ) {
+        return "processando";
+      }
+
+      // fallback seguro (evita gravar status inválido que quebra constraint)
+      return "erro";
+    };
+
     // Verificar se as variáveis de ambiente estão configuradas
     if (
       !process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -89,18 +118,48 @@ export async function POST(request: NextRequest) {
       campos_pendentes,
     } = body;
 
-    if (!relatorio_id) {
+    const resolvedRelatorioId =
+      relatorio_id ??
+      (body as any)?.relatorioId ??
+      (body as any)?.relatorios_id ??
+      (body as any)?.relatorio?.id ??
+      (body as any)?.metadata?.relatorio_id ??
+      (body as any)?.metadata?.relatorioId ??
+      null;
+
+    if (!resolvedRelatorioId) {
       return NextResponse.json(
-        { error: "relatorio_id é obrigatório" },
+        { error: "relatorio_id é obrigatório (não encontrado no payload)" },
         { status: 400 }
       );
     }
 
     // Atualizar o relatório no banco de dados
     const updates: any = {
-      status: status || "erro",
+      status: normalizeStatus(status),
       updated_at: new Date().toISOString(),
     };
+
+    console.log("🔔 [WEBHOOK][IA] Status recebido/normalizado", {
+      statusRaw: status ?? null,
+      statusNormalized: updates.status,
+      tipo_processamento: tipo_processamento ?? null,
+      resolvedRelatorioId,
+      temArquivos: {
+        relatorio_pdf: !!relatorio_pdf,
+        relatorio_doc: !!relatorio_doc,
+        relatorio_docx: !!relatorio_docx,
+        arquivo_binario: !!arquivo_binario,
+        arquivo_resultado: !!matricula_resumida_url,
+        resultado_final: !!dados_extraidos,
+      },
+      resumo_matricula_fields: {
+        matricula_resumida_url_type: matricula_resumida_url ? typeof matricula_resumida_url : null,
+        matricula_resumida_url_present: !!matricula_resumida_url,
+        dados_extraidos_present: !!dados_extraidos,
+        tipo_processamento_present: !!tipo_processamento,
+      },
+    });
 
     // Se recebeu arquivo binário, fazer upload para o Supabase Storage
     if (arquivo_binario) {
@@ -219,15 +278,42 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Ajuste final do status para resumo_matricula e analise_malote (evita ficar em processando por status inesperado)
+    if (tipo_processamento === "resumo_matricula") {
+      const hasFinalOutput =
+        !!updates.arquivo_resultado ||
+        !!updates.relatorio_pdf ||
+        !!updates.relatorio_doc ||
+        !!updates.resultado_final;
+      if (hasFinalOutput) {
+        updates.status = "concluido";
+      }
+    }
+
+    if (tipo_processamento === "analise_malote") {
+      const hasFinalOutput =
+        !!updates.arquivo_resultado ||
+        !!updates.relatorio_pdf ||
+        !!updates.relatorio_doc ||
+        !!updates.resultado_final;
+      if (hasFinalOutput) {
+        updates.status = "concluido";
+      }
+    }
+
     const { data, error } = await supabase
       .from("relatorios_ia")
       .update(updates)
-      .eq("id", relatorio_id)
+      .eq("id", resolvedRelatorioId)
       .select()
       .single();
 
     if (error) {
-      console.error("Erro ao atualizar relatório:", error);
+      console.error("Erro ao atualizar relatório:", {
+        error,
+        resolvedRelatorioId,
+        updates,
+      });
       return NextResponse.json(
         { error: "Erro ao atualizar relatório no banco de dados" },
         { status: 500 }
@@ -235,7 +321,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log("✅ Relatório atualizado com sucesso:", {
-      relatorio_id,
+      relatorio_id: resolvedRelatorioId,
       status: updates.status,
       timestamp: new Date().toISOString(),
       data,
