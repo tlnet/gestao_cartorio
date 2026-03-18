@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useN8NConfig } from "./use-n8n-config";
@@ -36,151 +36,199 @@ export const useRelatoriosIA = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const inFlightFetchRef = useRef<Promise<void> | null>(null);
+  const fetchSeqRef = useRef(0);
+
   // Hook para configuração N8N (com tratamento de erro)
   const { config: n8nConfig } = useN8NConfig();
 
-  const fetchRelatorios = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      console.log("Iniciando busca de relatórios...");
-
-      // Primeiro, consulta simples para verificar se a tabela existe
-      const { data, error } = await supabase
-        .from("relatorios_ia")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      console.log("Resultado da consulta:", { data, error });
-
-      if (error) {
-        console.error("Erro do Supabase:", {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
+  const withTimeout = async <T,>(
+    promise: Promise<T>,
+    ms: number,
+    message: string
+  ): Promise<T> => {
+    return new Promise<T>((resolve, reject) => {
+      const timeoutId = setTimeout(() => reject(new Error(message)), ms);
+      promise
+        .then((v) => {
+          clearTimeout(timeoutId);
+          resolve(v);
+        })
+        .catch((err) => {
+          clearTimeout(timeoutId);
+          reject(err);
         });
+    });
+  };
 
-        // Se for erro de tabela não encontrada, apenas retorna array vazio
-        if (
-          error.code === "42P01" ||
-          error.message.includes("does not exist")
-        ) {
-          console.warn(
-            "Tabela relatorios_ia não encontrada. Execute o script SQL primeiro."
-          );
-          setRelatorios([]);
-          return;
-        }
+  const fetchRelatorios = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    const fetchSeq = ++fetchSeqRef.current;
 
-        // Se for erro de RLS, também retorna array vazio
-        if (
-          error.code === "42501" ||
-          error.message.includes("permission denied")
-        ) {
-          console.warn("Erro de permissão RLS. Verifique as políticas.");
-          setRelatorios([]);
-          return;
-        }
+    // Se já está buscando, compartilha a mesma Promise (evita "empilhar" polling)
+    if (inFlightFetchRef.current) return inFlightFetchRef.current;
 
-        throw error;
-      }
+    const task = (async () => {
+    try {
+        if (!silent) setLoading(true);
+        setError(null);
 
-      console.log("Relatórios carregados com sucesso:", data);
+        console.log("Iniciando busca de relatórios...", { silent });
 
-      // Se há dados, carregar informações dos usuários separadamente
-      if (data && data.length > 0) {
-        const relatoriosComUsuarios = await Promise.all(
-          data.map(async (relatorio) => {
-            try {
-              // Buscar dados do usuário
-              const { data: usuarioData } = await supabase
-                .from("users")
-                .select("id, name, email")
-                .eq("id", relatorio.usuario_id)
-                .single();
+        const FETCH_TIMEOUT_MS = silent ? 25_000 : 30_000;
 
-              // Buscar dados do cartório
-              const { data: cartorioData } = await supabase
-                .from("cartorios")
-                .select("id, nome")
-                .eq("id", relatorio.cartorio_id)
-                .single();
+        const core = async (): Promise<RelatorioIA[]> => {
+          // Primeiro, consulta simples para verificar se a tabela existe
+          const { data, error } = await supabase
+            .from("relatorios_ia")
+            .select("*")
+            .order("created_at", { ascending: false });
 
-              return {
-                ...relatorio,
-                usuario: usuarioData,
-                cartorio: cartorioData,
-              };
-            } catch (err) {
+          console.log("Resultado da consulta:", { data, error });
+
+          if (error) {
+            console.error("Erro do Supabase:", {
+              code: error.code,
+              message: error.message,
+              details: error.details,
+              hint: error.hint,
+            });
+
+            // Se for erro de tabela não encontrada, apenas retorna array vazio
+            if (
+              error.code === "42P01" ||
+              error.message.includes("does not exist")
+            ) {
               console.warn(
-                `Erro ao carregar dados do usuário ${relatorio.usuario_id}:`,
-                err
+                "Tabela relatorios_ia não encontrada. Execute o script SQL primeiro."
               );
-              return {
-                ...relatorio,
-                usuario: null,
-                cartorio: null,
-              };
+              return [];
             }
-          })
+
+            // Se for erro de RLS, também retorna array vazio
+            if (
+              error.code === "42501" ||
+              error.message.includes("permission denied")
+            ) {
+              console.warn("Erro de permissão RLS. Verifique as políticas.");
+              return [];
+            }
+
+            throw error;
+          }
+
+          console.log("Relatórios carregados com sucesso:", data);
+
+          // Se há dados, carregar informações dos usuários separadamente
+          if (data && data.length > 0) {
+            const relatoriosComUsuarios = await Promise.all(
+              data.map(async (relatorio) => {
+                try {
+                  // Buscar dados do usuário
+                  const { data: usuarioData } = await supabase
+                    .from("users")
+                    .select("id, name, email")
+                    .eq("id", relatorio.usuario_id)
+                    .single();
+
+                  // Buscar dados do cartório
+                  const { data: cartorioData } = await supabase
+                    .from("cartorios")
+                    .select("id, nome")
+                    .eq("id", relatorio.cartorio_id)
+                    .single();
+
+                  return {
+                    ...relatorio,
+                    usuario: usuarioData,
+                    cartorio: cartorioData,
+                  };
+                } catch (err) {
+                  console.warn(
+                    `Erro ao carregar dados do usuário ${relatorio.usuario_id}:`,
+                    err
+                  );
+                  return {
+                    ...relatorio,
+                    usuario: null,
+                    cartorio: null,
+                  };
+                }
+              })
+            );
+
+            // Logs resumidos para acompanhamento do processamento (evita spam)
+            try {
+              const resumo = relatoriosComUsuarios.filter(
+                (r) => r.tipo === "resumo_matricula"
+              );
+              const resumoProcessando = resumo.filter(
+                (r) => r.status === "processando"
+              );
+              console.log("[IA][RELATORIOS] status resumo_matricula", {
+                total: resumo.length,
+                processando: resumoProcessando.length,
+                concluidos: resumo.filter((r) => r.status === "concluido").length,
+                erros: resumo.filter((r) => r.status === "erro").length,
+                processandoIds: resumoProcessando.map((r) => r.id).slice(0, 10),
+              });
+
+              const analiseMalote = relatoriosComUsuarios.filter(
+                (r) => r.tipo === "analise_malote"
+              );
+              const analiseMaloteProcessando = analiseMalote.filter(
+                (r) => r.status === "processando"
+              );
+              console.log("[IA][RELATORIOS] status analise_malote", {
+                total: analiseMalote.length,
+                processando: analiseMaloteProcessando.length,
+                concluidos: analiseMalote.filter(
+                  (r) => r.status === "concluido"
+                ).length,
+                erros: analiseMalote.filter((r) => r.status === "erro").length,
+                processandoIds: analiseMaloteProcessando.map((r) => r.id).slice(0, 10),
+              });
+            } catch {
+              // ignore log falhou
+            }
+
+            return relatoriosComUsuarios;
+          }
+
+          return data || [];
+        };
+
+        const result = await withTimeout(
+          core(),
+          FETCH_TIMEOUT_MS,
+          "Timeout ao buscar relatórios."
         );
 
-        setRelatorios(relatoriosComUsuarios);
+        // Evita sobrescrever estado caso uma nova chamada tenha iniciado
+        if (fetchSeq !== fetchSeqRef.current) return;
 
-        // Logs resumidos para acompanhamento do processamento (evita spam)
-        try {
-          const resumo = relatoriosComUsuarios.filter(
-            (r) => r.tipo === "resumo_matricula"
-          );
-          const resumoProcessando = resumo.filter(
-            (r) => r.status === "processando"
-          );
-          console.log("[IA][RELATORIOS] status resumo_matricula", {
-            total: resumo.length,
-            processando: resumoProcessando.length,
-            concluidos: resumo.filter((r) => r.status === "concluido").length,
-            erros: resumo.filter((r) => r.status === "erro").length,
-            processandoIds: resumoProcessando.map((r) => r.id).slice(0, 10),
-          });
+        setRelatorios(result);
+      } catch (err) {
+        console.error("Erro detalhado ao carregar relatórios:", {
+          error: err,
+          message: err instanceof Error ? err.message : "Erro desconhecido",
+          stack: err instanceof Error ? err.stack : undefined,
+          type: typeof err,
+        });
 
-          const analiseMalote = relatoriosComUsuarios.filter(
-            (r) => r.tipo === "analise_malote"
-          );
-          const analiseMaloteProcessando = analiseMalote.filter(
-            (r) => r.status === "processando"
-          );
-          console.log("[IA][RELATORIOS] status analise_malote", {
-            total: analiseMalote.length,
-            processando: analiseMaloteProcessando.length,
-            concluidos: analiseMalote.filter(
-              (r) => r.status === "concluido"
-            ).length,
-            erros: analiseMalote.filter((r) => r.status === "erro").length,
-            processandoIds: analiseMaloteProcessando.map((r) => r.id).slice(0, 10),
-          });
-        } catch (e) {
-          // ignore log falhou
-        }
-      } else {
-        setRelatorios(data || []);
+        const errorMessage =
+          err instanceof Error ? err.message : "Erro ao carregar relatórios";
+        setError(errorMessage);
+
+        // Não mostrar toast de erro para evitar spam
+      } finally {
+        inFlightFetchRef.current = null;
+        if (!silent) setLoading(false);
       }
-    } catch (err) {
-      console.error("Erro detalhado ao carregar relatórios:", {
-        error: err,
-        message: err instanceof Error ? err.message : "Erro desconhecido",
-        stack: err instanceof Error ? err.stack : undefined,
-        type: typeof err,
-      });
+    })();
 
-      const errorMessage =
-        err instanceof Error ? err.message : "Erro ao carregar relatórios";
-      setError(errorMessage);
-      // Não mostrar toast de erro para evitar spam
-    } finally {
-      setLoading(false);
-    }
+    inFlightFetchRef.current = task;
+    return task;
   };
 
   const createRelatorio = async (relatorioData: {

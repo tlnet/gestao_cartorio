@@ -413,8 +413,8 @@ const AnaliseIA = () => {
             })
           );
 
-          // Recarregar relatórios após atualizar status
-          await fetchRelatorios();
+          // Recarregar relatórios após atualizar status (sem "sumir" da tela)
+          await fetchRelatorios({ silent: true });
         }
       } catch (error) {
         console.error("Erro ao verificar timeout:", error);
@@ -471,8 +471,8 @@ const AnaliseIA = () => {
               qtd: analiseMaloteProcessando.length,
             });
           }
-          // Atualização silenciosa
-          fetchRelatorios();
+          // Atualização silenciosa (não troca a tela por skeleton)
+          fetchRelatorios({ silent: true });
         } else {
           clearInterval(intervalId);
         }

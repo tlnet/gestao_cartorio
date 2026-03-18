@@ -1,8 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
+
+/** Cliente com Service Role para ler/atualizar relatorios_ia sem RLS (N8N não envia JWT). */
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceKey) {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY não configurado. Necessário para o callback do webhook."
+    );
+  }
+
+  return createClient(url, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
 
 export async function POST(request: NextRequest) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
+
     console.log("🔔 Webhook recebido:", {
       headers: Object.fromEntries(request.headers.entries()),
       contentType: request.headers.get("content-type"),
@@ -118,13 +136,24 @@ export async function POST(request: NextRequest) {
       campos_pendentes,
     } = body;
 
+    // Alguns workflows do N8N mandam `metadata` como string JSON.
+    const metadataMaybeString = (body as any)?.metadata;
+    let metadataParsed: any = metadataMaybeString;
+    if (typeof metadataMaybeString === "string") {
+      try {
+        metadataParsed = JSON.parse(metadataMaybeString);
+      } catch {
+        // ignore - segue usando o valor original
+      }
+    }
+
     const resolvedRelatorioId =
       relatorio_id ??
       (body as any)?.relatorioId ??
       (body as any)?.relatorios_id ??
       (body as any)?.relatorio?.id ??
-      (body as any)?.metadata?.relatorio_id ??
-      (body as any)?.metadata?.relatorioId ??
+      metadataParsed?.relatorio_id ??
+      metadataParsed?.relatorioId ??
       null;
 
     if (!resolvedRelatorioId) {
@@ -179,7 +208,7 @@ export async function POST(request: NextRequest) {
         const fileName = `relatorio-${relatorio_id}-${timestamp}.${fileExtension}`;
 
         // Upload para Supabase Storage
-        const { data: uploadData, error: uploadError } = await supabase.storage
+        const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
           .from("documentos-ia")
           .upload(fileName, arquivo_binario, {
             contentType: tipo_arquivo,
@@ -194,7 +223,7 @@ export async function POST(request: NextRequest) {
         // Obter URL pública
         const {
           data: { publicUrl },
-        } = supabase.storage.from("documentos-ia").getPublicUrl(fileName);
+        } = supabaseAdmin.storage.from("documentos-ia").getPublicUrl(fileName);
 
         console.log("✅ Arquivo enviado com sucesso:", publicUrl);
 
@@ -301,7 +330,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("relatorios_ia")
       .update(updates)
       .eq("id", resolvedRelatorioId)
