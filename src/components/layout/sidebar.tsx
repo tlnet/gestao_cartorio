@@ -59,7 +59,7 @@ const Sidebar: React.FC<SidebarProps> = () => {
           const { data, error } = await supabase
             .from("users")
             .select(
-              "id, name, email, telefone, role, cartorio_id, ativo, created_at, updated_at"
+              "id, name, email, telefone, role, cartorio_id, ativo, created_at, updated_at, avatar_url"
             )
             .eq("id", user.id)
             .single();
@@ -70,7 +70,7 @@ const Sidebar: React.FC<SidebarProps> = () => {
               const { data: fallbackData, error: fallbackError } =
                 await supabase
                   .from("users")
-                  .select("id, name, email, telefone, role, cartorio_id, ativo")
+                  .select("id, name, email, telefone, role, cartorio_id, ativo, avatar_url")
                   .eq("id", user.id)
                   .single();
 
