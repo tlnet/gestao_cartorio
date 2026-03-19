@@ -61,12 +61,13 @@ export const useRelatoriosIA = () => {
     });
   };
 
-  const fetchRelatorios = async (options?: { silent?: boolean }) => {
+  const fetchRelatorios = async (options?: { silent?: boolean; force?: boolean }) => {
     const silent = options?.silent ?? false;
+    const force = options?.force ?? false;
     const fetchSeq = ++fetchSeqRef.current;
 
     // Se já está buscando, compartilha a mesma Promise (evita "empilhar" polling)
-    if (inFlightFetchRef.current) return inFlightFetchRef.current;
+    if (inFlightFetchRef.current && !force) return inFlightFetchRef.current;
 
     const task = (async () => {
     try {
@@ -78,11 +79,12 @@ export const useRelatoriosIA = () => {
         const FETCH_TIMEOUT_MS = silent ? 25_000 : 30_000;
 
         const core = async (): Promise<RelatorioIA[]> => {
-          // Primeiro, consulta simples para verificar se a tabela existe
+          // Consulta simples (versão estável): evita erros por join/relacionamentos
           const { data, error } = await supabase
             .from("relatorios_ia")
             .select("*")
-            .order("created_at", { ascending: false });
+            .order("created_at", { ascending: false })
+            .limit(50);
 
           console.log("Resultado da consulta:", { data, error });
 
@@ -95,17 +97,14 @@ export const useRelatoriosIA = () => {
             });
 
             // Se for erro de tabela não encontrada, apenas retorna array vazio
-            if (
-              error.code === "42P01" ||
-              error.message.includes("does not exist")
-            ) {
+            if (error.code === "42P01" || error.message.includes("does not exist")) {
               console.warn(
                 "Tabela relatorios_ia não encontrada. Execute o script SQL primeiro."
               );
               return [];
             }
 
-            // Se for erro de RLS, também retorna array vazio
+            // Se for erro de permissão, retorna array vazio
             if (
               error.code === "42501" ||
               error.message.includes("permission denied")
@@ -119,19 +118,17 @@ export const useRelatoriosIA = () => {
 
           console.log("Relatórios carregados com sucesso:", data);
 
-          // Se há dados, carregar informações dos usuários separadamente
           if (data && data.length > 0) {
+            // Enriquecimento com usuário/cartório (mantém a compatibilidade com a UI)
             const relatoriosComUsuarios = await Promise.all(
-              data.map(async (relatorio) => {
+              data.map(async (relatorio: any) => {
                 try {
-                  // Buscar dados do usuário
                   const { data: usuarioData } = await supabase
                     .from("users")
                     .select("id, name, email")
                     .eq("id", relatorio.usuario_id)
                     .single();
 
-                  // Buscar dados do cartório
                   const { data: cartorioData } = await supabase
                     .from("cartorios")
                     .select("id, nome")
@@ -157,45 +154,10 @@ export const useRelatoriosIA = () => {
               })
             );
 
-            // Logs resumidos para acompanhamento do processamento (evita spam)
-            try {
-              const resumo = relatoriosComUsuarios.filter(
-                (r) => r.tipo === "resumo_matricula"
-              );
-              const resumoProcessando = resumo.filter(
-                (r) => r.status === "processando"
-              );
-              console.log("[IA][RELATORIOS] status resumo_matricula", {
-                total: resumo.length,
-                processando: resumoProcessando.length,
-                concluidos: resumo.filter((r) => r.status === "concluido").length,
-                erros: resumo.filter((r) => r.status === "erro").length,
-                processandoIds: resumoProcessando.map((r) => r.id).slice(0, 10),
-              });
-
-              const analiseMalote = relatoriosComUsuarios.filter(
-                (r) => r.tipo === "analise_malote"
-              );
-              const analiseMaloteProcessando = analiseMalote.filter(
-                (r) => r.status === "processando"
-              );
-              console.log("[IA][RELATORIOS] status analise_malote", {
-                total: analiseMalote.length,
-                processando: analiseMaloteProcessando.length,
-                concluidos: analiseMalote.filter(
-                  (r) => r.status === "concluido"
-                ).length,
-                erros: analiseMalote.filter((r) => r.status === "erro").length,
-                processandoIds: analiseMaloteProcessando.map((r) => r.id).slice(0, 10),
-              });
-            } catch {
-              // ignore log falhou
-            }
-
-            return relatoriosComUsuarios;
+            return relatoriosComUsuarios as RelatorioIA[];
           }
 
-          return data || [];
+          return (data || []) as RelatorioIA[];
         };
 
         const result = await withTimeout(
@@ -218,7 +180,7 @@ export const useRelatoriosIA = () => {
 
         const errorMessage =
           err instanceof Error ? err.message : "Erro ao carregar relatórios";
-        setError(errorMessage);
+        if (!silent) setError(errorMessage);
 
         // Não mostrar toast de erro para evitar spam
       } finally {
@@ -274,7 +236,7 @@ export const useRelatoriosIA = () => {
 
       console.log("Relatório criado com sucesso:", data);
       toast.success("Relatório criado com sucesso!");
-      await fetchRelatorios(); // Recarregar lista
+      await fetchRelatorios({ force: true }); // Recarregar lista (evita estado stale)
       return data;
     } catch (err) {
       console.error("Erro detalhado ao criar relatório:", {
@@ -310,8 +272,9 @@ export const useRelatoriosIA = () => {
       if (!options?.silent) {
         toast.success("Relatório atualizado com sucesso!");
       }
-      
-      await fetchRelatorios(); // Recarregar lista
+
+      // Recarregar lista (forçar evita stale quando polling está em andamento)
+      await fetchRelatorios({ silent: options?.silent ?? false, force: true });
       return data;
     } catch (err) {
       const errorMessage =
@@ -336,7 +299,7 @@ export const useRelatoriosIA = () => {
       if (error) throw error;
 
       toast.success("Relatório excluído com sucesso!");
-      await fetchRelatorios(); // Recarregar lista
+      await fetchRelatorios({ force: true }); // Recarregar lista (evita stale)
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Erro ao excluir relatório";
@@ -355,7 +318,7 @@ export const useRelatoriosIA = () => {
       if (error) throw error;
 
       toast.success("Todos os relatórios em processamento foram limpos!");
-      await fetchRelatorios(); // Recarregar lista
+      await fetchRelatorios({ silent: true, force: true }); // Recarregar lista para refletir já
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Erro ao limpar relatórios";
@@ -856,6 +819,13 @@ export const useRelatoriosIA = () => {
         };
       } else {
         // Estrutura padrão para outros tipos
+        const webhookCallback =
+          tipo === "resumo_matricula"
+            ? `${window.location.origin}/api/ia/resumo-matricula-resultado`
+            : tipo === "analise_malote"
+              ? `${window.location.origin}/api/ia/analise-malote-resultado`
+              : `${window.location.origin}/api/ia/webhook`;
+
         payload = {
           relatorio_id: relatorio.id,
           tipo,
@@ -863,7 +833,7 @@ export const useRelatoriosIA = () => {
           arquivos: arquivosCompletos,
           // Manter arquivos_urls e arquivos_originais para compatibilidade com outros tipos
           arquivos_urls: arquivosUrls,
-          webhook_callback: `${window.location.origin}/api/ia/webhook`,
+          webhook_callback: webhookCallback,
           dados_processamento: {
             arquivos_originais: arquivosArray.map((f) => f.name),
             tipo_documento: tipo,
@@ -1117,6 +1087,8 @@ export const useRelatoriosIA = () => {
           }
 
           console.log("✅ Relatório atualizado para 'concluído'");
+          // Atualiza a lista do histórico rapidamente (sem skeleton)
+          void fetchRelatorios({ silent: true });
 
           result = {
             success: true,
@@ -1152,6 +1124,92 @@ export const useRelatoriosIA = () => {
           } else {
             result = JSON.parse(responseText);
             console.log("✅ JSON parseado com sucesso:", result);
+
+            // Se o N8N terminou mas não enviou binário no HTTP response (malote comum),
+            // ele pode retornar JSON com URLs/fields do arquivo.
+            const r: any = result;
+
+            const normalizeStatus = (raw: any): "concluido" | "erro" | null => {
+              const s = String(raw ?? "")
+                .trim()
+                .toLowerCase();
+              if (!s) return null;
+              if (
+                ["concluido", "completed", "complete", "success", "sucesso", "done", "ok", "finalizado"].includes(
+                  s
+                )
+              ) {
+                return "concluido";
+              }
+              if (["erro", "error", "failed", "failure", "falha"].includes(s)) {
+                return "erro";
+              }
+              return null;
+            };
+
+            const statusNormalized =
+              normalizeStatus(r?.status) ||
+              normalizeStatus(r?.result?.status) ||
+              null;
+
+            const resolvedRelatorioPdf =
+              r?.relatorio_pdf ||
+              r?.relatorio_pdf_url ||
+              r?.relatorioPdf ||
+              r?.pdf_url ||
+              r?.fileUrl ||
+              r?.file_url ||
+              null;
+            const resolvedRelatorioDoc =
+              r?.relatorio_doc || r?.relatorio_doc_url || r?.doc_url || null;
+            const resolvedRelatorioDocx =
+              r?.relatorio_docx || r?.relatorio_docx_url || null;
+            const resolvedArquivoResultado =
+              r?.arquivo_resultado || r?.resultado_url || null;
+
+            const hasAnyFinalOutput =
+              !!resolvedRelatorioPdf ||
+              !!resolvedRelatorioDoc ||
+              !!resolvedRelatorioDocx ||
+              !!resolvedArquivoResultado;
+
+            if (statusNormalized === "concluido" || (r?.success === true && hasAnyFinalOutput)) {
+              const updates: any = {
+                status: "concluido",
+                updated_at: new Date().toISOString(),
+              };
+
+              if (resolvedRelatorioPdf) updates.relatorio_pdf = resolvedRelatorioPdf;
+              if (resolvedRelatorioDoc) updates.relatorio_doc = resolvedRelatorioDoc;
+              if (resolvedRelatorioDocx && !updates.relatorio_doc) updates.relatorio_doc = resolvedRelatorioDocx;
+              if (resolvedArquivoResultado && !updates.relatorio_pdf && !updates.relatorio_doc) {
+                updates.arquivo_resultado = resolvedArquivoResultado;
+              }
+
+              // resumo/dados_extraidos (se vier)
+              if (r?.resumo) updates.resumo = r.resumo;
+              if (r?.dados_extraidos) {
+                updates.resultado_final = {
+                  ...(updates.resultado_final || {}),
+                  datos_extraidos: r.dados_extraidos,
+                };
+              }
+
+              const { error: updateError } = await supabase
+                .from("relatorios_ia")
+                .update(updates)
+                .eq("id", relatorio.id);
+
+              if (updateError) {
+                console.error(
+                  "❌ Erro ao atualizar relatório a partir do JSON do N8N:",
+                  updateError
+                );
+              } else {
+                void fetchRelatorios({ silent: true });
+                console.log("✅ Status atualizado para 'concluido' via JSON do N8N");
+              }
+            }
           }
         } catch (jsonError) {
           console.log("⚠️ Resposta não é JSON válido, tratando como sucesso");
@@ -1290,7 +1348,7 @@ export const useRelatoriosIA = () => {
   };
 
   useEffect(() => {
-    fetchRelatorios();
+    fetchRelatorios({ force: true });
   }, []);
 
   return {

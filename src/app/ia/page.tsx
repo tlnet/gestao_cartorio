@@ -476,7 +476,7 @@ const AnaliseIA = () => {
         } else {
           clearInterval(intervalId);
         }
-      }, 30000); // Verificar a cada 30 segundos
+      }, 5000); // Verificar a cada 5 segundos (status precisa atualizar rápido)
     };
 
     // Só iniciar polling se há relatórios processando
@@ -513,6 +513,10 @@ const AnaliseIA = () => {
       toast.error("Usuário não autenticado");
       return;
     }
+
+    // Para "analise_malote" vamos disparar sem bloquear a UI do card,
+    // mas mantendo o bloqueio contra múltiplas execuções até finalizar.
+    let releaseProcessingFiles = true;
 
     // Proteção contra múltiplas execuções
     if (processingFiles.has(tipoAnalise)) {
@@ -555,24 +559,47 @@ const AnaliseIA = () => {
       if (tipoAnalise === "resumo_matricula") {
         console.log("Processando resumo de matrícula...");
         const webhookUrl = getWebhookUrl("resumo_matricula") || getDefaultWebhookUrl("resumo_matricula");
-        await processarResumoMatricula(
-          file,
-          user.id,
-          userData.cartorio_id,
-          webhookUrl
-        );
+        releaseProcessingFiles = false;
+
+        // Rodar em background para o card não ficar com "Processando..." travado.
+        void processarResumoMatricula(file, user.id, userData.cartorio_id, webhookUrl)
+          .catch((error) => {
+            console.error("Erro ao processar resumo_matricula:", error);
+            toast.error(
+              error instanceof Error ? error.message : "Erro ao enviar resumo de matrícula para análise"
+            );
+          })
+          .finally(() => {
+            setProcessingFiles((prev) => {
+              const newSet = new Set(prev);
+              newSet.delete(tipoAnalise);
+              return newSet;
+            });
+          });
+
         return;
       }
 
       if (tipoAnalise === "analise_malote") {
         console.log("Processando análise de malote...");
         const webhookUrl = getWebhookUrl("analise_malote") || getDefaultWebhookUrl("analise_malote");
-        await processarAnaliseMalote(
-          file,
-          user.id,
-          userData.cartorio_id,
-          webhookUrl
-        );
+        releaseProcessingFiles = false;
+
+        // Dispara em background para o card não ficar preso em "Processando..."
+        void processarAnaliseMalote(file, user.id, userData.cartorio_id, webhookUrl)
+          .catch((error) => {
+            console.error("Erro ao processar analise_malote:", error);
+            toast.error(
+              error instanceof Error ? error.message : "Erro ao enviar malote para análise"
+            );
+          })
+          .finally(() => {
+            setProcessingFiles((prev) => {
+              const newSet = new Set(prev);
+              newSet.delete(tipoAnalise);
+              return newSet;
+            });
+          });
         return;
       }
 
@@ -736,11 +763,13 @@ const AnaliseIA = () => {
       }
     } finally {
       setUploadingFile(null);
-      setProcessingFiles((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(tipoAnalise);
-        return newSet;
-      });
+      if (releaseProcessingFiles) {
+        setProcessingFiles((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(tipoAnalise);
+          return newSet;
+        });
+      }
     }
   };
 

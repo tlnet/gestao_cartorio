@@ -163,6 +163,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Alguns workflows do N8N podem mandar URLs/arquivos com nomes diferentes no JSON.
+    // Para evitar ficar eternamente em "processando", normalizamos os campos mais comuns.
+    const bodyAny = body as any;
+    const resolvedRelatorioPdf =
+      relatorio_pdf ??
+      bodyAny.relatorio_pdf_url ??
+      bodyAny.relatorioPdf ??
+      bodyAny.pdf_url ??
+      bodyAny.fileUrl ??
+      bodyAny.file_url ??
+      null;
+    const resolvedRelatorioDoc =
+      relatorio_doc ??
+      bodyAny.relatorio_doc_url ??
+      bodyAny.relatorioDoc ??
+      bodyAny.doc_url ??
+      bodyAny.docUrl ??
+      null;
+    const resolvedRelatorioDocx =
+      relatorio_docx ??
+      bodyAny.relatorio_docx_url ??
+      bodyAny.relatorioDocx ??
+      null;
+    const resolvedArquivoResultado =
+      matricula_resumida_url ??
+      bodyAny.arquivo_resultado ??
+      bodyAny.resultado_url ??
+      bodyAny.result_url ??
+      bodyAny.file_result_url ??
+      null;
+    const resolvedDadosExtraidos = dados_extraidos ?? bodyAny.dadosExtraidos ?? null;
+
     // Atualizar o relatório no banco de dados
     const updates: any = {
       status: normalizeStatus(status),
@@ -175,17 +207,17 @@ export async function POST(request: NextRequest) {
       tipo_processamento: tipo_processamento ?? null,
       resolvedRelatorioId,
       temArquivos: {
-        relatorio_pdf: !!relatorio_pdf,
-        relatorio_doc: !!relatorio_doc,
-        relatorio_docx: !!relatorio_docx,
+        relatorio_pdf: !!resolvedRelatorioPdf,
+        relatorio_doc: !!resolvedRelatorioDoc,
+        relatorio_docx: !!resolvedRelatorioDocx,
         arquivo_binario: !!arquivo_binario,
-        arquivo_resultado: !!matricula_resumida_url,
-        resultado_final: !!dados_extraidos,
+        arquivo_resultado: !!resolvedArquivoResultado,
+        resultado_final: !!resolvedDadosExtraidos,
       },
       resumo_matricula_fields: {
         matricula_resumida_url_type: matricula_resumida_url ? typeof matricula_resumida_url : null,
         matricula_resumida_url_present: !!matricula_resumida_url,
-        dados_extraidos_present: !!dados_extraidos,
+        dados_extraidos_present: !!resolvedDadosExtraidos,
         tipo_processamento_present: !!tipo_processamento,
       },
     });
@@ -252,9 +284,9 @@ export async function POST(request: NextRequest) {
     } else {
       // Lógica original para dados JSON
       // Campos gerais (verificar se existem antes de adicionar)
-      if (relatorio_pdf) updates.relatorio_pdf = relatorio_pdf;
-      if (relatorio_doc) updates.relatorio_doc = relatorio_doc;
-      if (relatorio_docx) updates.relatorio_docx = relatorio_docx;
+      if (resolvedRelatorioPdf) updates.relatorio_pdf = resolvedRelatorioPdf;
+      if (resolvedRelatorioDoc) updates.relatorio_doc = resolvedRelatorioDoc;
+      if (resolvedRelatorioDocx) updates.relatorio_docx = resolvedRelatorioDocx;
 
       // Tratar resumo com verificação de existência da coluna
       if (resumo) {
@@ -265,14 +297,14 @@ export async function POST(request: NextRequest) {
       }
 
       // Campos específicos para resumo de matrícula
-      if (matricula_resumida_url) {
-        updates.arquivo_resultado = matricula_resumida_url;
+      if (resolvedArquivoResultado) {
+        updates.arquivo_resultado = resolvedArquivoResultado;
       }
 
-      if (dados_extraidos) {
+      if (resolvedDadosExtraidos) {
         updates.resultado_final = {
           ...(updates.resultado_final || {}),
-          dados_extraidos,
+          dados_extraidos: resolvedDadosExtraidos,
           tipo_processamento: tipo_processamento || "resumo_matricula",
           timestamp_conclusao: new Date().toISOString(),
         };
@@ -308,7 +340,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Ajuste final do status para resumo_matricula e analise_malote (evita ficar em processando por status inesperado)
-    if (tipo_processamento === "resumo_matricula") {
+    if (["resumo_matricula", "matricula_imobiliaria"].includes(tipo_processamento)) {
       const hasFinalOutput =
         !!updates.arquivo_resultado ||
         !!updates.relatorio_pdf ||
@@ -319,7 +351,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (tipo_processamento === "analise_malote") {
+    if (["analise_malote", "malote_eletronico"].includes(tipo_processamento)) {
       const hasFinalOutput =
         !!updates.arquivo_resultado ||
         !!updates.relatorio_pdf ||
