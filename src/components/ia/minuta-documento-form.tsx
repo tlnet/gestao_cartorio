@@ -869,22 +869,29 @@ const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
       
       console.log("Webhook URL para minuta:", webhookUrl);
 
-      // Chamar processamento passando os dados completos do formulário
-      const relatorio = await processarMinutaDocumento(
+      // Disparar processamento em background para não deixar a UI presa em "Processando..."
+      // (o status vai mudar na tabela relatorios_ia via endpoint do N8N).
+      const dadosFormularioParaEnvio = formData;
+      void processarMinutaDocumento(
         todosArquivos,
         user.id,
         userData.cartorio_id,
-        formData,
+        dadosFormularioParaEnvio,
         webhookUrl
-      );
+      )
+        .then((relatorio) => {
+          console.log("Minuta processada (callback) com sucesso:", relatorio);
+          onProcessComplete(relatorio);
+        })
+        .catch((error) => {
+          console.error("Erro ao processar minuta em background:", error);
+          toast.error(
+            error instanceof Error ? error.message : "Erro ao processar minuta",
+            { id: "process-minuta" }
+          );
+        });
 
-      console.log("Minuta processada com sucesso:", relatorio);
-
-      toast.success("Documentos enviados para análise com sucesso!", {
-        id: "process-minuta",
-      });
-      
-      onProcessComplete(relatorio);
+      toast.success("Documentos enviados para análise!", { id: "process-minuta" });
 
       // Limpar formulário principal
       setFormData({

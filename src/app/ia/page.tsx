@@ -775,7 +775,7 @@ const AnaliseIA = () => {
 
   const handleProcessComplete = async (result: any) => {
     toast.success("Novo relatório adicionado ao histórico!");
-    await fetchRelatorios();
+    await fetchRelatorios({ silent: true, force: true });
   };
 
   // Função para lidar com campos preenchidos pelo usuário
