@@ -439,23 +439,69 @@ export default function LoginClient() {
     router.push(defaultRoute);
   };
 
+  /**
+   * Busca perfil via SDK do Supabase (com timeout de 10s).
+   * Usado no fluxo normal, onde o cliente não está travado.
+   */
   const fetchUserProfile = async (userId: string) => {
-    const { data: userProfile, error: profileError } = await supabase
-      .from("users")
-      .select("*")
-      .eq("id", userId)
-      .single();
-    if (profileError) {
-      console.warn("Erro ao buscar perfil do usuário:", profileError);
+    try {
+      const result = await withTimeout(
+        supabase.from("users").select("*").eq("id", userId).single() as unknown as Promise<{ data: any; error: any }>,
+        10000,
+        "Timeout ao buscar perfil do usuário."
+      );
+      const { data: userProfile, error: profileError } = result;
+      if (profileError) {
+        console.warn("Erro ao buscar perfil do usuário:", profileError);
+      }
+      return userProfile;
+    } catch (e) {
+      console.warn("[LOGIN] fetchUserProfile falhou (não fatal):", e);
+      return null;
     }
-    return userProfile;
+  };
+
+  /**
+   * Busca perfil via REST direto (sem SDK).
+   * Usado no fallback REST, quando o cliente Supabase pode estar com Web Lock travado.
+   */
+  const fetchUserProfileViaRest = async (
+    userId: string,
+    accessToken: string
+  ): Promise<any> => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !anon) return null;
+    try {
+      const endpoint = `${url}/rest/v1/users?id=eq.${encodeURIComponent(userId)}&select=*&limit=1`;
+      const res = await fetchWithAbort(
+        endpoint,
+        {
+          headers: {
+            apikey: anon,
+            Authorization: `Bearer ${accessToken}`,
+            Accept: "application/json",
+          },
+        },
+        10000
+      );
+      if (!res.ok) {
+        console.warn("[LOGIN][REST] fetchUserProfileViaRest status:", res.status);
+        return null;
+      }
+      const data = await res.json();
+      return Array.isArray(data) ? (data[0] ?? null) : null;
+    } catch (e) {
+      console.warn("[LOGIN][REST] fetchUserProfileViaRest falhou (não fatal):", e);
+      return null;
+    }
   };
 
   const tryLoginViaRest = async () => {
     console.warn("[LOGIN] Tentando login via REST como fallback...");
     const rest = await signInViaRest(loginData.email, loginData.password);
 
-    // Tentar persistir a sessão; se o storage estiver travado, ignorar o erro e redirecionar assim mesmo
+    // Tentar persistir a sessão via SDK — se o Web Lock ainda estiver preso, ignora e redireciona assim mesmo
     try {
       const { error: setSessionError } = await withTimeout(
         supabase.auth.setSession({
@@ -472,7 +518,9 @@ export default function LoginClient() {
       console.warn("[LOGIN] setSession travou (não fatal, seguindo com redirect):", e);
     }
 
-    const userProfile = await fetchUserProfile(rest.user.id);
+    // IMPORTANTE: não usar supabase.from() aqui — o SDK pode ainda estar com Web Lock travado.
+    // Buscar perfil via REST direto usando o access_token já obtido.
+    const userProfile = await fetchUserProfileViaRest(rest.user.id, rest.access_token);
     toast.success("Login realizado com sucesso!");
     redirectAfterLogin(userProfile);
   };
