@@ -20,10 +20,8 @@ const nextConfig: NextConfig = {
     ],
   },
 
-  // Configurações experimentais estáveis
-  experimental: {
-    typedRoutes: false, // Desabilitado para evitar conflitos
-  },
+  // Next.js 15+: typedRoutes saiu de experimental (evita warning no build)
+  typedRoutes: false,
 
   // Configurações de servidor
   serverExternalPackages: ["@supabase/supabase-js"],
