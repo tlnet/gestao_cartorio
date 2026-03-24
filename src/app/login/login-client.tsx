@@ -427,12 +427,61 @@ export default function LoginClient() {
     })();
   }, [router, searchParams]);
 
+  const redirectAfterLogin = (userProfile: any) => {
+    const roles = (userProfile as any)?.roles?.length
+      ? (userProfile as any).roles
+      : [(userProfile as any)?.role || "atendente"];
+    const defaultRoute = roles.includes("admin_geral")
+      ? "/admin"
+      : roles.includes("financeiro") && !roles.includes("admin")
+        ? "/contas"
+        : "/dashboard";
+    router.push(defaultRoute);
+  };
+
+  const fetchUserProfile = async (userId: string) => {
+    const { data: userProfile, error: profileError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", userId)
+      .single();
+    if (profileError) {
+      console.warn("Erro ao buscar perfil do usuário:", profileError);
+    }
+    return userProfile;
+  };
+
+  const tryLoginViaRest = async () => {
+    console.warn("[LOGIN] Tentando login via REST como fallback...");
+    const rest = await signInViaRest(loginData.email, loginData.password);
+
+    // Tentar persistir a sessão; se o storage estiver travado, ignorar o erro e redirecionar assim mesmo
+    try {
+      const { error: setSessionError } = await withTimeout(
+        supabase.auth.setSession({
+          access_token: rest.access_token,
+          refresh_token: rest.refresh_token,
+        }),
+        8000,
+        "Timeout ao persistir sessão após login."
+      );
+      if (setSessionError) {
+        console.warn("[LOGIN] setSession retornou erro (não fatal):", setSessionError.message);
+      }
+    } catch (e) {
+      console.warn("[LOGIN] setSession travou (não fatal, seguindo com redirect):", e);
+    }
+
+    const userProfile = await fetchUserProfile(rest.user.id);
+    toast.success("Login realizado com sucesso!");
+    redirectAfterLogin(userProfile);
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setLoginError(""); // Limpar erro anterior
+    setLoginError("");
 
-    // Validação básica
     if (!loginData.email || !loginData.password) {
       const errorMessage = "Por favor, preencha todos os campos";
       setLoginError(errorMessage);
@@ -444,156 +493,55 @@ export default function LoginClient() {
     try {
       console.log("Tentando fazer login com:", loginData.email);
 
-      // Adicionar timeout para evitar travamento
+      // Limpar qualquer sessão/token obsoleto que possa travar o SDK do Supabase
+      clearSupabaseAuthStorage();
+
       const doSignIn = () =>
         supabase.auth.signInWithPassword({
           email: loginData.email,
           password: loginData.password,
         });
 
-      const loginPromise = doSignIn();
+      let data: any = null;
+      let error: any = null;
+      let timedOut = false;
 
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(
-          () => reject(new Error("Tempo de espera excedido. Tente novamente.")),
-          15000
-        ); // 15 segundos
-      });
+      try {
+        const result = (await withTimeout(
+          doSignIn(),
+          25000,
+          "Tempo de espera excedido. Tente novamente."
+        )) as any;
+        data = result.data;
+        error = result.error;
+      } catch (raceErr: any) {
+        if (String(raceErr?.message || "").includes("Tempo de espera excedido")) {
+          timedOut = true;
+          console.warn("[LOGIN] signInWithPassword travou (timeout). Tentando via REST...");
+        } else {
+          throw raceErr;
+        }
+      }
 
-      const { data, error } = (await Promise.race([
-        loginPromise,
-        timeoutPromise,
-      ])) as any;
+      // Se houve timeout do SDK, fazer fallback direto via REST
+      if (timedOut) {
+        await tryLoginViaRest();
+        return;
+      }
 
       if (error) {
-        // Se travou/timeout, tentar fallback via REST (com AbortController)
-        if (String(error?.message || "").includes("Tempo de espera excedido")) {
-          console.warn("[LOGIN] signInWithPassword demorou demais. Tentando via REST...");
-          const rest = await signInViaRest(loginData.email, loginData.password);
-          const { error: setSessionError } = await withTimeout(
-            supabase.auth.setSession({
-              access_token: rest.access_token,
-              refresh_token: rest.refresh_token,
-            }),
-            10000,
-            "Timeout ao persistir sessão após login."
-          );
-          if (setSessionError) {
-            console.error("[LOGIN] setSession falhou após REST:", setSessionError);
-            throw new Error(
-              "Login validado, mas não foi possível salvar a sessão no navegador. Desative extensões (adblock/antitracker) e tente novamente."
-            );
-          }
-
-          // Segue fluxo normal usando o user retornado
-          const userId = rest.user.id;
-          const { data: userProfile, error: profileError } = await supabase
-            .from("users")
-            .select("*")
-            .eq("id", userId)
-            .single();
-
-          if (profileError) {
-            console.warn("Erro ao buscar perfil do usuário:", profileError);
-          }
-
-          toast.success("Login realizado com sucesso!");
-          const roles = (userProfile as any)?.roles?.length
-            ? (userProfile as any).roles
-            : [(userProfile as any)?.role || "atendente"];
-          const defaultRoute = roles.includes("admin_geral")
-            ? "/admin"
-            : roles.includes("financeiro") && !roles.includes("admin")
-              ? "/contas"
-              : "/dashboard";
-          router.push(defaultRoute);
-          return;
-        }
-
-        // Se der timeout/lock intermitente, fazer uma segunda tentativa automática limpando sessão/storage
-        if (String(error?.message || "").includes("Tempo de espera excedido")) {
-          console.warn("[LOGIN] Timeout detectado. Limpando sessão/storage e tentando novamente...");
-          try {
-            await withTimeout(supabase.auth.signOut(), 5000, "Timeout ao finalizar sessão.");
-          } catch {
-            // ignore
-          }
-          clearSupabaseAuthStorage();
-          await new Promise((r) => setTimeout(r, 300));
-          const { data: retryData2, error: retryError2 } = await doSignIn();
-          if (retryError2) throw retryError2;
-          if (retryData2?.user) {
-            const { data: userProfile } = await supabase
-              .from("users")
-              .select("*")
-              .eq("id", retryData2.user.id)
-              .single();
-
-            toast.success("Login realizado com sucesso!");
-            const roles = (userProfile as any)?.roles?.length
-              ? (userProfile as any).roles
-              : [(userProfile as any)?.role || "atendente"];
-            const defaultRoute = roles.includes("admin_geral")
-              ? "/admin"
-              : roles.includes("financeiro") && !roles.includes("admin")
-                ? "/contas"
-                : "/dashboard";
-            router.push(defaultRoute);
-            return;
-          }
-        }
-
-        // Se o erro for "Invalid login credentials" e o usuário acabou de ser criado,
-        // pode ser um problema de sincronização - tentar novamente após um delay
+        // Se o erro for "Invalid login credentials", tentar uma segunda vez após delay
         if (error.message?.includes("Invalid login credentials")) {
-          console.log(
-            "[LOGIN] Credenciais inválidas. Aguardando e tentando novamente..."
-          );
+          console.log("[LOGIN] Credenciais inválidas. Aguardando e tentando novamente...");
           await new Promise((resolve) => setTimeout(resolve, 2000));
 
-          // Tentar novamente
-          const { data: retryData, error: retryError } =
-            await supabase.auth.signInWithPassword({
-              email: loginData.email,
-              password: loginData.password,
-            });
-
-          if (retryError) {
-            throw retryError;
-          }
+          const { data: retryData, error: retryError } = await doSignIn();
+          if (retryError) throw retryError;
 
           if (retryData?.user) {
-            console.log(
-              "[LOGIN] Login bem-sucedido na segunda tentativa para:",
-              retryData.user.email
-            );
-
-            // Buscar informações adicionais do usuário na tabela users
-            const { data: userProfile, error: profileError } = await supabase
-              .from("users")
-              .select("*")
-              .eq("id", retryData.user.id)
-              .single();
-
-            if (profileError) {
-              console.warn("Erro ao buscar perfil do usuário:", profileError);
-            } else {
-              console.log("Perfil do usuário encontrado:", userProfile);
-            }
-
+            const userProfile = await fetchUserProfile(retryData.user.id);
             toast.success("Login realizado com sucesso!");
-
-            const roles = (userProfile as any)?.roles?.length
-              ? (userProfile as any).roles
-              : [(userProfile as any)?.role || "atendente"];
-            const defaultRoute = roles.includes("admin_geral")
-              ? "/admin"
-              : roles.includes("financeiro") && !roles.includes("admin")
-                ? "/contas"
-                : "/dashboard";
-            setTimeout(() => {
-              router.push(defaultRoute);
-            }, 100);
+            redirectAfterLogin(userProfile);
             return;
           }
         }
@@ -601,53 +549,44 @@ export default function LoginClient() {
         throw error;
       }
 
-      if (data.user) {
+      if (data?.user) {
         console.log("Login bem-sucedido para:", data.user.email);
-
-        // Buscar informações adicionais do usuário na tabela users
-        const { data: userProfile, error: profileError } = await supabase
-          .from("users")
-          .select("*")
-          .eq("id", data.user.id)
-          .single();
-
-        if (profileError) {
-          console.warn("Erro ao buscar perfil do usuário:", profileError);
-        } else {
-          console.log("Perfil do usuário encontrado:", userProfile);
-        }
-
+        const userProfile = await fetchUserProfile(data.user.id);
         toast.success("Login realizado com sucesso!");
-
-        // Usuário financeiro vai para Contas a Pagar; demais para Dashboard
-        const roles = (userProfile as any)?.roles?.length
-          ? (userProfile as any).roles
-          : [(userProfile as any)?.role || "atendente"];
-        const defaultRoute = roles.includes("admin_geral")
-          ? "/admin"
-          : roles.includes("financeiro") && !roles.includes("admin")
-            ? "/contas"
-            : "/dashboard";
-        setTimeout(() => {
-          router.push(defaultRoute);
-        }, 100);
+        redirectAfterLogin(userProfile);
       }
     } catch (error: any) {
       console.error("Erro no login:", error);
 
-      // Mensagens de erro mais amigáveis
-      let errorMessage = "";
-      if (error.message.includes("Invalid login credentials")) {
-        errorMessage = "Email ou senha incorretos";
-      } else if (error.message.includes("Email not confirmed")) {
-        errorMessage = "Por favor, confirme seu email antes de fazer login";
-      } else if (error.message.includes("Too many requests")) {
-        errorMessage = "Muitas tentativas de login. Tente novamente em alguns minutos";
-      } else {
-        errorMessage = "Erro ao fazer login: " + error.message;
+      const msg: string = error?.message || "";
+
+      // Se o catch capturou um timeout residual, tentar o fallback REST antes de mostrar erro
+      if (msg.includes("Tempo de espera excedido")) {
+        try {
+          await tryLoginViaRest();
+          return;
+        } catch (restError: any) {
+          console.error("[LOGIN] Fallback REST também falhou:", restError);
+          const restMsg: string = restError?.message || "";
+          let errorMessage = "Erro ao fazer login: " + restMsg;
+          if (restMsg.includes("Invalid login credentials")) errorMessage = "Email ou senha incorretos";
+          setLoginError(errorMessage);
+          toast.error(errorMessage);
+          return;
+        }
       }
 
-      // Definir erro no formulário
+      let errorMessage = "";
+      if (msg.includes("Invalid login credentials")) {
+        errorMessage = "Email ou senha incorretos";
+      } else if (msg.includes("Email not confirmed")) {
+        errorMessage = "Por favor, confirme seu email antes de fazer login";
+      } else if (msg.includes("Too many requests")) {
+        errorMessage = "Muitas tentativas de login. Tente novamente em alguns minutos";
+      } else {
+        errorMessage = "Erro ao fazer login: " + msg;
+      }
+
       setLoginError(errorMessage);
       toast.error(errorMessage);
     } finally {

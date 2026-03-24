@@ -368,8 +368,33 @@ export default function AdminPage() {
     if (!editingId) return;
     setEditSubmitting(true);
     try {
-      await updateCartorio(editingId, editForm);
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        toast.error("Sessão expirada. Faça login novamente.");
+        return;
+      }
+
+      const res = await fetch("/api/admin/editar-cartorio", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ id: editingId, updates: editForm }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || "Erro ao atualizar cartório.");
+        return;
+      }
+
+      toast.success("Cartório atualizado com sucesso!");
       setEditDialogOpen(false);
+      await refetchCartorios?.();
+    } catch (err: any) {
+      toast.error(err?.message || "Erro inesperado ao salvar.");
     } finally {
       setEditSubmitting(false);
     }
