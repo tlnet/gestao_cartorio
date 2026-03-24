@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
+import { putCartorioUpdate } from "@/lib/admin-cartorio-api";
 
 interface LevontechConfig {
   sistema_levontech: boolean;
@@ -13,7 +14,7 @@ interface LevontechConfig {
 }
 
 export const useLevontechConfig = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [config, setConfig] = useState<LevontechConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [cartorioId, setCartorioId] = useState<string | null>(null);
@@ -123,207 +124,74 @@ export const useLevontechConfig = () => {
     loadConfig();
   }, [cartorioId]);
 
-  // Salvar configuração do Levontech
+  // Salvar configuração do Levontech (via API admin — evita falha por RLS)
   const saveConfig = async (configData: LevontechConfig) => {
     if (!cartorioId) {
       toast.error("Cartório não identificado");
       throw new Error("Cartório não identificado");
     }
 
+    const accessToken = session?.access_token;
+    if (!accessToken) {
+      toast.error("Sessão expirada. Faça login novamente.");
+      throw new Error("Sessão expirada");
+    }
+
     try {
-      // Verificar autenticação
-      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-      if (authError || !authUser) {
-        const errorMsg = "Usuário não autenticado. Faça login novamente.";
-        console.error("❌", errorMsg, authError);
-        toast.error(errorMsg);
-        throw new Error(errorMsg);
-      }
-
-      console.log("💾 Salvando configuração Levontech:", {
-        cartorioId,
-        userId: authUser.id,
-        configData: {
-          ...configData,
-          levontech_password: "***", // Não logar senha
-        },
-      });
-
-      // Primeiro, verificar se o cartório existe e se o usuário tem acesso
-      const { data: cartorioExists, error: checkError } = await supabase
-        .from("cartorios")
-        .select("id, nome")
-        .eq("id", cartorioId)
-        .maybeSingle();
-
-      if (checkError) {
-        console.error("❌ Erro ao verificar cartório:", checkError);
-        if (checkError.code === "PGRST116") {
-          const errorMsg = `Cartório com ID ${cartorioId} não encontrado ou sem permissão de acesso`;
-          toast.error("Cartório não encontrado ou sem permissão. Verifique se o cartório está cadastrado e você tem acesso.");
-          throw new Error(errorMsg);
-        }
-        throw checkError;
-      }
-
-      if (!cartorioExists) {
-        const errorMsg = `Cartório com ID ${cartorioId} não encontrado no banco de dados`;
-        console.error("❌", errorMsg);
-        toast.error("Cartório não encontrado. Verifique se o cartório está cadastrado.");
-        throw new Error(errorMsg);
-      }
-
-      console.log("✅ Cartório encontrado:", cartorioExists.nome);
-
-      const updateData: any = {
+      const updateData: Record<string, unknown> = {
         sistema_levontech: configData.sistema_levontech === true,
       };
 
-      // Se sistema está ativo, salvar credenciais
       if (configData.sistema_levontech) {
         updateData.levontech_url = configData.levontech_url?.trim() || null;
         updateData.levontech_username = configData.levontech_username?.trim() || null;
         updateData.levontech_password = configData.levontech_password?.trim() || null;
       } else {
-        // Se sistema está desativado, limpar credenciais
         updateData.levontech_url = null;
         updateData.levontech_username = null;
         updateData.levontech_password = null;
       }
 
-      // Não incluir updated_at manualmente, deixar o trigger fazer isso
-      console.log("📝 Dados para update:", {
-        ...updateData,
-        levontech_password: "***",
-        cartorioId,
+      const { cartorio } = await putCartorioUpdate(accessToken, cartorioId, updateData);
+      const c = cartorio as Record<string, unknown>;
+
+      setConfig({
+        sistema_levontech: Boolean(c.sistema_levontech) === true,
+        levontech_url: String(c.levontech_url ?? ""),
+        levontech_username: String(c.levontech_username ?? ""),
+        levontech_password: String(c.levontech_password ?? ""),
       });
-
-      // Tentar fazer o update - usar .select() para verificar se funcionou
-      const { data: updateResult, error: updateError } = await supabase
-        .from("cartorios")
-        .update(updateData)
-        .eq("id", cartorioId)
-        .select("id, sistema_levontech, levontech_url, levontech_username")
-        .maybeSingle();
-
-      if (updateError) {
-        console.error("❌ Erro ao fazer update:", updateError);
-        
-        // Se for erro de RLS, dar mensagem mais específica
-        if (updateError.code === "42501" || updateError.message?.includes("permission") || updateError.message?.includes("policy")) {
-          const errorMsg = "Erro de permissão (RLS). Verifique se as políticas RLS estão configuradas corretamente para permitir UPDATE na tabela cartorios.";
-          console.error("❌", errorMsg);
-          toast.error("Erro de permissão ao salvar. Verifique as políticas RLS do banco de dados.");
-          throw new Error(errorMsg);
-        }
-        
-        throw updateError;
-      }
-
-      // Verificar se o update retornou dados (significa que funcionou)
-      if (!updateResult) {
-        // Se não retornou dados mas também não deu erro, pode ser problema de RLS
-        // Tentar buscar os dados para confirmar
-        console.warn("⚠️ Update não retornou dados, verificando se foi salvo...");
-        
-        const { data: checkData, error: checkError } = await supabase
-          .from("cartorios")
-          .select("sistema_levontech, levontech_url, levontech_username, levontech_password")
-          .eq("id", cartorioId)
-          .maybeSingle();
-        
-        if (checkError) {
-          const errorMsg = "Nenhuma linha foi atualizada. Verifique as permissões RLS ou se o registro existe.";
-          console.error("❌", errorMsg, checkError);
-          toast.error("Erro ao salvar: nenhuma linha foi atualizada. Verifique as permissões RLS.");
-          throw new Error(errorMsg);
-        }
-        
-        if (checkData) {
-          // Verificar se os dados foram realmente atualizados
-          const wasUpdated = 
-            Boolean(checkData.sistema_levontech) === configData.sistema_levontech &&
-            (checkData.levontech_url || "") === (configData.levontech_url?.trim() || "");
-          
-          if (wasUpdated) {
-            console.log("✅ Dados foram atualizados (verificado via select):", {
-              ...checkData,
-              levontech_password: "***",
-            });
-            setConfig({
-              sistema_levontech: Boolean(checkData.sistema_levontech) === true,
-              levontech_url: String(checkData.levontech_url || ""),
-              levontech_username: String(checkData.levontech_username || ""),
-              levontech_password: String(checkData.levontech_password || ""),
-            });
-          } else {
-            const errorMsg = "Nenhuma linha foi atualizada. Verifique as permissões RLS.";
-            console.error("❌", errorMsg, "Dados no banco:", checkData, "Dados esperados:", configData);
-            toast.error("Erro ao salvar: nenhuma linha foi atualizada. Verifique as permissões RLS.");
-            throw new Error(errorMsg);
-          }
-        } else {
-          const errorMsg = "Nenhuma linha foi atualizada. Verifique as permissões RLS ou se o registro existe.";
-          console.error("❌", errorMsg);
-          toast.error("Erro ao salvar: nenhuma linha foi atualizada. Verifique as permissões RLS.");
-          throw new Error(errorMsg);
-        }
-      } else {
-        // Update retornou dados, sucesso!
-        console.log("✅ Update realizado com sucesso:", {
-          ...updateResult,
-          levontech_password: "***",
-        });
-
-        // Buscar a senha separadamente (não retornamos ela no select por segurança)
-        const { data: fullData, error: selectError } = await supabase
-          .from("cartorios")
-          .select("levontech_password")
-          .eq("id", cartorioId)
-          .maybeSingle();
-
-        if (selectError) {
-          console.warn("⚠️ Não foi possível buscar senha, usando dados do update");
-        }
-
-        // Atualizar estado local com os dados retornados
-        setConfig({
-          sistema_levontech: Boolean(updateResult.sistema_levontech) === true,
-          levontech_url: String(updateResult.levontech_url || ""),
-          levontech_username: String(updateResult.levontech_username || ""),
-          levontech_password: fullData?.levontech_password ? String(fullData.levontech_password) : configData.levontech_password,
-        });
-      }
 
       toast.success("Configuração do Levontech salva com sucesso!");
     } catch (error: any) {
       console.error("❌ Erro ao salvar configuração Levontech:", error);
-      const errorMessage = error.message || "Erro ao salvar configuração do Levontech";
+      const errorMessage =
+        error.message || "Erro ao salvar configuração do Levontech";
       toast.error(errorMessage);
       throw error;
     }
   };
 
-  // Desabilitar integração Levontech
   const disableConfig = async () => {
     if (!cartorioId) {
       toast.error("Cartório não identificado");
       return;
     }
 
-    try {
-      const { error } = await supabase
-        .from("cartorios")
-        .update({
-          sistema_levontech: false,
-          levontech_url: null,
-          levontech_username: null,
-          levontech_password: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", cartorioId);
+    const accessToken = session?.access_token;
+    if (!accessToken) {
+      toast.error("Sessão expirada. Faça login novamente.");
+      return;
+    }
 
-      if (error) throw error;
+    try {
+      await putCartorioUpdate(accessToken, cartorioId, {
+        sistema_levontech: false,
+        levontech_url: null,
+        levontech_username: null,
+        levontech_password: null,
+        updated_at: new Date().toISOString(),
+      });
 
       setConfig({
         sistema_levontech: false,

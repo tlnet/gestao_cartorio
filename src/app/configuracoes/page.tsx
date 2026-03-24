@@ -71,10 +71,11 @@ import { StaggeredCards, FadeInUp } from "@/components/ui/page-transition";
 import { Smartphone, Receipt, Clipboard, Database } from "lucide-react";
 import { useLevontechConfig } from "@/hooks/use-levontech-config";
 import { useCartorioValidation } from "@/hooks/use-cartorio-validation";
+import { putCartorioUpdate } from "@/lib/admin-cartorio-api";
 
 const Configuracoes = () => {
   const [activeTab, setActiveTab] = useState("cartorio");
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [cartorioId, setCartorioId] = useStateAuth<string | undefined>();
   const { isValid: isCartorioValid, missingFields, revalidate: revalidateCartorio } = useCartorioValidation();
   const [showStatusDialog, setShowStatusDialog] = useState(false);
@@ -294,41 +295,43 @@ const Configuracoes = () => {
       return;
     }
 
-    try {
-      const { error } = await supabase
-        .from("cartorios")
-        .update({
-          nome: configCartorio.nome,
-          cnpj: configCartorio.cnpj,
-          endereco: configCartorio.endereco,
-          telefone: configCartorio.telefone,
-          email: configCartorio.email,
-          tenant_id_zdg: configCartorio.tenantIdZdg || null,
-          external_id_zdg: configCartorio.externalIdZdg || null,
-          api_token_zdg: configCartorio.apiTokenZdg || null,
-          channel_id_zdg: configCartorio.channelIdZdg || null,
-          notificacao_whatsapp: configCartorio.notificacaoWhatsApp,
-          whatsapp_contas: configCartorio.whatsappContas || null,
-          whatsapp_protocolos: configCartorio.whatsappProtocolos || null,
-          cidade: configCartorio.cidade || null,
-          estado: configCartorio.estado || null,
-          numero_oficio: configCartorio.numeroOficio || null,
-          tabeliao_responsavel: configCartorio.tabeliaoResponsavel || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", cartorioId);
+    const accessToken = session?.access_token;
+    if (!accessToken) {
+      toast.error("Sessão expirada. Faça login novamente.");
+      return;
+    }
 
-      if (error) throw error;
+    try {
+      await putCartorioUpdate(accessToken, cartorioId, {
+        nome: configCartorio.nome,
+        cnpj: configCartorio.cnpj,
+        endereco: configCartorio.endereco,
+        telefone: configCartorio.telefone,
+        email: configCartorio.email,
+        tenant_id_zdg: configCartorio.tenantIdZdg || null,
+        external_id_zdg: configCartorio.externalIdZdg || null,
+        api_token_zdg: configCartorio.apiTokenZdg || null,
+        channel_id_zdg: configCartorio.channelIdZdg || null,
+        notificacao_whatsapp: configCartorio.notificacaoWhatsApp,
+        whatsapp_contas: configCartorio.whatsappContas || null,
+        whatsapp_protocolos: configCartorio.whatsappProtocolos || null,
+        cidade: configCartorio.cidade || null,
+        estado: configCartorio.estado || null,
+        numero_oficio: configCartorio.numeroOficio || null,
+        tabeliao_responsavel: configCartorio.tabeliaoResponsavel || null,
+        updated_at: new Date().toISOString(),
+      });
 
       toast.success("Configurações do cartório salvas com sucesso!");
-      
-      // Revalidar imediatamente após salvar
+
       setTimeout(() => {
         revalidateCartorio();
       }, 500);
     } catch (error: any) {
       console.error("Erro ao salvar configurações do cartório:", error);
-      toast.error("Erro ao salvar configurações: " + (error.message || "Erro desconhecido"));
+      toast.error(
+        "Erro ao salvar configurações: " + (error.message || "Erro desconhecido")
+      );
     }
   };
 

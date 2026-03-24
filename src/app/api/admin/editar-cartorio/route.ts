@@ -23,14 +23,7 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const { id, updates } = body as {
       id: string;
-      updates: {
-        nome?: string;
-        cnpj?: string;
-        email?: string;
-        telefone?: string;
-        endereco?: string;
-        ativo?: boolean;
-      };
+      updates: Record<string, unknown>;
     };
 
     if (!id) {
@@ -39,6 +32,17 @@ export async function PUT(request: NextRequest) {
 
     if (!updates || Object.keys(updates).length === 0) {
       return NextResponse.json({ error: "Nenhum dado para atualizar." }, { status: 400 });
+    }
+
+    const callerSuper = authResult.userType === "admin_geral";
+    if (!callerSuper) {
+      const cid = authResult.profile?.cartorio_id;
+      if (!cid || cid !== id) {
+        return NextResponse.json(
+          { error: "Você não tem permissão para editar este cartório." },
+          { status: 403 }
+        );
+      }
     }
 
     const adminSupabase = getAdminClient();

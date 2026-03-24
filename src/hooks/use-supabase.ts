@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
+import { putCartorioUpdate } from "@/lib/admin-cartorio-api";
 
 // Dados mockados para evitar chamadas de API durante o build
 const mockCartorios = [
@@ -69,6 +70,7 @@ const mockRelatorios = [
 export function useCartorios() {
   const [cartorios, setCartorios] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const { session } = useAuth();
 
   const fetchCartorios = async () => {
     try {
@@ -129,22 +131,19 @@ export function useCartorios() {
   };
 
   const updateCartorio = async (id: string, updates: any) => {
+    const accessToken = session?.access_token;
+    if (!accessToken) {
+      toast.error("Sessão expirada. Faça login novamente.");
+      throw new Error("Sessão expirada");
+    }
+
     try {
-      const { data, error } = await supabase
-        .from("cartorios")
-        .update(updates)
-        .eq("id", id)
-        .select()
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      setCartorios((prev) => prev.map((c) => (c.id === id ? data : c)));
+      const { cartorio } = await putCartorioUpdate(accessToken, id, updates);
+      setCartorios((prev) => prev.map((c) => (c.id === id ? cartorio : c)));
       toast.success("Cartório atualizado com sucesso!");
+      return cartorio;
     } catch (error: any) {
-      toast.error("Erro ao atualizar cartório: " + error.message);
+      toast.error("Erro ao atualizar cartório: " + (error?.message || "Erro desconhecido"));
       throw error;
     }
   };
@@ -801,6 +800,7 @@ export function useProtocolos(cartorioId?: string) {
 export function useUsuarios(cartorioId?: string) {
   const [usuarios, setUsuarios] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const { session } = useAuth();
 
   const fetchUsuarios = async () => {
     try {
@@ -967,40 +967,91 @@ export function useUsuarios(cartorioId?: string) {
   };
 
   const updateUsuario = async (id: string, updates: any) => {
-    try {
-      const { data, error } = await supabase
-        .from("users")
-        .update(updates)
-        .eq("id", id)
-        .select()
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      setUsuarios((prev) => prev.map((u) => (u.id === id ? data : u)));
-      toast.success("Usuário atualizado com sucesso!");
-    } catch (error: any) {
-      toast.error("Erro ao atualizar usuário: " + error.message);
-      throw error;
+    const accessToken = session?.access_token;
+    if (!accessToken) {
+      toast.error("Sessão expirada. Faça login novamente.");
+      throw new Error("Sessão expirada");
     }
+
+    let res: Response;
+    try {
+      res = await fetch("/api/admin/editar-usuario", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ id, updates }),
+      });
+    } catch {
+      toast.error("Erro de rede ao atualizar usuário.");
+      throw new Error("Erro de rede");
+    }
+
+    const payload = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const msg =
+        typeof payload?.error === "string"
+          ? payload.error
+          : "Erro ao atualizar usuário.";
+      toast.error(msg);
+      throw new Error(msg);
+    }
+
+    const raw = payload.usuario;
+    const mapped = {
+      ...raw,
+      tipo: raw.role,
+      roles: raw.roles?.length
+        ? raw.roles
+        : raw.role
+          ? [raw.role]
+          : [],
+      account_status:
+        raw.account_status || (raw.ativo ? "active" : "inactive"),
+      invite_status: raw.invite_status ?? null,
+    };
+
+    setUsuarios((prev) => prev.map((u) => (u.id === id ? mapped : u)));
+    toast.success("Usuário atualizado com sucesso!");
+    return mapped;
   };
 
   const deleteUsuario = async (id: string) => {
-    try {
-      const { error } = await supabase.from("users").delete().eq("id", id);
-
-      if (error) {
-        throw error;
-      }
-
-      setUsuarios((prev) => prev.filter((u) => u.id !== id));
-      toast.success("Usuário removido com sucesso!");
-    } catch (error: any) {
-      toast.error("Erro ao remover usuário: " + error.message);
-      throw error;
+    const accessToken = session?.access_token;
+    if (!accessToken) {
+      toast.error("Sessão expirada. Faça login novamente.");
+      throw new Error("Sessão expirada");
     }
+
+    let res: Response;
+    try {
+      res = await fetch(
+        `/api/admin/deletar-usuario?id=${encodeURIComponent(id)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+    } catch {
+      toast.error("Erro de rede ao remover usuário.");
+      throw new Error("Erro de rede");
+    }
+
+    const payload = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const msg =
+        typeof payload?.error === "string"
+          ? payload.error
+          : "Erro ao remover usuário.";
+      toast.error(msg);
+      throw new Error(msg);
+    }
+
+    setUsuarios((prev) => prev.filter((u) => u.id !== id));
+    toast.success("Usuário removido com sucesso!");
   };
 
   useEffect(() => {

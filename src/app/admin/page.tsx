@@ -127,7 +127,7 @@ const DEFAULT_EDIT_USUARIO: EditUsuarioForm = {
 // ─── componente ──────────────────────────────────────────────────────────────
 
 export default function AdminPage() {
-  const { cartorios, loading: loadingCartorios, updateCartorio, refetch: refetchCartorios } = useCartorios();
+  const { cartorios, loading: loadingCartorios, refetch: refetchCartorios } = useCartorios();
   const { usuarios, loading: loadingUsuarios, updateUsuario, refetch: refetchUsuarios } = useUsuarios();
   const { session } = useAuth();
 
