@@ -311,62 +311,6 @@ export default function LoginClient() {
     return json;
   };
 
-  const signInViaRest = async (email: string, password: string) => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !anon) {
-      throw new Error("Supabase não configurado (URL/ANON).");
-    }
-
-    const endpoint = `${url}/auth/v1/token?grant_type=password`;
-    console.log("[LOGIN][REST] Iniciando POST /auth/v1/token", { endpoint });
-
-    const res = await fetchWithAbort(
-      endpoint,
-      {
-        method: "POST",
-        headers: {
-          apikey: anon,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password }),
-      },
-      20000
-    );
-
-    const text = await res.text();
-    let json: any = null;
-    try {
-      json = text ? JSON.parse(text) : null;
-    } catch {
-      // ignore
-    }
-
-    if (!res.ok) {
-      const message =
-        json?.msg ||
-        json?.message ||
-        json?.error_description ||
-        json?.error ||
-        text ||
-        `HTTP ${res.status}`;
-      console.error("[LOGIN][REST] Falhou", { status: res.status, body: json ?? text });
-      throw new Error(message);
-    }
-
-    console.log("[LOGIN][REST] Sucesso", {
-      hasAccessToken: !!json?.access_token,
-      hasRefreshToken: !!json?.refresh_token,
-      userId: json?.user?.id ?? null,
-    });
-
-    return json as {
-      access_token: string;
-      refresh_token: string;
-      user: { id: string; email: string };
-    };
-  };
-
   // Detectar modo de recuperação de senha a partir dos parâmetros da URL
   useEffect(() => {
     if (!isRecoveryLink()) {
@@ -439,90 +383,16 @@ export default function LoginClient() {
     router.push(defaultRoute);
   };
 
-  /**
-   * Busca perfil via SDK do Supabase (com timeout de 10s).
-   * Usado no fluxo normal, onde o cliente não está travado.
-   */
   const fetchUserProfile = async (userId: string) => {
-    try {
-      const result = await withTimeout(
-        supabase.from("users").select("*").eq("id", userId).single() as unknown as Promise<{ data: any; error: any }>,
-        10000,
-        "Timeout ao buscar perfil do usuário."
-      );
-      const { data: userProfile, error: profileError } = result;
-      if (profileError) {
-        console.warn("Erro ao buscar perfil do usuário:", profileError);
-      }
-      return userProfile;
-    } catch (e) {
-      console.warn("[LOGIN] fetchUserProfile falhou (não fatal):", e);
-      return null;
+    const { data: userProfile, error: profileError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", userId)
+      .single();
+    if (profileError) {
+      console.warn("Erro ao buscar perfil:", profileError);
     }
-  };
-
-  /**
-   * Busca perfil via REST direto (sem SDK).
-   * Usado no fallback REST, quando o cliente Supabase pode estar com Web Lock travado.
-   */
-  const fetchUserProfileViaRest = async (
-    userId: string,
-    accessToken: string
-  ): Promise<any> => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !anon) return null;
-    try {
-      const endpoint = `${url}/rest/v1/users?id=eq.${encodeURIComponent(userId)}&select=*&limit=1`;
-      const res = await fetchWithAbort(
-        endpoint,
-        {
-          headers: {
-            apikey: anon,
-            Authorization: `Bearer ${accessToken}`,
-            Accept: "application/json",
-          },
-        },
-        10000
-      );
-      if (!res.ok) {
-        console.warn("[LOGIN][REST] fetchUserProfileViaRest status:", res.status);
-        return null;
-      }
-      const data = await res.json();
-      return Array.isArray(data) ? (data[0] ?? null) : null;
-    } catch (e) {
-      console.warn("[LOGIN][REST] fetchUserProfileViaRest falhou (não fatal):", e);
-      return null;
-    }
-  };
-
-  const tryLoginViaRest = async () => {
-    console.warn("[LOGIN] Tentando login via REST como fallback...");
-    const rest = await signInViaRest(loginData.email, loginData.password);
-
-    // Tentar persistir a sessão via SDK — se o Web Lock ainda estiver preso, ignora e redireciona assim mesmo
-    try {
-      const { error: setSessionError } = await withTimeout(
-        supabase.auth.setSession({
-          access_token: rest.access_token,
-          refresh_token: rest.refresh_token,
-        }),
-        8000,
-        "Timeout ao persistir sessão após login."
-      );
-      if (setSessionError) {
-        console.warn("[LOGIN] setSession retornou erro (não fatal):", setSessionError.message);
-      }
-    } catch (e) {
-      console.warn("[LOGIN] setSession travou (não fatal, seguindo com redirect):", e);
-    }
-
-    // IMPORTANTE: não usar supabase.from() aqui — o SDK pode ainda estar com Web Lock travado.
-    // Buscar perfil via REST direto usando o access_token já obtido.
-    const userProfile = await fetchUserProfileViaRest(rest.user.id, rest.access_token);
-    toast.success("Login realizado com sucesso!");
-    redirectAfterLogin(userProfile);
+    return userProfile ?? null;
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -539,100 +409,44 @@ export default function LoginClient() {
     }
 
     try {
-      console.log("Tentando fazer login com:", loginData.email);
-
-      // Limpar qualquer sessão/token obsoleto que possa travar o SDK do Supabase
+      // Limpar tokens antigos que possam travar o SDK
       clearSupabaseAuthStorage();
 
-      const doSignIn = () =>
+      const { data, error } = await withTimeout(
         supabase.auth.signInWithPassword({
           email: loginData.email,
           password: loginData.password,
-        });
+        }),
+        20000,
+        "Serviço de autenticação não respondeu. Tente novamente."
+      );
 
-      let data: any = null;
-      let error: any = null;
-      let timedOut = false;
-
-      try {
-        const result = (await withTimeout(
-          doSignIn(),
-          25000,
-          "Tempo de espera excedido. Tente novamente."
-        )) as any;
-        data = result.data;
-        error = result.error;
-      } catch (raceErr: any) {
-        if (String(raceErr?.message || "").includes("Tempo de espera excedido")) {
-          timedOut = true;
-          console.warn("[LOGIN] signInWithPassword travou (timeout). Tentando via REST...");
-        } else {
-          throw raceErr;
-        }
-      }
-
-      // Se houve timeout do SDK, fazer fallback direto via REST
-      if (timedOut) {
-        await tryLoginViaRest();
-        return;
-      }
-
-      if (error) {
-        // Se o erro for "Invalid login credentials", tentar uma segunda vez após delay
-        if (error.message?.includes("Invalid login credentials")) {
-          console.log("[LOGIN] Credenciais inválidas. Aguardando e tentando novamente...");
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-
-          const { data: retryData, error: retryError } = await doSignIn();
-          if (retryError) throw retryError;
-
-          if (retryData?.user) {
-            const userProfile = await fetchUserProfile(retryData.user.id);
-            toast.success("Login realizado com sucesso!");
-            redirectAfterLogin(userProfile);
-            return;
-          }
-        }
-
-        throw error;
-      }
+      if (error) throw error;
 
       if (data?.user) {
-        console.log("Login bem-sucedido para:", data.user.email);
         const userProfile = await fetchUserProfile(data.user.id);
         toast.success("Login realizado com sucesso!");
         redirectAfterLogin(userProfile);
       }
     } catch (error: any) {
-      console.error("Erro no login:", error);
-
       const msg: string = error?.message || "";
 
-      // Se o catch capturou um timeout residual, tentar o fallback REST antes de mostrar erro
-      if (msg.includes("Tempo de espera excedido")) {
-        try {
-          await tryLoginViaRest();
-          return;
-        } catch (restError: any) {
-          console.error("[LOGIN] Fallback REST também falhou:", restError);
-          const restMsg: string = restError?.message || "";
-          let errorMessage = "Erro ao fazer login: " + restMsg;
-          if (restMsg.includes("Invalid login credentials")) errorMessage = "Email ou senha incorretos";
-          setLoginError(errorMessage);
-          toast.error(errorMessage);
-          return;
-        }
-      }
-
       let errorMessage = "";
-      if (msg.includes("Invalid login credentials")) {
-        errorMessage = "Email ou senha incorretos";
+      if (
+        msg.includes("Serviço de autenticação não respondeu") ||
+        msg.includes("Tempo de espera")
+      ) {
+        errorMessage =
+          "Serviço de autenticação não respondeu. Aguarde alguns segundos e tente novamente.";
+      } else if (msg.includes("Invalid login credentials")) {
+        errorMessage = "E-mail ou senha incorretos";
       } else if (msg.includes("Email not confirmed")) {
-        errorMessage = "Por favor, confirme seu email antes de fazer login";
+        errorMessage = "Por favor, confirme seu e-mail antes de fazer login";
       } else if (msg.includes("Too many requests")) {
-        errorMessage = "Muitas tentativas de login. Tente novamente em alguns minutos";
+        errorMessage =
+          "Muitas tentativas seguidas. Aguarde alguns minutos e tente novamente";
       } else {
-        errorMessage = "Erro ao fazer login: " + msg;
+        errorMessage = msg || "Erro ao fazer login. Tente novamente.";
       }
 
       setLoginError(errorMessage);
