@@ -6,6 +6,7 @@ import { useProtocolos, useUsuarios } from "@/hooks/use-supabase";
 import { useServicos } from "@/hooks/use-servicos";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
 import {
   Card,
@@ -72,8 +73,15 @@ import { cn } from "@/lib/utils";
 import { StaggeredCards, FadeInUp } from "@/components/ui/page-transition";
 
 const Relatorios = () => {
-  const { protocolos, loading: protocolosLoading } = useProtocolos();
-  const { usuarios, loading: usuariosLoading } = useUsuarios();
+  const { userProfile, userType } = useAuth();
+
+  const scopedCartorioId =
+    userType === "admin_geral"
+      ? undefined
+      : (userProfile as any)?.cartorio_id ?? undefined;
+
+  const { protocolos, loading: protocolosLoading } = useProtocolos(scopedCartorioId);
+  const { usuarios, loading: usuariosLoading } = useUsuarios(scopedCartorioId);
   const { servicos, loading: servicosLoading } = useServicos();
   const { statusPersonalizados, loading: statusLoading } =
     useStatusPersonalizados();

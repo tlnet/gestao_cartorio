@@ -66,8 +66,14 @@ import {
 } from "lucide-react";
 
 const ProtocolosContent = () => {
-  const { user } = useAuth();
+  const { user, userProfile, userType } = useAuth();
   const searchParams = useSearchParams();
+
+  const scopedCartorioId =
+    userType === "admin_geral"
+      ? undefined
+      : (userProfile as any)?.cartorio_id ?? undefined;
+
   const {
     protocolos,
     loading,
@@ -75,8 +81,8 @@ const ProtocolosContent = () => {
     updateProtocolo,
     deleteProtocolo,
     refetch: refetchProtocolos,
-  } = useProtocolos();
-  const { cartorios } = useCartorios();
+  } = useProtocolos(scopedCartorioId);
+  const { cartorios } = useCartorios(scopedCartorioId);
   const { statusPersonalizados } = useStatusPersonalizados();
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [busca, setBusca] = useState("");

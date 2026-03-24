@@ -7,6 +7,7 @@ import ProtocoloForm from "@/components/protocolos/protocolo-form";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useProtocolos, useCartorios, useUsuarios } from "@/hooks/use-supabase";
 import IANotifications from "@/components/notifications/ia-notifications";
+import { useAuth } from "@/contexts/auth-context";
 import {
   Card,
   CardContent,
@@ -53,13 +54,21 @@ import {
 } from "@/lib/utils";
 
 const Dashboard = () => {
+  const { userProfile, userType } = useAuth();
+
+  // Usuários que não são super admin enxergam apenas o próprio cartório
+  const scopedCartorioId =
+    userType === "admin_geral"
+      ? undefined
+      : (userProfile as any)?.cartorio_id ?? undefined;
+
   const {
     protocolos,
     loading: protocolosLoading,
     updateProtocolo,
-  } = useProtocolos();
-  const { cartorios, loading: cartoriosLoading } = useCartorios();
-  const { usuarios, loading: usuariosLoading } = useUsuarios();
+  } = useProtocolos(scopedCartorioId);
+  const { cartorios, loading: cartoriosLoading } = useCartorios(scopedCartorioId);
+  const { usuarios, loading: usuariosLoading } = useUsuarios(scopedCartorioId);
 
   const [metricas, setMetricas] = useState({
     processosHoje: 0,

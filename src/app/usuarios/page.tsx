@@ -93,9 +93,16 @@ const usuarioSchema = z.object({
 type UsuarioFormData = z.infer<typeof usuarioSchema>;
 
 const GestaoUsuarios = () => {
+  const { userProfile, userType } = useAuth();
+
+  // Restringe a lista ao cartório do usuário (exceto super admin)
+  const scopedCartorioId =
+    userType === "admin_geral"
+      ? undefined
+      : (userProfile as any)?.cartorio_id ?? undefined;
+
   const { usuarios, loading, createUsuario, updateUsuario, deleteUsuario } =
-    useUsuarios();
-  const { userProfile } = useAuth();
+    useUsuarios(scopedCartorioId);
 
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("todos");

@@ -67,7 +67,7 @@ const mockRelatorios = [
   },
 ];
 
-export function useCartorios() {
+export function useCartorios(cartorioId?: string) {
   const [cartorios, setCartorios] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const { session } = useAuth();
@@ -76,10 +76,12 @@ export function useCartorios() {
     try {
       setLoading(true);
 
-      const { data, error } = await supabase
-        .from("cartorios")
-        .select("*")
-        .eq("ativo", true);
+      let query = supabase.from("cartorios").select("*").eq("ativo", true);
+      if (cartorioId) {
+        query = query.eq("id", cartorioId);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         console.error("Erro detalhado do Supabase (cartórios):", {
@@ -166,7 +168,8 @@ export function useCartorios() {
 
   useEffect(() => {
     fetchCartorios();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartorioId]);
 
   return {
     cartorios,
