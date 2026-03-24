@@ -311,6 +311,45 @@ export default function LoginClient() {
     return json;
   };
 
+  // Ao montar a página de login: verifica se já existe sessão válida.
+  // Se sim → redireciona. Se não → faz signOut local para liberar locks pendentes.
+  useEffect(() => {
+    void (async () => {
+      try {
+        console.log("[LOGIN][MOUNT] Verificando sessão existente...");
+        const { data } = await withTimeout(
+          supabase.auth.getSession(),
+          8000,
+          "Timeout ao verificar sessão."
+        );
+        if (data?.session?.user) {
+          console.log("[LOGIN][MOUNT] Sessão válida encontrada — redirecionando...", {
+            userId: data.session.user.id,
+          });
+          const userProfile = await fetchUserProfile(data.session.user.id);
+          redirectAfterLogin(userProfile);
+          return;
+        }
+        // Sem sessão válida: garante limpeza de locks e storage residual
+        console.log("[LOGIN][MOUNT] Sem sessão válida. Limpando estado residual...");
+        try {
+          await withTimeout(
+            supabase.auth.signOut({ scope: "local" }),
+            4000,
+            "Timeout ao limpar sessão residual."
+          );
+        } catch {
+          // Ignorado intencionalmente
+        }
+        clearSupabaseAuthStorage();
+        console.log("[LOGIN][MOUNT] Estado limpo. Pronto para login.");
+      } catch (e: any) {
+        console.warn("[LOGIN][MOUNT] Falha na verificação inicial (ignorado):", e?.message);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Detectar modo de recuperação de senha a partir dos parâmetros da URL
   useEffect(() => {
     if (!isRecoveryLink()) {
@@ -409,9 +448,25 @@ export default function LoginClient() {
     }
 
     try {
-      // Limpar tokens antigos que possam travar o SDK
-      clearSupabaseAuthStorage();
+      console.log("[LOGIN] Iniciando fluxo de login...");
 
+      // Limpa estado em memória + localStorage para evitar lock do navigator.locks
+      // (sem isso, o refresh token em background pode bloquear o signInWithPassword para sempre)
+      console.log("[LOGIN] Limpando sessão anterior (signOut local + storage)...");
+      try {
+        await withTimeout(
+          supabase.auth.signOut({ scope: "local" }),
+          5000,
+          "Timeout ao limpar sessão anterior."
+        );
+        console.log("[LOGIN] signOut local OK.");
+      } catch (signOutErr: any) {
+        console.warn("[LOGIN] signOut local falhou (continuando mesmo assim):", signOutErr?.message);
+      }
+      clearSupabaseAuthStorage();
+      console.log("[LOGIN] Storage limpo.");
+
+      console.log("[LOGIN] Chamando signInWithPassword...");
       const { data, error } = await withTimeout(
         supabase.auth.signInWithPassword({
           email: loginData.email,
@@ -420,21 +475,36 @@ export default function LoginClient() {
         20000,
         "Serviço de autenticação não respondeu. Tente novamente."
       );
+      console.log("[LOGIN] signInWithPassword retornou.", {
+        hasUser: !!data?.user,
+        userId: data?.user?.id ?? null,
+        errorMsg: error?.message ?? null,
+      });
 
       if (error) throw error;
 
       if (data?.user) {
+        console.log("[LOGIN] Buscando perfil do usuário...");
         const userProfile = await fetchUserProfile(data.user.id);
+        console.log("[LOGIN] Perfil:", {
+          found: !!userProfile,
+          role: (userProfile as any)?.role ?? null,
+        });
         toast.success("Login realizado com sucesso!");
+        console.log("[LOGIN] Redirecionando...");
         redirectAfterLogin(userProfile);
+      } else {
+        console.warn("[LOGIN] signInWithPassword OK mas sem user na resposta.");
       }
     } catch (error: any) {
       const msg: string = error?.message || "";
+      console.error("[LOGIN] Erro capturado:", msg);
 
       let errorMessage = "";
       if (
         msg.includes("Serviço de autenticação não respondeu") ||
-        msg.includes("Tempo de espera")
+        msg.includes("Tempo de espera") ||
+        msg.includes("Timeout")
       ) {
         errorMessage =
           "Serviço de autenticação não respondeu. Aguarde alguns segundos e tente novamente.";
