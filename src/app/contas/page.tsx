@@ -117,7 +117,19 @@ export default function ContasPage() {
         documentosPendentes: docsToSave,
       });
 
-      const contaCriada = await criarConta(data as any);
+      const documentosParaWebhook =
+        docsToSave.length > 0
+          ? docsToSave.map((d: any) => ({
+              nome: d.nome,
+              url: d.url,
+              tipo: d.tipo,
+              tamanho: d.tamanho,
+            }))
+          : undefined;
+
+      const contaCriada = await criarConta(data as any, {
+        documentosAnexos: documentosParaWebhook,
+      });
 
       // Se há documentos pendentes e a conta foi criada, salvar os documentos
       if (contaCriada && docsToSave.length > 0) {

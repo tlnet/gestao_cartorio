@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/auth-context";
 
 interface CNIBToken {
   access_token: string;
@@ -6,52 +8,72 @@ interface CNIBToken {
 }
 
 export const useCNIBToken = () => {
+  const { user } = useAuth();
   const [token, setToken] = useState<CNIBToken | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchToken = async () => {
+  const fetchToken = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Buscar token do webhook N8N
-      const webhookUrl = process.env.NEXT_PUBLIC_CNIB_WEBHOOK_URL || 
-        "https://webhook.conversix.com.br/webhook/56a42f09-36f7-4912-b9cb-c4363d5ca7ad";
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      const response = await fetch(webhookUrl, {
-        method: "GET",
+      if (!session?.access_token) {
+        setToken(null);
+        setError("Sessão não encontrada. Faça login novamente.");
+        return;
+      }
+
+      // Chama API na mesma origem (evita CORS ao webhook externo)
+      const response = await fetch("/api/cnib/obter-token-webhook", {
+        method: "POST",
         headers: {
-          "Accept": "application/json",
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
         },
+        credentials: "include",
+        body: JSON.stringify({}),
       });
 
       if (!response.ok) {
-        throw new Error(`Erro ao buscar token: ${response.status}`);
+        let msg = `Erro ao buscar token: ${response.status}`;
+        try {
+          const errJson = await response.json();
+          if (errJson?.error && typeof errJson.error === "string") {
+            msg = errJson.error;
+          }
+        } catch {
+          /* ignore */
+        }
+        throw new Error(msg);
       }
 
       const data = await response.json();
-      
+
       // O webhook retorna o token no formato: { "cnib_access_token": "..." }
-      const accessToken = data.cnib_access_token || data.access_token || data.token;
+      const accessToken =
+        data.cnib_access_token || data.access_token || data.token;
 
       if (!accessToken) {
         throw new Error("Token não encontrado na resposta do webhook");
       }
 
-      // Decodificar JWT para obter expiração (opcional, para validação)
       let expiresAt: string | undefined;
       try {
         const tokenParts = accessToken.split(".");
         if (tokenParts.length === 3) {
-          // Usar atob (disponível no navegador) em vez de Buffer
           const base64Url = tokenParts[1];
-          const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+          const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
           const jsonPayload = decodeURIComponent(
             atob(base64)
-              .split('')
-              .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-              .join('')
+              .split("")
+              .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+              .join("")
           );
           const payload = JSON.parse(jsonPayload);
           if (payload.exp) {
@@ -59,7 +81,6 @@ export const useCNIBToken = () => {
           }
         }
       } catch (e) {
-        // Ignorar erro de decodificação
         console.log("⚠️ Não foi possível decodificar expiração do token:", e);
       }
 
@@ -69,27 +90,24 @@ export const useCNIBToken = () => {
       });
     } catch (err) {
       const errorMessage =
-        err instanceof Error
-          ? err.message
-          : "Erro ao buscar token CNIB";
+        err instanceof Error ? err.message : "Erro ao buscar token CNIB";
       setError(errorMessage);
       console.error("Erro ao buscar token CNIB:", err);
       setToken(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id]);
 
   useEffect(() => {
     fetchToken();
 
-    // Atualizar token a cada 5 minutos para pegar tokens novos
     const interval = setInterval(() => {
       fetchToken();
     }, 5 * 60 * 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchToken]);
 
   return {
     token,
@@ -99,4 +117,3 @@ export const useCNIBToken = () => {
     isTokenValid: token !== null,
   };
 };
-

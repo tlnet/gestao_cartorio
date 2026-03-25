@@ -841,6 +841,7 @@ export const useRelatoriosIA = () => {
         payload = {
           relatorio_id: relatorio.id,
           tipo_solicitacao: "minuta_compra_e_venda",
+          cartorio_id: cartorioId,
           data_envio: new Date().toISOString(),
           dados: {
             compradores,
@@ -848,7 +849,16 @@ export const useRelatoriosIA = () => {
             certidoes_fiscais,
             imovel,
           },
-          cartorio: cartorioData,
+          cartorio: {
+            id: cartorioId,
+            ...cartorioData,
+          },
+          metadata: {
+            usuario_id: usuarioId,
+            cartorio_id: cartorioId,
+            origem: "gestao_cartorio_app",
+            tipo_processamento: "minuta_documento",
+          },
         };
       } else {
         // Estrutura padrão para outros tipos

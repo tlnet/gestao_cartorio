@@ -830,6 +830,7 @@ const AnaliseIA = () => {
       // Payload com os campos preenchidos pelo usuário + dados_minuta do banco
       const payloadReenvio = {
         relatorio_id: relatorio.id,
+        cartorio_id: relatorio.cartorio_id,
         origem: "preenchimento_usuario",
         data_reenvio: new Date().toISOString(),
         dados_minuta: (relatorio as any).dados_minuta ?? null,

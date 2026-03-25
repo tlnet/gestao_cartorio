@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { createClient } from "@supabase/supabase-js";
+import { buildCnibTokenWebhookRequestBody } from "@/lib/cnib-webhook-token-body";
 
 /**
  * API Route para consultar CNIB por CPF/CNPJ
@@ -213,39 +214,30 @@ export async function POST(request: NextRequest) {
       "https://webhook.conversix.com.br/webhook/56a42f09-36f7-4912-b9cb-c4363d5ca7ad";
 
     console.log("🔍 Buscando token CNIB do webhook N8N:", cnibWebhookUrl);
-    
-    // Se conseguirmos o cartório do usuário, enviamos no querystring para o n8n buscar credenciais corretas.
-    const cnibWebhookUrlWithParams = (() => {
-      try {
-        if (!cartorioIdFromUser) return cnibWebhookUrl;
-        const u = new URL(cnibWebhookUrl);
-        u.searchParams.set("cartorio_id", cartorioIdFromUser);
-        return u.toString();
-      } catch {
-        return cnibWebhookUrl;
-      }
-    })();
 
-    console.log("📨 Webhook N8N CNIB (com cartorio_id quando disponível):", {
-      cartorio_id: cartorioIdFromUser,
-      cnibWebhookUrlWithParams,
-    });
+    const cnibTokenWebhookBody = buildCnibTokenWebhookRequestBody(
+      cartorioIdFromUser,
+      user.id
+    );
+
+    console.log("📨 Webhook N8N CNIB (POST body):", cnibTokenWebhookBody);
 
     let token: string | null = null;
 
     try {
-      console.log("📡 Fazendo requisição GET para webhook...");
-      
+      console.log("📡 Fazendo requisição POST para webhook...");
+
       // Adicionar timeout para evitar requisições infinitas
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos
-      
-      // Fazer requisição ao webhook N8N para obter o token
-      const tokenResponse = await fetch(cnibWebhookUrlWithParams, {
-        method: "GET",
+
+      const tokenResponse = await fetch(cnibWebhookUrl, {
+        method: "POST",
         headers: {
-          "Accept": "application/json",
+          Accept: "application/json",
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify(cnibTokenWebhookBody),
         signal: controller.signal,
       });
 

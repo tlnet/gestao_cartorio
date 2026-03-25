@@ -112,6 +112,55 @@ const dbToContaPagar = (data: ContaPagarDB): ContaPagar => {
   }
 };
 
+/** Anexos já enviados ao storage no formulário (ainda sem linha em documentos_contas). */
+export type DocumentoAnexoFormulario = {
+  nome: string;
+  url: string;
+  tipo: string;
+  tamanho: number;
+};
+
+/**
+ * Monta a lista de anexos do webhook. Se ainda não houver registros em `documentos_contas`
+ * (típico na criação: webhook roda antes do insert dos documentos), usa os dados do formulário.
+ */
+const montarArquivosAnexadosWebhook = (
+  contaId: string,
+  documentosConta: any[] | null | undefined,
+  documentosFormulario: DocumentoAnexoFormulario[] | undefined,
+  usuarioId?: string | null
+) => {
+  const fromDb = (documentosConta || []).map((doc: any) => ({
+    id: doc.id,
+    conta_id: doc.conta_id,
+    nome_arquivo: doc.nome_arquivo,
+    url_arquivo: doc.url_arquivo,
+    tipo_arquivo: doc.tipo_arquivo,
+    tamanho_arquivo: doc.tamanho_arquivo,
+    data_upload: doc.data_upload,
+    usuario_upload: doc.usuario_upload,
+  }));
+
+  if (fromDb.length > 0) {
+    return fromDb;
+  }
+
+  if (!documentosFormulario?.length) {
+    return [];
+  }
+
+  return documentosFormulario.map((d, i) => ({
+    id: `pre-registro-${contaId.slice(0, 8)}-${i}`,
+    conta_id: contaId,
+    nome_arquivo: d.nome,
+    url_arquivo: d.url,
+    tipo_arquivo: d.tipo,
+    tamanho_arquivo: d.tamanho,
+    data_upload: new Date().toISOString(),
+    usuario_upload: usuarioId ?? null,
+  }));
+};
+
 export const useContasPagar = (cartorioId?: string) => {
   const [contas, setContas] = useState<ContaPagar[]>([]);
   const [resumo, setResumo] = useState<ResumoFinanceiro>({
@@ -255,7 +304,8 @@ export const useContasPagar = (cartorioId?: string) => {
 
   // Criar nova conta
   const criarConta = async (
-    contaData: Omit<ContaPagar, "id" | "criadoEm" | "atualizadoEm">
+    contaData: Omit<ContaPagar, "id" | "criadoEm" | "atualizadoEm">,
+    options?: { documentosAnexos?: DocumentoAnexoFormulario[] }
   ) => {
     try {
       if (!cartorioId) {
@@ -411,17 +461,12 @@ export const useContasPagar = (cartorioId?: string) => {
                 );
               }
 
-              const arquivosAnexados =
-                (documentosConta || []).map((doc: any) => ({
-                  id: doc.id,
-                  conta_id: doc.conta_id,
-                  nome_arquivo: doc.nome_arquivo,
-                  url_arquivo: doc.url_arquivo,
-                  tipo_arquivo: doc.tipo_arquivo,
-                  tamanho_arquivo: doc.tamanho_arquivo,
-                  data_upload: doc.data_upload,
-                  usuario_upload: doc.usuario_upload,
-                })) || [];
+              const arquivosAnexados = montarArquivosAnexadosWebhook(
+                novaConta.id,
+                documentosConta,
+                options?.documentosAnexos,
+                user?.id
+              );
 
               const payload = {
                 status_anterior: contaData.status || "A_PAGAR",
