@@ -56,7 +56,10 @@ type ContaFormValues = z.infer<typeof contaFormSchema>;
 
 interface ContaFormProps {
   conta?: ContaPagar;
-  onSubmit: (data: Partial<ContaPagar>) => Promise<void>;
+  onSubmit: (
+    data: Partial<ContaPagar>,
+    documentosNovos?: DocumentoAnexo[]
+  ) => Promise<void>;
   onCancel?: () => void;
   loading?: boolean;
   onDocumentosChange?: (documentos: DocumentoAnexo[]) => void;
@@ -356,8 +359,12 @@ export function ContaForm({
         await executeRemocaoEmLote();
       }
 
+      // Para nova conta, envia os documentos junto do submit para evitar
+      // condição de corrida com estado assíncrono no componente pai.
+      const documentosNovosConta = !conta ? documentos : undefined;
+
       // Salvar a conta primeiro
-      await onSubmit(contaData);
+      await onSubmit(contaData, documentosNovosConta);
 
       // Para contas existentes, salvar apenas os documentos novos
       if (conta?.id && documentos.length > 0) {
@@ -422,14 +429,6 @@ export function ContaForm({
         } else {
           console.log("🔍 DEBUG: Nenhum documento novo para salvar");
         }
-      } else if (documentos.length > 0 && !conta) {
-        console.log(
-          "🔍 DEBUG: Documentos serão salvos após a criação da conta",
-          { documentosCount: documentos.length, documentos: documentos }
-        );
-        // Para novas contas, passar os documentos para o componente pai
-        onDocumentosChange?.(documentos);
-        console.log("🔍 DEBUG: Documentos passados para o componente pai");
       }
 
       if (!conta) {

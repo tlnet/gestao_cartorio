@@ -104,39 +104,53 @@ export default function ContasPage() {
     }
   };
 
-  const handleNovaContaSubmit = async (data: Partial<ContaPagar>) => {
+  const handleNovaContaSubmit = async (
+    data: Partial<ContaPagar>,
+    documentosNovos?: any[]
+  ) => {
     try {
+      const docsToSave = documentosNovos ?? documentosPendentes;
+
       console.log("🔍 DEBUG: handleNovaContaSubmit iniciado com:", {
         data,
-        documentosPendentesCount: documentosPendentes.length,
-        documentosPendentes: documentosPendentes,
+        documentosPendentesCount: docsToSave.length,
+        documentosPendentes: docsToSave,
       });
 
       const contaCriada = await criarConta(data as any);
 
       // Se há documentos pendentes e a conta foi criada, salvar os documentos
-      if (contaCriada && documentosPendentes.length > 0) {
+      if (contaCriada && docsToSave.length > 0) {
         console.log(
           "🔍 DEBUG: Salvando documentos pendentes para nova conta:",
           {
             contaId: contaCriada.id,
-            documentosCount: documentosPendentes.length,
+            documentosCount: docsToSave.length,
           }
         );
 
         try {
-          for (const documento of documentosPendentes) {
-            await adicionarDocumentoConta(contaCriada.id, {
+          let sucesso = 0;
+          for (const documento of docsToSave) {
+            const saved = await adicionarDocumentoConta(contaCriada.id, {
               nomeArquivo: documento.nome,
               urlArquivo: documento.url,
               tipoArquivo: documento.tipo,
               tamanhoArquivo: documento.tamanho,
             });
+            if (saved) sucesso += 1;
           }
 
           console.log(
-            `✅ ${documentosPendentes.length} documento(s) salvo(s) para nova conta`
+            `✅ ${sucesso}/${docsToSave.length} documento(s) salvo(s) para nova conta`
           );
+
+          if (sucesso < docsToSave.length) {
+            console.warn(
+              `⚠️ Nem todos os documentos foram vinculados à conta ${contaCriada.id}.`
+            );
+          }
+
           setDocumentosPendentes([]); // Limpar documentos pendentes
         } catch (docError) {
           console.error(
