@@ -34,10 +34,11 @@ export async function POST(request: NextRequest) {
     
     if (body.fluxo === "protocolo") {
       // Webhook específico para autopreenchimento de protocolo
-      webhookUrl = "https://webhook.cartorio.app.br/webhook/api/n8n/protocolos/autopreenchimento";
+      webhookUrl =
+        "https://webhook.conversix.com.br/webhook/api/n8n/protocolos/autopreenchimento";
     } else if (body.fluxo === "status-protocolo") {
       // Webhook específico para notificação de mudança de status
-      webhookUrl = "https://webhook.cartorio.app.br/webhook/api/n8n/protocolos/status";
+      webhookUrl = "https://webhook.conversix.com.br/webhook/api/n8n/protocolos/status";
     } else {
       // Webhook padrão para outros fluxos
       webhookUrl = "https://webhook.cartorio.app.br/webhook/72c1eaa5-27a0-441e-8786-69f7c4937d63";
@@ -48,6 +49,8 @@ export async function POST(request: NextRequest) {
       url: webhookUrl,
       payload: {
         ...body,
+        // Evita vazar credenciais sensíveis nos logs
+        api_token_zdg: body.api_token_zdg ? "***" : null,
         credenciais_levontech: body.credenciais_levontech ? "***" : undefined,
       },
     });

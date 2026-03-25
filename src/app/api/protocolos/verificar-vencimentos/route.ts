@@ -121,7 +121,8 @@ export async function POST(request: NextRequest) {
 
             // Disparar webhook para prazo do protocolo
             try {
-              const webhookUrl = "https://webhook.cartorio.app.br/webhook/api/webhooks/protocolos/vencimento";
+              const webhookUrl =
+                "https://webhook.conversix.com.br/webhook/api/webhooks/protocolos/vencimento";
               
               const response = await fetch(webhookUrl, {
                 method: "POST",
@@ -217,7 +218,8 @@ export async function POST(request: NextRequest) {
 
               // Disparar webhook
               try {
-                const webhookUrl = "https://webhook.cartorio.app.br/webhook/api/webhooks/protocolos/vencimento";
+                const webhookUrl =
+                  "https://webhook.conversix.com.br/webhook/api/webhooks/protocolos/vencimento";
                 
                 const response = await fetch(webhookUrl, {
                   method: "POST",

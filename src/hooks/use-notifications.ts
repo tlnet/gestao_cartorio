@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
+import { CATEGORIA_LABELS } from "@/types";
 
 export interface Notificacao {
   id: string;
@@ -376,6 +377,46 @@ export const useNotifications = () => {
         return;
       }
 
+      // Carregar categorias personalizadas para resolver "categoria" (id -> nome)
+      const { data: categoriasPersonalizadas, error: categoriasError } =
+        await supabase
+          .from("categorias_personalizadas")
+          .select("id, nome")
+          .eq("cartorio_id", userData.cartorio_id)
+          .eq("ativo", true);
+
+      const categoriasPersonalizadasById = new Map<string, string>();
+      if (!categoriasError && categoriasPersonalizadas) {
+        categoriasPersonalizadas.forEach((cat: any) => {
+          if (cat?.id != null && cat?.nome) {
+            categoriasPersonalizadasById.set(
+              String(cat.id),
+              String(cat.nome)
+            );
+          }
+        });
+      }
+
+      const resolveCategoriaNome = (categoria: any): string => {
+        if (categoria == null) return "";
+        const categoriaStr = String(categoria);
+
+        // Categorias padrão (codes)
+        if (
+          Object.prototype.hasOwnProperty.call(
+            CATEGORIA_LABELS,
+            categoriaStr
+          )
+        ) {
+          return (CATEGORIA_LABELS as any)[categoriaStr] as string;
+        }
+
+        // Categorias personalizadas (id -> nome)
+        return (
+          categoriasPersonalizadasById.get(categoriaStr) ?? categoriaStr
+        );
+      };
+
       // Buscar contas próximas do vencimento (7 dias) ou vencidas
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0);
@@ -462,6 +503,34 @@ export const useNotifications = () => {
             cartorioData.whatsapp_contas.trim() !== ""
           ) {
             try {
+              // Buscar anexos/documentos vinculados a esta conta
+              const { data: documentosConta, error: documentosError } = await supabase
+                .from("documentos_contas")
+                .select(
+                  "id, conta_id, nome_arquivo, url_arquivo, tipo_arquivo, tamanho_arquivo, data_upload, usuario_upload"
+                )
+                .eq("conta_id", conta.id)
+                .order("data_upload", { ascending: false });
+
+              if (documentosError) {
+                console.warn(
+                  `⚠️ Erro ao buscar documentos da conta ${conta.id}:`,
+                  documentosError
+                );
+              }
+
+              const arquivosAnexados =
+                (documentosConta || []).map((doc: any) => ({
+                  id: doc.id,
+                  conta_id: doc.conta_id,
+                  nome_arquivo: doc.nome_arquivo,
+                  url_arquivo: doc.url_arquivo,
+                  tipo_arquivo: doc.tipo_arquivo,
+                  tamanho_arquivo: doc.tamanho_arquivo,
+                  data_upload: doc.data_upload,
+                  usuario_upload: doc.usuario_upload,
+                })) || [];
+
               // Preparar payload do webhook com a mesma estrutura do webhook de status de protocolos
               const payload = {
                 status_anterior: conta.status,
@@ -486,11 +555,14 @@ export const useNotifications = () => {
                   id: conta.id,
                   descricao: conta.descricao,
                   valor: conta.valor,
-                  categoria: conta.categoria,
+                  categoria_id: conta.categoria,
+                  categoria: resolveCategoriaNome(conta.categoria),
                   fornecedor: conta.fornecedor,
                   observacoes: conta.observacoes,
                   status: conta.status,
                 },
+                arquivos_anexados: arquivosAnexados,
+                documentos_anexados: arquivosAnexados,
                 vencimento: {
                   data_vencimento: dataVencimento.toISOString().split("T")[0],
                   dias_restantes: diasParaVencer,
@@ -498,14 +570,23 @@ export const useNotifications = () => {
                 },
               };
 
+              // Logar payload (mas mascarar token sensível)
+              console.log("📤 Disparando webhook (contas-pagar):", {
+                ...payload,
+                api_token_zdg: payload.api_token_zdg ? "***" : null,
+              });
+
               // Disparar webhook diretamente
-              const webhookResponse = await fetch("https://webhook.cartorio.app.br/webhook/api/webhooks/financeiro/contas-pagar", {
+              const webhookResponse = await fetch(
+                "https://webhook.conversix.com.br/webhook/api/webhooks/financeiro/contas-pagar",
+                {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify(payload),
-              });
+                }
+              );
 
               if (webhookResponse.ok) {
                 console.log(`✅ Webhook disparado para conta ${conta.descricao}`);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { CATEGORIA_LABELS } from "@/types";
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,6 +40,23 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      // Carregar categorias personalizadas para resolver "categoria" (id) em "nome"
+      const { data: categoriasPersonalizadas, error: categoriasError } =
+        await supabase
+          .from("categorias_personalizadas")
+          .select("id, nome")
+          .eq("cartorio_id", cartorio.id)
+          .eq("ativo", true);
+
+      const categoriasPersonalizadasById = new Map<string, string>();
+      if (!categoriasError && categoriasPersonalizadas) {
+        categoriasPersonalizadas.forEach((cat: any) => {
+          if (cat?.id != null && cat?.nome) {
+            categoriasPersonalizadasById.set(String(cat.id), String(cat.nome));
+          }
+        });
+      }
+
       // Buscar contas próximas do vencimento (próximos 7 dias) ou vencidas
       const { data: contas, error: contasError } = await supabase
         .from("contas_pagar")
@@ -65,6 +83,34 @@ export async function POST(request: NextRequest) {
         const dataVencimentoTimestamp = dataVencimento.getTime();
         const diasRestantes = Math.ceil((dataVencimentoTimestamp - hojeTimestamp) / (1000 * 60 * 60 * 24));
 
+      // Buscar todos os documentos/anexos vinculados a esta conta
+      const { data: documentosConta, error: documentosError } = await supabase
+        .from("documentos_contas")
+        .select(
+          "id, conta_id, nome_arquivo, url_arquivo, tipo_arquivo, tamanho_arquivo, data_upload, usuario_upload"
+        )
+        .eq("conta_id", conta.id)
+        .order("data_upload", { ascending: false });
+
+      if (documentosError) {
+        console.warn(
+          `⚠️ Erro ao buscar documentos da conta ${conta.id}:`,
+          documentosError
+        );
+      }
+
+      const arquivosAnexados =
+        (documentosConta || []).map((doc: any) => ({
+          id: doc.id,
+          conta_id: doc.conta_id,
+          nome_arquivo: doc.nome_arquivo,
+          url_arquivo: doc.url_arquivo,
+          tipo_arquivo: doc.tipo_arquivo,
+          tamanho_arquivo: doc.tamanho_arquivo,
+          data_upload: doc.data_upload,
+          usuario_upload: doc.usuario_upload,
+        })) || [];
+
         // Preparar payload do webhook com a mesma estrutura do webhook de status de protocolos
         const payload = {
           status_anterior: conta.status,
@@ -89,11 +135,22 @@ export async function POST(request: NextRequest) {
             id: conta.id,
             descricao: conta.descricao,
             valor: conta.valor,
-            categoria: conta.categoria,
+            categoria_id: conta.categoria,
+            categoria:
+              (conta.categoria != null &&
+              Object.prototype.hasOwnProperty.call(
+                CATEGORIA_LABELS,
+                String(conta.categoria)
+              )
+                ? (CATEGORIA_LABELS as any)[String(conta.categoria)]
+                : categoriasPersonalizadasById.get(String(conta.categoria)) ||
+                  String(conta.categoria)),
             fornecedor: conta.fornecedor,
             observacoes: conta.observacoes,
             status: conta.status,
           },
+        arquivos_anexados: arquivosAnexados,
+        documentos_anexados: arquivosAnexados,
           vencimento: {
             data_vencimento: dataVencimento.toISOString().split("T")[0],
             dias_restantes: diasRestantes,
@@ -103,8 +160,15 @@ export async function POST(request: NextRequest) {
 
         // Disparar webhook
         try {
-          const webhookUrl = "https://webhook.cartorio.app.br/webhook/api/webhooks/financeiro/contas-pagar";
+          const webhookUrl =
+            "https://webhook.conversix.com.br/webhook/api/webhooks/financeiro/contas-pagar";
           
+        console.log("📤 Disparando webhook (contas-pagar, servidor):", {
+          ...payload,
+          // api_token_zdg não existe nesse payload atual (apenas cartório), mas mascaramos se vier
+          api_token_zdg: (payload as any).api_token_zdg ? "***" : null,
+        });
+
           const response = await fetch(webhookUrl, {
             method: "POST",
             headers: {

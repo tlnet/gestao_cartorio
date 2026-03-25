@@ -444,13 +444,16 @@ export function useProtocolos(cartorioId?: string) {
 
                     // Disparar webhook
                     try {
-                      const webhookResponse = await fetch("https://webhook.cartorio.app.br/webhook/api/webhooks/protocolos/vencimento", {
+                    const webhookResponse = await fetch(
+                      "https://webhook.conversix.com.br/webhook/api/webhooks/protocolos/vencimento",
+                      {
                         method: "POST",
                         headers: {
                           "Content-Type": "application/json",
                         },
                         body: JSON.stringify(payload),
-                      });
+                      }
+                    );
 
                       if (webhookResponse.ok) {
                         console.log(`✅ Webhook disparado imediatamente para protocolo ${protocolo.protocolo}, serviço ${servico.nome} (vencimento em ${diasRestantes} dias)`);
@@ -571,13 +574,16 @@ export function useProtocolos(cartorioId?: string) {
 
                   // Disparar webhook para prazo do protocolo
                   try {
-                    const webhookResponseProtocolo = await fetch("https://webhook.cartorio.app.br/webhook/api/webhooks/protocolos/vencimento", {
+                    const webhookResponseProtocolo = await fetch(
+                      "https://webhook.conversix.com.br/webhook/api/webhooks/protocolos/vencimento",
+                      {
                       method: "POST",
                       headers: {
                         "Content-Type": "application/json",
                       },
                       body: JSON.stringify(payloadProtocolo),
-                    });
+                      }
+                    );
 
                     if (webhookResponseProtocolo.ok) {
                       console.log(`✅ Webhook disparado imediatamente para prazo do protocolo ${protocolo.protocolo} (vencimento em ${diasRestantesProtocolo} dias)`);
@@ -654,10 +660,12 @@ export function useProtocolos(cartorioId?: string) {
               const cartorioId = protocoloAtual.cartorio_id || data?.cartorio_id;
               
               if (cartorioId) {
-                // Buscar dados ZDG do cartório
+                // Buscar dados ZDG + nome do cartório
                 const { data: cartorioData, error: cartorioError } = await supabase
                   .from("cartorios")
-                  .select("tenant_id_zdg, external_id_zdg, api_token_zdg, channel_id_zdg")
+                  .select(
+                    "nome, tenant_id_zdg, external_id_zdg, api_token_zdg, channel_id_zdg"
+                  )
                   .eq("id", cartorioId)
                   .maybeSingle();
 
@@ -670,6 +678,7 @@ export function useProtocolos(cartorioId?: string) {
                   status_novo: updates.status,
                   protocolo_id: id,
                   cartorio_id: cartorioId,
+                  cartorio_nome: cartorioData?.nome || null,
                   fluxo: "status-protocolo",
                   // Dados adicionais do protocolo
                   nome_completo_solicitante: protocoloAtual.solicitante,
@@ -684,10 +693,16 @@ export function useProtocolos(cartorioId?: string) {
                   channel_id_zdg: cartorioData?.channel_id_zdg || null,
                 };
 
-                console.log("📤 Disparando webhook para mudança de status:", {
+                // Logar payload completo antes de enviar pro webhook
+                // (mas mascaramos api_token_zdg para não vazar credenciais no console)
+                const payloadForLog = {
                   ...payload,
-                  servicos_solicitados: payload.servicos_solicitados,
-                });
+                  api_token_zdg: payload.api_token_zdg
+                    ? "***"
+                    : null,
+                };
+
+                console.log("📤 Disparando webhook (status-protocolo):", payloadForLog);
 
                 // Disparar webhook através da API route (evita CORS)
                 fetch("/api/levontech/webhook", {

@@ -169,11 +169,41 @@ const Configuracoes = () => {
       if (!cartorioId) return;
 
       try {
-        const { data, error } = await supabase
+        const selectBase =
+          "nome, cnpj, endereco, telefone, email, tenant_id_zdg, external_id_zdg, api_token_zdg, channel_id_zdg, notificacao_whatsapp, whatsapp_contas, whatsapp_protocolos, cidade, estado, numero_oficio, tabeliao_responsavel";
+        const selectWithCnib = `${selectBase}, cnib_client_id, cnib_client_secret`;
+
+        let data: any = null;
+        let error: any = null;
+
+        // Tenta buscar CNIB também; se colunas ainda não existirem, faz fallback.
+        const firstTry = await supabase
           .from("cartorios")
-          .select("nome, cnpj, endereco, telefone, email, tenant_id_zdg, external_id_zdg, api_token_zdg, channel_id_zdg, notificacao_whatsapp, whatsapp_contas, whatsapp_protocolos, cidade, estado, numero_oficio, tabeliao_responsavel")
+          .select(selectWithCnib)
           .eq("id", cartorioId)
           .single();
+
+        data = firstTry.data;
+        error = firstTry.error;
+
+        if (error) {
+          const msg = String(error.message || error);
+          const shouldFallbackToOldSchema =
+            msg.includes("cnib_client_id") ||
+            msg.includes("cnib_client_secret") ||
+            msg.includes("column") ||
+            msg.includes("does not exist");
+
+          if (shouldFallbackToOldSchema) {
+            const secondTry = await supabase
+              .from("cartorios")
+              .select(selectBase)
+              .eq("id", cartorioId)
+              .single();
+            data = secondTry.data;
+            error = secondTry.error;
+          }
+        }
 
         if (error) throw error;
 
@@ -196,7 +226,10 @@ const Configuracoes = () => {
             estado: data.estado || "",
             numeroOficio: data.numero_oficio || "",
             tabeliaoResponsavel: data.tabeliao_responsavel || "",
+            cnibClientId: data.cnib_client_id || "",
+            cnibClientSecret: data.cnib_client_secret || "",
           }));
+          setApiTokenZdgTouched(false);
         }
       } catch (error) {
         console.error("Erro ao carregar dados do cartório:", error);
@@ -244,6 +277,8 @@ const Configuracoes = () => {
     externalIdZdg: "",
     apiTokenZdg: "",
     channelIdZdg: "",
+    cnibClientId: "",
+    cnibClientSecret: "",
     notificacaoWhatsApp: false,
     whatsappContas: "",
     whatsappProtocolos: "",
@@ -253,6 +288,9 @@ const Configuracoes = () => {
     numeroOficio: "",
     tabeliaoResponsavel: "",
   });
+
+  // Para reduzir visualmente "bolinhas" de token (sem perder o valor real no state)
+  const [apiTokenZdgTouched, setApiTokenZdgTouched] = useState(false);
 
   // Estados para formulários
   const [editingServico, setEditingServico] = useState<any>(null);
@@ -323,6 +361,7 @@ const Configuracoes = () => {
       });
 
       toast.success("Configurações do cartório salvas com sucesso!");
+      setApiTokenZdgTouched(false);
 
       setTimeout(() => {
         revalidateCartorio();
@@ -331,6 +370,38 @@ const Configuracoes = () => {
       console.error("Erro ao salvar configurações do cartório:", error);
       toast.error(
         "Erro ao salvar configurações: " + (error.message || "Erro desconhecido")
+      );
+    }
+  };
+
+  const handleSaveCnibIntegration = async () => {
+    if (!cartorioId) {
+      toast.error("Cartório não identificado");
+      return;
+    }
+
+    const accessToken = session?.access_token;
+    if (!accessToken) {
+      toast.error("Sessão expirada. Faça login novamente.");
+      return;
+    }
+
+    try {
+      await putCartorioUpdate(accessToken, cartorioId, {
+        cnib_client_id: configCartorio.cnibClientId?.trim() || null,
+        cnib_client_secret: configCartorio.cnibClientSecret?.trim() || null,
+        updated_at: new Date().toISOString(),
+      });
+
+      toast.success("Integração CNIB salva com sucesso!");
+
+      setTimeout(() => {
+        revalidateCartorio();
+      }, 500);
+    } catch (error: any) {
+      console.error("Erro ao salvar integração CNIB:", error);
+      toast.error(
+        "Erro ao salvar integração CNIB: " + (error.message || "Erro desconhecido")
       );
     }
   };
@@ -1842,7 +1913,7 @@ const Configuracoes = () => {
               {/* Seção Testes ZDG */}
               <div className="border-t pt-6 mt-6">
                 <h3 className="text-lg font-medium mb-4">
-                  Testes ZDG
+                  Integração ZDG
                 </h3>
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1887,13 +1958,23 @@ const Configuracoes = () => {
                       <Input
                         id="apiTokenZdg"
                         type="password"
-                        value={configCartorio.apiTokenZdg}
-                        onChange={(e) =>
-                          setConfigCartorio((prev) => ({
-                            ...prev,
-                            apiTokenZdg: e.target.value,
-                          }))
+                        value={
+                          !apiTokenZdgTouched
+                            ? configCartorio.apiTokenZdg
+                              ? "•".repeat(22)
+                              : ""
+                            : configCartorio.apiTokenZdg
                         }
+                        onChange={(e) =>
+                          {
+                            setApiTokenZdgTouched(true);
+                            setConfigCartorio((prev) => ({
+                              ...prev,
+                              apiTokenZdg: e.target.value,
+                            }));
+                          }
+                        }
+                        onFocus={() => setApiTokenZdgTouched(true)}
                         placeholder="Digite o API Token ZDG"
                       />
                       <p className="text-sm text-gray-500 mt-1">
@@ -1924,6 +2005,52 @@ const Configuracoes = () => {
                     <Button onClick={handleSaveCartorio}>
                       <Save className="mr-2 h-4 w-4" />
                       Salvar Configurações ZDG
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção Integração CNIB */}
+              <div className="border-t pt-6 mt-6">
+                <h3 className="text-lg font-medium mb-4">Integração CNIB</h3>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="cnibClientId">Client ID</Label>
+                      <Input
+                        id="cnibClientId"
+                        value={configCartorio.cnibClientId}
+                        onChange={(e) =>
+                          setConfigCartorio((prev) => ({
+                            ...prev,
+                            cnibClientId: e.target.value,
+                          }))
+                        }
+                        placeholder="Digite o Client ID CNIB"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="cnibClientSecret">Client Secret</Label>
+                      <Input
+                        id="cnibClientSecret"
+                        type="password"
+                        value={configCartorio.cnibClientSecret}
+                        onChange={(e) =>
+                          setConfigCartorio((prev) => ({
+                            ...prev,
+                            cnibClientSecret: e.target.value,
+                          }))
+                        }
+                        placeholder="Digite o Client Secret CNIB"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button onClick={handleSaveCnibIntegration}>
+                      <Save className="mr-2 h-4 w-4" />
+                      Salvar Integração CNIB
                     </Button>
                   </div>
                 </div>

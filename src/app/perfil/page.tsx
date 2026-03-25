@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import MainLayout from "@/components/layout/main-layout";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useAuth } from "@/contexts/auth-context";
@@ -19,6 +20,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   User,
   Mail,
   Phone,
@@ -30,6 +38,8 @@ import {
   X,
   Camera,
   Upload,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useForm } from "react-hook-form";
@@ -61,6 +71,22 @@ const PerfilPage = () => {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [showCropModal, setShowCropModal] = useState(false);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [changePasswordStage, setChangePasswordStage] = useState<
+    "confirm" | "update"
+  >("confirm");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [changePasswordBusy, setChangePasswordBusy] = useState(false);
+  const [changePasswordError, setChangePasswordError] = useState<string | null>(
+    null
+  );
+
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
 
   const form = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -182,6 +208,102 @@ const PerfilPage = () => {
       toast.error("Erro ao atualizar perfil: " + error.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const resetChangePasswordModal = () => {
+    setChangePasswordStage("confirm");
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmNewPassword("");
+    setChangePasswordError(null);
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmNewPassword(false);
+  };
+
+  const openChangePasswordModal = () => {
+    resetChangePasswordModal();
+    setChangePasswordOpen(true);
+  };
+
+  const closeChangePasswordModal = () => {
+    setChangePasswordOpen(false);
+    resetChangePasswordModal();
+  };
+
+  const handleVerifyCurrentPassword = async () => {
+    if (!user?.email) {
+      setChangePasswordError("E-mail do usuário não disponível.");
+      return;
+    }
+
+    setChangePasswordError(null);
+
+    if (!currentPassword) {
+      setChangePasswordError("Informe sua senha atual.");
+      return;
+    }
+
+    try {
+      setChangePasswordBusy(true);
+
+      // Reautentica para validar a senha atual
+      const { error } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setChangePasswordStage("update");
+      toast.success("Senha atual confirmada.");
+    } catch (error: any) {
+      console.error("Erro ao confirmar senha atual:", error);
+      setChangePasswordError(
+        error?.message || "Senha atual inválida. Tente novamente."
+      );
+    } finally {
+      setChangePasswordBusy(false);
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    setChangePasswordError(null);
+
+    if (!newPassword || newPassword.length < 8) {
+      setChangePasswordError("A nova senha deve ter pelo menos 8 caracteres.");
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setChangePasswordError("As senhas não conferem.");
+      return;
+    }
+
+    try {
+      setChangePasswordBusy(true);
+
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success("Senha alterada com sucesso!");
+      closeChangePasswordModal();
+    } catch (error: any) {
+      console.error("Erro ao alterar senha:", error);
+      setChangePasswordError(
+        error?.message || "Erro ao alterar senha. Tente novamente."
+      );
+      toast.error(error?.message || "Erro ao alterar senha.");
+    } finally {
+      setChangePasswordBusy(false);
     }
   };
 
@@ -437,6 +559,17 @@ const PerfilPage = () => {
                     <p className="text-xs text-gray-500 mt-1">
                       O e-mail não pode ser alterado
                     </p>
+
+                    <div className="mt-3 flex items-center">
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="px-0 h-auto text-sm"
+                        onClick={openChangePasswordModal}
+                      >
+                        Alterar senha
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -518,7 +651,198 @@ const PerfilPage = () => {
               </div>
             </CardContent>
           </Card>
+
         </div>
+
+        {/* Popup de alteração de senha */}
+        <Dialog
+          open={changePasswordOpen}
+          onOpenChange={(open) => {
+            setChangePasswordOpen(open);
+            if (!open) resetChangePasswordModal();
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {changePasswordStage === "confirm"
+                  ? "Confirmar senha atual"
+                  : "Alterar senha"}
+              </DialogTitle>
+              <DialogDescription>
+                {changePasswordStage === "confirm"
+                  ? "Confirme sua senha atual para continuar."
+                  : "Agora informe a nova senha e confirme."}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {changePasswordStage === "confirm" ? (
+                <>
+                  <div>
+                    <Label htmlFor="current-password">Senha atual</Label>
+                    <div className="relative mt-1">
+                      <Input
+                        id="current-password"
+                        type={showCurrentPassword ? "text" : "password"}
+                        value={currentPassword}
+                        onChange={(e) =>
+                          setCurrentPassword(e.target.value)
+                        }
+                        disabled={changePasswordBusy}
+                        placeholder="Digite sua senha atual"
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        aria-label={
+                          showCurrentPassword
+                            ? "Ocultar senha"
+                            : "Mostrar senha"
+                        }
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                        onClick={() =>
+                          setShowCurrentPassword((v) => !v)
+                        }
+                        disabled={changePasswordBusy}
+                      >
+                        {showCurrentPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {changePasswordError && (
+                    <p className="text-sm text-red-600">
+                      {changePasswordError}
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-between gap-3">
+                    <Link
+                      href="/esqueci-senha"
+                      className="text-sm text-blue-600 hover:underline"
+                      onClick={() => setChangePasswordOpen(false)}
+                    >
+                      Esqueci minha senha
+                    </Link>
+
+                    <Button
+                      type="button"
+                      onClick={handleVerifyCurrentPassword}
+                      disabled={changePasswordBusy}
+                    >
+                      {changePasswordBusy ? "Confirmando..." : "Confirmar"}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="new-password">Nova senha</Label>
+                      <div className="relative mt-1">
+                        <Input
+                          id="new-password"
+                          type={showNewPassword ? "text" : "password"}
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          disabled={changePasswordBusy}
+                          placeholder="Digite a nova senha"
+                          className="pr-10"
+                        />
+                        <button
+                          type="button"
+                          aria-label={
+                            showNewPassword ? "Ocultar senha" : "Mostrar senha"
+                          }
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                          onClick={() => setShowNewPassword((v) => !v)}
+                          disabled={changePasswordBusy}
+                        >
+                          {showNewPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="confirm-new-password">
+                        Confirmar nova senha
+                      </Label>
+                      <div className="relative mt-1">
+                        <Input
+                          id="confirm-new-password"
+                          type={showConfirmNewPassword ? "text" : "password"}
+                          value={confirmNewPassword}
+                          onChange={(e) =>
+                            setConfirmNewPassword(e.target.value)
+                          }
+                          disabled={changePasswordBusy}
+                          placeholder="Confirme a nova senha"
+                          className="pr-10"
+                        />
+                        <button
+                          type="button"
+                          aria-label={
+                            showConfirmNewPassword
+                              ? "Ocultar senha"
+                              : "Mostrar senha"
+                          }
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                          onClick={() =>
+                            setShowConfirmNewPassword((v) => !v)
+                          }
+                          disabled={changePasswordBusy}
+                        >
+                          {showConfirmNewPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {changePasswordError && (
+                    <p className="text-sm text-red-600">
+                      {changePasswordError}
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-between gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setChangePasswordStage("confirm");
+                        setChangePasswordError(null);
+                      }}
+                      disabled={changePasswordBusy}
+                    >
+                      Voltar
+                    </Button>
+
+                    <Button
+                      type="button"
+                      onClick={handleUpdatePassword}
+                      disabled={changePasswordBusy}
+                    >
+                      {changePasswordBusy ? "Salvando..." : "Salvar nova senha"}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Modal de Crop de Imagem */}
         {selectedImageFile && (
