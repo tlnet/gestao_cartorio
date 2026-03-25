@@ -3,6 +3,10 @@ import { supabase } from "@/lib/supabase";
 import { createClient } from "@supabase/supabase-js";
 import { buildCnibTokenWebhookRequestBody } from "@/lib/cnib-webhook-token-body";
 import { createSupabaseWithUserJwt } from "@/lib/supabase-with-user-jwt";
+import {
+  extractCnibTokenStringFromWebhook,
+  normalizeN8nWebhookTokenPayload,
+} from "@/lib/cnib-extract-token-from-webhook";
 
 /**
  * API Route para consultar CNIB por CPF/CNPJ
@@ -165,20 +169,42 @@ export async function POST(request: NextRequest) {
       console.warn("⚠️ Não foi possível obter cartorio_id do usuário:", e);
     }
 
+    let cartorioCnibCpfUsuario: string | null = null;
+
     // Log de presença (sem vazar segredos) das credenciais CNIB para verificação
     try {
       if (cartorioIdFromUser) {
-        const { data: cartorioData, error: cartorioDataError } = await dbUser
+        let cartRes = await dbUser
           .from("cartorios")
-          .select("cnib_client_id, cnib_client_secret")
+          .select("cnib_client_id, cnib_client_secret, cnib_cpf_usuario")
           .eq("id", cartorioIdFromUser)
           .single();
 
-        if (!cartorioDataError) {
+        const colMsg = String(cartRes.error?.message || "");
+        if (
+          cartRes.error &&
+          (colMsg.includes("cnib_cpf_usuario") || colMsg.includes("does not exist"))
+        ) {
+          cartRes = await dbUser
+            .from("cartorios")
+            .select("cnib_client_id, cnib_client_secret")
+            .eq("id", cartorioIdFromUser)
+            .single();
+        }
+
+        const { data: cartorioData, error: cartorioDataError } = cartRes;
+
+        if (!cartorioDataError && cartorioData) {
+          const rawCpf = (cartorioData as { cnib_cpf_usuario?: string | null })
+            .cnib_cpf_usuario;
+          if (rawCpf?.trim()) {
+            cartorioCnibCpfUsuario = rawCpf.trim();
+          }
           console.log("🔎 CNIB credenciais por cartório:", {
             cartorio_id: cartorioIdFromUser,
             hasCnibClientId: !!cartorioData?.cnib_client_id,
             hasCnibClientSecret: !!cartorioData?.cnib_client_secret,
+            hasCnibCpfUsuario: !!cartorioCnibCpfUsuario,
           });
         } else {
           console.warn(
@@ -193,35 +219,12 @@ export async function POST(request: NextRequest) {
       console.warn("⚠️ Falha ao checar credenciais CNIB por cartório:", e);
     }
 
-    // Obter CPF da SERVENTIA (cartório) para a consulta CNIB
-    // IMPORTANTE: Este é o CPF da SERVENTIA cadastrado na CNIB, não do usuário logado
-    // Este CPF é o mesmo para todas as consultas e deve estar configurado na variável de ambiente
-    // Prioridade: Variável de ambiente CNIB_CPF_USUARIO > Tabela users (se existir)
-    let cpfUsuario: string | null = null;
-    
-    // Primeiro, tentar usar a variável de ambiente (recomendado)
-    if (process.env.CNIB_CPF_USUARIO) {
-      cpfUsuario = process.env.CNIB_CPF_USUARIO;
-      console.log("✅ CPF obtido da variável de ambiente CNIB_CPF_USUARIO");
-    } else {
-      // Se não tiver na variável de ambiente, tentar buscar da tabela users (opcional)
-      try {
-        const { data: userData, error: userError } = await dbUser
-          .from("users")
-          .select("cpf")
-          .eq("id", user.id)
-          .single();
-
-        if (!userError && userData?.cpf) {
-          cpfUsuario = userData.cpf;
-          console.log("✅ CPF obtido da tabela users");
-        } else {
-          console.log("⚠️ CPF não encontrado na tabela users, usando apenas variável de ambiente");
-        }
-      } catch (error) {
-        console.log("⚠️ Erro ao buscar CPF da tabela (não crítico):", error);
-        // Não é crítico, continuar sem CPF da tabela
-      }
+    // CPF da serventia (cpf_usuario na API CNIB): somente cadastro do cartório
+    const cpfUsuario: string | null = cartorioCnibCpfUsuario;
+    if (cpfUsuario) {
+      console.log(
+        "✅ CPF da serventia obtido do cadastro do cartório (Integrações → CNIB)"
+      );
     }
 
     // Buscar token CNIB do webhook N8N
@@ -288,19 +291,22 @@ export async function POST(request: NextRequest) {
         throw new Error("Resposta do webhook não é um JSON válido");
       }
 
+      const tokenPayload = normalizeN8nWebhookTokenPayload(tokenData);
       console.log("📦 Dados recebidos do webhook:", {
-        hasCnibAccessToken: !!tokenData.cnib_access_token,
-        hasAccessToken: !!tokenData.access_token,
-        hasToken: !!tokenData.token,
-        keys: Object.keys(tokenData),
+        hasCnibAccessToken: !!tokenPayload.cnib_access_token,
+        hasCnibToken: !!tokenPayload.cnib_token,
+        hasAccessToken: !!tokenPayload.access_token,
+        hasToken: !!tokenPayload.token,
+        keys: Object.keys(tokenPayload),
       });
-      
-      // O webhook retorna o token no formato: { "cnib_access_token": "..." }
-      token = tokenData.cnib_access_token || tokenData.access_token || tokenData.token;
+
+      token = extractCnibTokenStringFromWebhook(tokenData);
 
       if (!token) {
         console.error("❌ Token não encontrado na resposta:", tokenData);
-        throw new Error("Token não encontrado na resposta do webhook. Verifique o formato da resposta. Campos esperados: cnib_access_token, access_token ou token.");
+        throw new Error(
+          "Token não encontrado na resposta do webhook. Campos aceitos: cnib_access_token, cnib_token, access_token ou token (objeto ou array com um item)."
+        );
       }
 
       console.log("✅ Token CNIB obtido do webhook N8N com sucesso (tamanho:", token.length, "caracteres)");
@@ -338,15 +344,16 @@ export async function POST(request: NextRequest) {
     // Validar CPF do usuário da serventia
     if (!cpfUsuario) {
       console.error("❌ CPF da serventia não configurado");
-      console.error("📋 Variáveis de ambiente verificadas:", {
-        hasCNIB_CPF_USUARIO: !!process.env.CNIB_CPF_USUARIO,
-        CNIB_CPF_USUARIO_length: process.env.CNIB_CPF_USUARIO?.length || 0,
+      console.error("📋 Verificado:", {
+        cartorio_id_usuario: cartorioIdFromUser,
       });
       return NextResponse.json(
         {
           error: "Configuração incompleta",
-          details: "CPF da SERVENTIA não está configurado. Este é o CPF do cartório cadastrado na CNIB (não o CPF da pessoa consultada). Configure a variável de ambiente CNIB_CPF_USUARIO com o CPF da serventia (11 dígitos, sem formatação). Exemplo: CNIB_CPF_USUARIO=12345678900",
-          solution: "Adicione no arquivo .env.local: CNIB_CPF_USUARIO=CPF_DA_SERVENTIA (apenas números, 11 dígitos). Este CPF é o mesmo para todas as consultas e representa o cartório que está fazendo a consulta.",
+          details:
+            "CPF da serventia (usuário CNIB) não está configurado. Preencha «CPF Usuário CNIB» em Configurações → Integrações → Integração CNIB (11 dígitos).",
+          solution:
+            "Acesse Configurações → Integrações, preencha e salve o CPF Usuário CNIB do cartório.",
         },
         { status: 500 }
       );
@@ -359,7 +366,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: "CPF da serventia inválido",
-          details: `O CPF da serventia deve ter 11 dígitos. Encontrado: ${cpfUsuarioLimpo.length} dígitos. Verifique a variável CNIB_CPF_USUARIO.`,
+          details: `O CPF da serventia deve ter 11 dígitos. Encontrado: ${cpfUsuarioLimpo.length} dígitos. Ajuste «CPF Usuário CNIB» em Configurações → Integrações.`,
         },
         { status: 400 }
       );

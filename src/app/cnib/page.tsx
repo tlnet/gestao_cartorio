@@ -315,7 +315,9 @@ const CNIBPage = () => {
         });
         } else if (errorMessage.includes("Configuração incompleta")) {
           toast.error(errorMessage, {
-            description: solution || "Configure a variável CNIB_CPF_USUARIO no arquivo .env.local",
+            description:
+              solution ||
+              "Configure «CPF Usuário CNIB» em Configurações → Integrações.",
             duration: 8000,
           });
         } else if (errorMessage.includes("Token CNIB não disponível")) {

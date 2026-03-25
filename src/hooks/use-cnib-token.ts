@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
+import { extractCnibTokenStringFromWebhook } from "@/lib/cnib-extract-token-from-webhook";
 
 interface CNIBToken {
   access_token: string;
@@ -55,12 +56,12 @@ export const useCNIBToken = () => {
 
       const data = await response.json();
 
-      // O webhook retorna o token no formato: { "cnib_access_token": "..." }
-      const accessToken =
-        data.cnib_access_token || data.access_token || data.token;
+      const accessToken = extractCnibTokenStringFromWebhook(data);
 
       if (!accessToken) {
-        throw new Error("Token não encontrado na resposta do webhook");
+        throw new Error(
+          "Token não encontrado na resposta do webhook (esperado: cnib_access_token, cnib_token, access_token ou token)"
+        );
       }
 
       let expiresAt: string | undefined;

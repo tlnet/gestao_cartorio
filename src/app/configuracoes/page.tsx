@@ -186,6 +186,7 @@ const Configuracoes = () => {
         channelIdZdg: "",
         cnibClientId: "",
         cnibClientSecret: "",
+        cnibCpfUsuario: "",
         notificacaoWhatsApp: false,
         whatsappContas: "",
         whatsappProtocolos: "",
@@ -200,20 +201,34 @@ const Configuracoes = () => {
       try {
         const selectBase =
           "nome, cnpj, endereco, telefone, email, tenant_id_zdg, external_id_zdg, api_token_zdg, channel_id_zdg, notificacao_whatsapp, whatsapp_contas, whatsapp_protocolos, cidade, estado, numero_oficio, tabeliao_responsavel";
-        const selectWithCnib = `${selectBase}, cnib_client_id, cnib_client_secret`;
+        const selectCnibSemCpf = `${selectBase}, cnib_client_id, cnib_client_secret`;
+        const selectCnibCompleto = `${selectCnibSemCpf}, cnib_cpf_usuario`;
 
         let data: any = null;
         let error: any = null;
 
-        // Tenta buscar CNIB também; se colunas ainda não existirem, faz fallback.
-        const firstTry = await supabase
+        // Tenta buscar CNIB (+ CPF usuário CNIB); se colunas ainda não existirem, faz fallback em etapas.
+        let tryRes = await supabase
           .from("cartorios")
-          .select(selectWithCnib)
+          .select(selectCnibCompleto)
           .eq("id", cartorioId)
           .single();
 
-        data = firstTry.data;
-        error = firstTry.error;
+        data = tryRes.data;
+        error = tryRes.error;
+
+        if (error) {
+          const msg = String(error.message || error);
+          if (msg.includes("cnib_cpf_usuario")) {
+            tryRes = await supabase
+              .from("cartorios")
+              .select(selectCnibSemCpf)
+              .eq("id", cartorioId)
+              .single();
+            data = tryRes.data;
+            error = tryRes.error;
+          }
+        }
 
         if (error) {
           const msg = String(error.message || error);
@@ -257,6 +272,7 @@ const Configuracoes = () => {
             tabeliaoResponsavel: data.tabeliao_responsavel ?? "",
             cnibClientId: data.cnib_client_id ?? "",
             cnibClientSecret: data.cnib_client_secret ?? "",
+            cnibCpfUsuario: data.cnib_cpf_usuario ?? "",
             // Este campo não é carregado do banco aqui; manter vazio evita "sobra" de estado antigo.
             webhookN8N: "",
           });
@@ -312,6 +328,7 @@ const Configuracoes = () => {
     channelIdZdg: "",
     cnibClientId: "",
     cnibClientSecret: "",
+    cnibCpfUsuario: "",
     notificacaoWhatsApp: false,
     whatsappContas: "",
     whatsappProtocolos: "",
@@ -423,9 +440,18 @@ const Configuracoes = () => {
     }
 
     try {
+      const cpfCnibLimpo = configCartorio.cnibCpfUsuario?.replace(/\D/g, "") || "";
+      if (configCartorio.cnibCpfUsuario?.trim() && cpfCnibLimpo.length !== 11) {
+        toast.error("CPF Usuário CNIB inválido", {
+          description: "Informe 11 dígitos (com ou sem formatação).",
+        });
+        return;
+      }
+
       await putCartorioUpdate(accessToken, cartorioId, {
         cnib_client_id: configCartorio.cnibClientId?.trim() || null,
         cnib_client_secret: configCartorio.cnibClientSecret?.trim() || null,
+        cnib_cpf_usuario: cpfCnibLimpo || null,
         updated_at: new Date().toISOString(),
       });
 
@@ -2130,6 +2156,26 @@ const Configuracoes = () => {
                         placeholder="Digite o Client Secret CNIB"
                       />
                     </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="cnibCpfUsuario">CPF Usuário CNIB</Label>
+                    <Input
+                      id="cnibCpfUsuario"
+                      value={configCartorio.cnibCpfUsuario}
+                      onChange={(e) =>
+                        setConfigCartorio((prev) => ({
+                          ...prev,
+                          cnibCpfUsuario: e.target.value,
+                        }))
+                      }
+                      placeholder="CPF da serventia na CNIB (11 dígitos)"
+                    />
+                    <p className="text-sm text-gray-500 mt-1">
+                      CPF da serventia cadastrado na CNIB, enviado como{" "}
+                      <code className="text-xs">cpf_usuario</code> na consulta. Obrigatório para
+                      realizar consultas CNIB.
+                    </p>
                   </div>
 
                   <div className="flex justify-end">
