@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { buildCnibTokenWebhookRequestBody } from "@/lib/cnib-webhook-token-body";
+import { createSupabaseWithUserJwt } from "@/lib/supabase-with-user-jwt";
 
 /**
  * Proxy server-side para o webhook N8N do token CNIB.
@@ -11,6 +12,7 @@ export async function POST(request: NextRequest) {
   const cookies = request.headers.get("cookie");
 
   let user: { id: string } | null = null;
+  let sessionJwt: string | null = null;
 
   try {
     if (authHeader?.startsWith("Bearer ")) {
@@ -22,6 +24,7 @@ export async function POST(request: NextRequest) {
 
       if (!authError && authUser) {
         user = authUser;
+        sessionJwt = accessToken;
       }
     }
 
@@ -50,6 +53,7 @@ export async function POST(request: NextRequest) {
 
         if (!sessionError && sessionUser) {
           user = sessionUser;
+          sessionJwt = accessToken;
         }
       }
     }
@@ -66,14 +70,23 @@ export async function POST(request: NextRequest) {
 
   let cartorioIdFromUser: string | null = null;
   try {
-    const { data: userData, error: userDataError } = await supabase
-      .from("users")
-      .select("cartorio_id")
-      .eq("id", user.id)
-      .single();
+    if (!sessionJwt) {
+      console.warn(
+        "⚠️ obter-token-webhook: JWT da sessão ausente; não é possível ler cartorio_id (RLS)"
+      );
+    } else {
+      const scoped = createSupabaseWithUserJwt(sessionJwt);
+      const { data: userData, error: userDataError } = await scoped
+        .from("users")
+        .select("cartorio_id")
+        .eq("id", user.id)
+        .single();
 
-    if (!userDataError && userData?.cartorio_id) {
-      cartorioIdFromUser = String(userData.cartorio_id);
+      if (userDataError) {
+        console.warn("⚠️ obter-token-webhook: users (RLS):", userDataError.message);
+      } else if (userData?.cartorio_id) {
+        cartorioIdFromUser = String(userData.cartorio_id);
+      }
     }
   } catch (e) {
     console.warn("⚠️ obter-token-webhook: cartorio_id:", e);

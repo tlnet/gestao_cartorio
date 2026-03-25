@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { createClient } from "@supabase/supabase-js";
 import { buildCnibTokenWebhookRequestBody } from "@/lib/cnib-webhook-token-body";
+import { createSupabaseWithUserJwt } from "@/lib/supabase-with-user-jwt";
 
 /**
  * API Route para consultar CNIB por CPF/CNPJ
@@ -134,16 +135,30 @@ export async function POST(request: NextRequest) {
     console.log("👤 Usuário autenticado:", user.id);
     console.log("🔑 Token disponível:", !!accessToken);
 
-    // Obter cartório do usuário para permitir busca de credenciais CNIB por cartório
+    const dbUser = accessToken
+      ? createSupabaseWithUserJwt(accessToken)
+      : supabase;
+
+    // Obter cartório do usuário (RLS exige requisição com JWT do usuário)
     let cartorioIdFromUser: string | null = null;
     try {
-      const { data: userData, error: userDataError } = await supabase
+      if (!accessToken) {
+        console.warn(
+          "⚠️ JWT da sessão ausente; cartorio_id pode ficar null (RLS em users)"
+        );
+      }
+      const { data: userData, error: userDataError } = await dbUser
         .from("users")
         .select("cartorio_id")
         .eq("id", user.id)
         .single();
 
-      if (!userDataError && userData?.cartorio_id) {
+      if (userDataError) {
+        console.warn(
+          "⚠️ Erro ao ler cartorio_id (users):",
+          userDataError.message
+        );
+      } else if (userData?.cartorio_id) {
         cartorioIdFromUser = String(userData.cartorio_id);
       }
     } catch (e) {
@@ -153,7 +168,7 @@ export async function POST(request: NextRequest) {
     // Log de presença (sem vazar segredos) das credenciais CNIB para verificação
     try {
       if (cartorioIdFromUser) {
-        const { data: cartorioData, error: cartorioDataError } = await supabase
+        const { data: cartorioData, error: cartorioDataError } = await dbUser
           .from("cartorios")
           .select("cnib_client_id, cnib_client_secret")
           .eq("id", cartorioIdFromUser)
@@ -191,12 +206,12 @@ export async function POST(request: NextRequest) {
     } else {
       // Se não tiver na variável de ambiente, tentar buscar da tabela users (opcional)
       try {
-        const { data: userData, error: userError } = await supabase
+        const { data: userData, error: userError } = await dbUser
           .from("users")
           .select("cpf")
           .eq("id", user.id)
           .single();
-        
+
         if (!userError && userData?.cpf) {
           cpfUsuario = userData.cpf;
           console.log("✅ CPF obtido da tabela users");
@@ -523,7 +538,7 @@ export async function POST(request: NextRequest) {
       // Buscar cartório do usuário para salvar a consulta com erro
       let cartorioId: string | null = null;
       try {
-        const { data: userData } = await supabase
+        const { data: userData } = await dbUser
           .from("users")
           .select("cartorio_id")
           .eq("id", user.id)
@@ -540,7 +555,7 @@ export async function POST(request: NextRequest) {
       if (cartorioId) {
         try {
           const tipoDocumento = documentoLimpo.length === 11 ? "CPF" : "CNPJ";
-          const { data: insertedData, error: insertError } = await supabase
+          const { data: insertedData, error: insertError } = await dbUser
             .from("consultas_cnib")
             .insert([
               {
