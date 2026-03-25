@@ -327,6 +327,39 @@ export const useRelatoriosIA = () => {
     }
   };
 
+  const deleteRelatoriosAdmin = async (ids: string[], accessToken: string) => {
+    if (!ids.length) return;
+    if (!accessToken) {
+      throw new Error("Sessão expirada. Faça login novamente.");
+    }
+
+    const res = await fetch("/api/ia/excluir-relatorios", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ ids }),
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      const msg =
+        data?.error || data?.message || "Erro ao excluir relatórios";
+      toast.error(msg);
+      throw new Error(msg);
+    }
+
+    toast.success(
+      data?.deletedCount
+        ? `Excluídos ${data.deletedCount} relatório(s).`
+        : "Relatórios excluídos com sucesso."
+    );
+    await fetchRelatorios({ silent: true, force: true });
+    return data;
+  };
+
   const uploadFile = async (
     file: File,
     bucket: string = "documentos-ia"
@@ -1360,6 +1393,7 @@ export const useRelatoriosIA = () => {
     updateRelatorio,
     deleteRelatorio,
     limparRelatoriosProcessando,
+    deleteRelatoriosAdmin,
     uploadFile,
     callN8NWebhook,
     processarResumoMatricula,

@@ -269,8 +269,7 @@ export const useContasPagar = (cartorioId?: string) => {
             cartorio_id: cartorioId,
             descricao: contaData.descricao,
             valor: contaData.valor,
-            categoria_id: contaData.categoria,
-            categoria: resolveCategoriaNome(contaData.categoria),
+            categoria: contaData.categoria,
             fornecedor: contaData.fornecedor,
             data_vencimento: formatDateForDB(contaData.dataVencimento),
             data_pagamento: contaData.dataPagamento
@@ -288,7 +287,16 @@ export const useContasPagar = (cartorioId?: string) => {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // O erro do Supabase (PostgrestError) não é necessariamente `instanceof Error`.
+        // Transformamos em Error para manter mensagens claras no toast/logs.
+        const maybeMessage =
+          (error as any)?.message ||
+          (error as any)?.details ||
+          (error as any)?.hint ||
+          "Erro do banco ao criar conta";
+        throw new Error(maybeMessage);
+      }
 
       const novaConta = dbToContaPagar(data);
       setContas((prev) => [novaConta, ...prev]);
@@ -492,11 +500,19 @@ export const useContasPagar = (cartorioId?: string) => {
       toast.success("Conta criada com sucesso!");
       return novaConta;
     } catch (err) {
+      const anyErr = err as any;
       const errorMessage =
-        err instanceof Error ? err.message : "Erro ao criar conta";
-      console.error("Erro ao criar conta:", err);
+        err instanceof Error
+          ? err.message
+          : typeof anyErr?.message === "string"
+            ? anyErr.message
+            : typeof anyErr?.details === "string"
+              ? anyErr.details
+              : "Erro ao criar conta";
+
       toast.error(errorMessage);
-      throw err;
+      // Garantir que o componente pai trate como Error (evita branch "não é instância de Error")
+      throw err instanceof Error ? err : new Error(errorMessage);
     }
   };
 

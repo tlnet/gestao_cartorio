@@ -166,7 +166,36 @@ const Configuracoes = () => {
   // Carregar dados do cartório do banco
   useEffect(() => {
     const loadCartorioData = async () => {
-      if (!cartorioId) return;
+      if (!cartorioId) {
+        setCartorioLoading(false);
+        return;
+      }
+
+      setCartorioLoading(true);
+      // Ao trocar de cartório, limpa o state para não mostrar dados antigos
+      // enquanto a requisição do Supabase ainda está em andamento.
+      setConfigCartorio({
+        nome: "",
+        cnpj: "",
+        endereco: "",
+        telefone: "",
+        email: "",
+        tenantIdZdg: "",
+        externalIdZdg: "",
+        apiTokenZdg: "",
+        channelIdZdg: "",
+        cnibClientId: "",
+        cnibClientSecret: "",
+        notificacaoWhatsApp: false,
+        whatsappContas: "",
+        whatsappProtocolos: "",
+        webhookN8N: "",
+        cidade: "",
+        estado: "",
+        numeroOficio: "",
+        tabeliaoResponsavel: "",
+      });
+      setApiTokenZdgTouched(false);
 
       try {
         const selectBase =
@@ -208,31 +237,35 @@ const Configuracoes = () => {
         if (error) throw error;
 
         if (data) {
-          setConfigCartorio((prev) => ({
-            ...prev,
-            nome: data.nome || prev.nome,
-            cnpj: data.cnpj || prev.cnpj,
-            endereco: data.endereco || prev.endereco,
-            telefone: data.telefone || prev.telefone,
-            email: data.email || prev.email,
-            tenantIdZdg: data.tenant_id_zdg || "",
-            externalIdZdg: data.external_id_zdg || "",
-            apiTokenZdg: data.api_token_zdg || "",
-            channelIdZdg: data.channel_id_zdg || "",
-            notificacaoWhatsApp: data.notificacao_whatsapp || false,
-            whatsappContas: data.whatsapp_contas || "",
-            whatsappProtocolos: data.whatsapp_protocolos || "",
-            cidade: data.cidade || "",
-            estado: data.estado || "",
-            numeroOficio: data.numero_oficio || "",
-            tabeliaoResponsavel: data.tabeliao_responsavel || "",
-            cnibClientId: data.cnib_client_id || "",
-            cnibClientSecret: data.cnib_client_secret || "",
-          }));
+          // Nunca use `prev` como fallback: isso pode manter dados antigos quando o banco retorna null/empty.
+          setConfigCartorio({
+            nome: data.nome ?? "",
+            cnpj: data.cnpj ?? "",
+            endereco: data.endereco ?? "",
+            telefone: data.telefone ?? "",
+            email: data.email ?? "",
+            tenantIdZdg: data.tenant_id_zdg ?? "",
+            externalIdZdg: data.external_id_zdg ?? "",
+            apiTokenZdg: data.api_token_zdg ?? "",
+            channelIdZdg: data.channel_id_zdg ?? "",
+            notificacaoWhatsApp: data.notificacao_whatsapp ?? false,
+            whatsappContas: data.whatsapp_contas ?? "",
+            whatsappProtocolos: data.whatsapp_protocolos ?? "",
+            cidade: data.cidade ?? "",
+            estado: data.estado ?? "",
+            numeroOficio: data.numero_oficio ?? "",
+            tabeliaoResponsavel: data.tabeliao_responsavel ?? "",
+            cnibClientId: data.cnib_client_id ?? "",
+            cnibClientSecret: data.cnib_client_secret ?? "",
+            // Este campo não é carregado do banco aqui; manter vazio evita "sobra" de estado antigo.
+            webhookN8N: "",
+          });
           setApiTokenZdgTouched(false);
         }
       } catch (error) {
         console.error("Erro ao carregar dados do cartório:", error);
+      } finally {
+        setCartorioLoading(false);
       }
     };
 
@@ -266,13 +299,13 @@ const Configuracoes = () => {
     }
   }, [levontechConfig, levontechLoading]);
 
-  // Dados mockados
+  // Estado do cartório (evita mostrar "dados irreais" enquanto carrega).
   const [configCartorio, setConfigCartorio] = useState({
-    nome: "Cartório do 1º Ofício de Notas",
-    cnpj: "12.345.678/0001-90",
-    endereco: "Rua das Flores, 123 - Centro - São Paulo/SP",
-    telefone: "(11) 3333-4444",
-    email: "contato@cartorio1oficio.com.br",
+    nome: "",
+    cnpj: "",
+    endereco: "",
+    telefone: "",
+    email: "",
     tenantIdZdg: "",
     externalIdZdg: "",
     apiTokenZdg: "",
@@ -282,7 +315,7 @@ const Configuracoes = () => {
     notificacaoWhatsApp: false,
     whatsappContas: "",
     whatsappProtocolos: "",
-    webhookN8N: "https://webhook.n8n.io/cartorio-123",
+    webhookN8N: "",
     cidade: "",
     estado: "",
     numeroOficio: "",
@@ -291,6 +324,9 @@ const Configuracoes = () => {
 
   // Para reduzir visualmente "bolinhas" de token (sem perder o valor real no state)
   const [apiTokenZdgTouched, setApiTokenZdgTouched] = useState(false);
+
+  // Controla o esqueleto de carregamento da seção "Dados do Cartório"
+  const [cartorioLoading, setCartorioLoading] = useState(true);
 
   // Estados para formulários
   const [editingServico, setEditingServico] = useState<any>(null);
@@ -846,137 +882,173 @@ const Configuracoes = () => {
                 <div className="space-y-4">
                   <div>
                     <Label htmlFor="nome">Nome do Cartório</Label>
-                    <Input
-                      id="nome"
-                      value={configCartorio.nome}
-                      onChange={(e) =>
-                        setConfigCartorio((prev) => ({
-                          ...prev,
-                          nome: e.target.value,
-                        }))
-                      }
-                    />
+                    {cartorioLoading ? (
+                      <Skeleton className="h-10 w-full" />
+                    ) : (
+                      <Input
+                        id="nome"
+                        value={configCartorio.nome}
+                        onChange={(e) =>
+                          setConfigCartorio((prev) => ({
+                            ...prev,
+                            nome: e.target.value,
+                          }))
+                        }
+                      />
+                    )}
                   </div>
 
                   <div>
                     <Label htmlFor="cnpj">CNPJ</Label>
-                    <Input
-                      id="cnpj"
-                      value={configCartorio.cnpj}
-                      onChange={(e) =>
-                        setConfigCartorio((prev) => ({
-                          ...prev,
-                          cnpj: e.target.value,
-                        }))
-                      }
-                    />
+                    {cartorioLoading ? (
+                      <Skeleton className="h-10 w-full" />
+                    ) : (
+                      <Input
+                        id="cnpj"
+                        value={configCartorio.cnpj}
+                        onChange={(e) =>
+                          setConfigCartorio((prev) => ({
+                            ...prev,
+                            cnpj: e.target.value,
+                          }))
+                        }
+                      />
+                    )}
                   </div>
 
                   <div>
                     <Label htmlFor="cidade">Cidade</Label>
-                    <Input
-                      id="cidade"
-                      value={configCartorio.cidade}
-                      onChange={(e) =>
-                        setConfigCartorio((prev) => ({
-                          ...prev,
-                          cidade: e.target.value,
-                        }))
-                      }
-                      placeholder="Ex: São Paulo"
-                    />
+                    {cartorioLoading ? (
+                      <Skeleton className="h-10 w-full" />
+                    ) : (
+                      <Input
+                        id="cidade"
+                        value={configCartorio.cidade}
+                        onChange={(e) =>
+                          setConfigCartorio((prev) => ({
+                            ...prev,
+                            cidade: e.target.value,
+                          }))
+                        }
+                        placeholder="Ex: São Paulo"
+                      />
+                    )}
                   </div>
 
                   <div>
                     <Label htmlFor="estado">Estado (UF)</Label>
-                    <Input
-                      id="estado"
-                      value={configCartorio.estado}
-                      onChange={(e) =>
-                        setConfigCartorio((prev) => ({
-                          ...prev,
-                          estado: e.target.value.toUpperCase(),
-                        }))
-                      }
-                      placeholder="Ex: SP"
-                      maxLength={2}
-                    />
+                    {cartorioLoading ? (
+                      <Skeleton className="h-10 w-full" />
+                    ) : (
+                      <Input
+                        id="estado"
+                        value={configCartorio.estado}
+                        onChange={(e) =>
+                          setConfigCartorio((prev) => ({
+                            ...prev,
+                            estado: e.target.value.toUpperCase(),
+                          }))
+                        }
+                        placeholder="Ex: SP"
+                        maxLength={2}
+                      />
+                    )}
                   </div>
 
                   <div>
                     <Label htmlFor="endereco">Endereço</Label>
-                    <Textarea
-                      id="endereco"
-                      value={configCartorio.endereco}
-                      onChange={(e) =>
-                        setConfigCartorio((prev) => ({
-                          ...prev,
-                          endereco: e.target.value,
-                        }))
-                      }
-                      rows={3}
-                    />
+                    {cartorioLoading ? (
+                      <Skeleton className="h-24 w-full" />
+                    ) : (
+                      <Textarea
+                        id="endereco"
+                        value={configCartorio.endereco}
+                        onChange={(e) =>
+                          setConfigCartorio((prev) => ({
+                            ...prev,
+                            endereco: e.target.value,
+                          }))
+                        }
+                        rows={3}
+                      />
+                    )}
                   </div>
                 </div>
 
                 <div className="space-y-4">
                   <div>
                     <Label htmlFor="telefone">Telefone</Label>
-                    <Input
-                      id="telefone"
-                      value={configCartorio.telefone}
-                      onChange={(e) =>
-                        setConfigCartorio((prev) => ({
-                          ...prev,
-                          telefone: e.target.value,
-                        }))
-                      }
-                    />
+                    {cartorioLoading ? (
+                      <Skeleton className="h-10 w-full" />
+                    ) : (
+                      <Input
+                        id="telefone"
+                        value={configCartorio.telefone}
+                        onChange={(e) =>
+                          setConfigCartorio((prev) => ({
+                            ...prev,
+                            telefone: e.target.value,
+                          }))
+                        }
+                      />
+                    )}
                   </div>
 
                   <div>
                     <Label htmlFor="email">E-mail</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={configCartorio.email}
-                      onChange={(e) =>
-                        setConfigCartorio((prev) => ({
-                          ...prev,
-                          email: e.target.value,
-                        }))
-                      }
-                    />
+                    {cartorioLoading ? (
+                      <Skeleton className="h-10 w-full" />
+                    ) : (
+                      <Input
+                        id="email"
+                        type="email"
+                        value={configCartorio.email}
+                        onChange={(e) =>
+                          setConfigCartorio((prev) => ({
+                            ...prev,
+                            email: e.target.value,
+                          }))
+                        }
+                      />
+                    )}
                   </div>
 
                   <div>
                     <Label htmlFor="numeroOficio">Número do Ofício</Label>
-                    <Input
-                      id="numeroOficio"
-                      value={configCartorio.numeroOficio}
-                      onChange={(e) =>
-                        setConfigCartorio((prev) => ({
-                          ...prev,
-                          numeroOficio: e.target.value,
-                        }))
-                      }
-                      placeholder="Ex: 1º Ofício"
-                    />
+                    {cartorioLoading ? (
+                      <Skeleton className="h-10 w-full" />
+                    ) : (
+                      <Input
+                        id="numeroOficio"
+                        value={configCartorio.numeroOficio}
+                        onChange={(e) =>
+                          setConfigCartorio((prev) => ({
+                            ...prev,
+                            numeroOficio: e.target.value,
+                          }))
+                        }
+                        placeholder="Ex: 1º Ofício"
+                      />
+                    )}
                   </div>
 
                   <div>
                     <Label htmlFor="tabeliaoResponsavel">Tabelião Responsável</Label>
-                    <Input
-                      id="tabeliaoResponsavel"
-                      value={configCartorio.tabeliaoResponsavel}
-                      onChange={(e) =>
-                        setConfigCartorio((prev) => ({
-                          ...prev,
-                          tabeliaoResponsavel: e.target.value,
-                        }))
-                      }
-                      placeholder="Ex: João Silva"
-                    />
+                    {cartorioLoading ? (
+                      <Skeleton className="h-10 w-full" />
+                    ) : (
+                      <Input
+                        id="tabeliaoResponsavel"
+                        value={configCartorio.tabeliaoResponsavel}
+                        onChange={(e) =>
+                          setConfigCartorio((prev) => ({
+                            ...prev,
+                            tabeliaoResponsavel: e.target.value,
+                          }))
+                        }
+                        placeholder="Ex: João Silva"
+                      />
+                    )}
                   </div>
                 </div>
               </div>
@@ -987,19 +1059,28 @@ const Configuracoes = () => {
                 </h3>
                 <div className="space-y-4">
                   <div className="flex items-center space-x-2">
-                    <Switch
-                      id="whatsapp"
-                      checked={configCartorio.notificacaoWhatsApp}
-                      onCheckedChange={(checked) =>
-                        setConfigCartorio((prev) => ({
-                          ...prev,
-                          notificacaoWhatsApp: checked,
-                        }))
-                      }
-                    />
-                    <Label htmlFor="whatsapp">
-                      Habilitar notificações via WhatsApp
-                    </Label>
+                    {cartorioLoading ? (
+                      <>
+                        <Skeleton className="h-5 w-10 rounded-full" />
+                        <Skeleton className="h-4 w-64" />
+                      </>
+                    ) : (
+                      <>
+                        <Switch
+                          id="whatsapp"
+                          checked={configCartorio.notificacaoWhatsApp}
+                          onCheckedChange={(checked) =>
+                            setConfigCartorio((prev) => ({
+                              ...prev,
+                              notificacaoWhatsApp: checked,
+                            }))
+                          }
+                        />
+                        <Label htmlFor="whatsapp">
+                          Habilitar notificações via WhatsApp
+                        </Label>
+                      </>
+                    )}
                   </div>
 
                   {/* Configurações de WhatsApp - Exibido apenas quando habilitado */}
@@ -1090,10 +1171,14 @@ const Configuracoes = () => {
               </div>
 
               <div className="flex justify-end">
-                <Button onClick={handleSaveCartorio}>
-                  <Save className="mr-2 h-4 w-4" />
-                  Salvar Configurações
-                </Button>
+                {cartorioLoading ? (
+                  <Skeleton className="h-10 w-56" />
+                ) : (
+                  <Button onClick={handleSaveCartorio}>
+                    <Save className="mr-2 h-4 w-4" />
+                    Salvar Configurações
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>

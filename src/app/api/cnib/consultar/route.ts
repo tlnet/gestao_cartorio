@@ -133,6 +133,50 @@ export async function POST(request: NextRequest) {
     console.log("👤 Usuário autenticado:", user.id);
     console.log("🔑 Token disponível:", !!accessToken);
 
+    // Obter cartório do usuário para permitir busca de credenciais CNIB por cartório
+    let cartorioIdFromUser: string | null = null;
+    try {
+      const { data: userData, error: userDataError } = await supabase
+        .from("users")
+        .select("cartorio_id")
+        .eq("id", user.id)
+        .single();
+
+      if (!userDataError && userData?.cartorio_id) {
+        cartorioIdFromUser = String(userData.cartorio_id);
+      }
+    } catch (e) {
+      console.warn("⚠️ Não foi possível obter cartorio_id do usuário:", e);
+    }
+
+    // Log de presença (sem vazar segredos) das credenciais CNIB para verificação
+    try {
+      if (cartorioIdFromUser) {
+        const { data: cartorioData, error: cartorioDataError } = await supabase
+          .from("cartorios")
+          .select("cnib_client_id, cnib_client_secret")
+          .eq("id", cartorioIdFromUser)
+          .single();
+
+        if (!cartorioDataError) {
+          console.log("🔎 CNIB credenciais por cartório:", {
+            cartorio_id: cartorioIdFromUser,
+            hasCnibClientId: !!cartorioData?.cnib_client_id,
+            hasCnibClientSecret: !!cartorioData?.cnib_client_secret,
+          });
+        } else {
+          console.warn(
+            "⚠️ Erro ao verificar credenciais CNIB no banco:",
+            cartorioDataError
+          );
+        }
+      } else {
+        console.log("🔎 CNIB credenciais por cartório: cartorio_id não encontrado para o usuário");
+      }
+    } catch (e) {
+      console.warn("⚠️ Falha ao checar credenciais CNIB por cartório:", e);
+    }
+
     // Obter CPF da SERVENTIA (cartório) para a consulta CNIB
     // IMPORTANTE: Este é o CPF da SERVENTIA cadastrado na CNIB, não do usuário logado
     // Este CPF é o mesmo para todas as consultas e deve estar configurado na variável de ambiente
@@ -169,6 +213,23 @@ export async function POST(request: NextRequest) {
       "https://webhook.conversix.com.br/webhook/56a42f09-36f7-4912-b9cb-c4363d5ca7ad";
 
     console.log("🔍 Buscando token CNIB do webhook N8N:", cnibWebhookUrl);
+    
+    // Se conseguirmos o cartório do usuário, enviamos no querystring para o n8n buscar credenciais corretas.
+    const cnibWebhookUrlWithParams = (() => {
+      try {
+        if (!cartorioIdFromUser) return cnibWebhookUrl;
+        const u = new URL(cnibWebhookUrl);
+        u.searchParams.set("cartorio_id", cartorioIdFromUser);
+        return u.toString();
+      } catch {
+        return cnibWebhookUrl;
+      }
+    })();
+
+    console.log("📨 Webhook N8N CNIB (com cartorio_id quando disponível):", {
+      cartorio_id: cartorioIdFromUser,
+      cnibWebhookUrlWithParams,
+    });
 
     let token: string | null = null;
 
@@ -180,7 +241,7 @@ export async function POST(request: NextRequest) {
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos
       
       // Fazer requisição ao webhook N8N para obter o token
-      const tokenResponse = await fetch(cnibWebhookUrl, {
+      const tokenResponse = await fetch(cnibWebhookUrlWithParams, {
         method: "GET",
         headers: {
           "Accept": "application/json",

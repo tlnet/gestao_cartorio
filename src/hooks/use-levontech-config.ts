@@ -43,15 +43,19 @@ export const useLevontechConfig = () => {
 
   // Carregar configuração do Levontech
   useEffect(() => {
-    const loadConfig = async () => {
-      if (!cartorioId) {
-        setLoading(false);
-        setConfig(null);
-        return;
-      }
+    if (!cartorioId) {
+      setLoading(false);
+      setConfig(null);
+      return;
+    }
 
+    let isActive = true;
+
+    const loadConfig = async () => {
       try {
+        if (!isActive) return;
         setLoading(true);
+
         const { data, error } = await supabase
           .from("cartorios")
           .select(
@@ -63,20 +67,20 @@ export const useLevontechConfig = () => {
         if (error) {
           // Se não encontrar registro (PGRST116), não é erro crítico
           if (error.code === "PGRST116") {
-            console.log("Nenhuma configuração Levontech encontrada, usando padrão");
+            console.log(
+              "Nenhuma configuração Levontech encontrada, usando padrão"
+            );
             setConfig({
               sistema_levontech: false,
               levontech_url: "",
               levontech_username: "",
               levontech_password: "",
             });
-            setLoading(false);
             return;
           }
           throw error;
         }
 
-        // Sempre setar config, mesmo se null
         if (data) {
           const configValue = {
             sistema_levontech: Boolean(data.sistema_levontech) === true,
@@ -90,8 +94,6 @@ export const useLevontechConfig = () => {
           });
           setConfig(configValue);
         } else {
-          // Se data for null, setar valores padrão
-          console.log("📥 Data é null, usando valores padrão");
           setConfig({
             sistema_levontech: false,
             levontech_url: "",
@@ -101,15 +103,13 @@ export const useLevontechConfig = () => {
         }
       } catch (error: any) {
         console.error("Erro ao carregar configuração Levontech:", error);
-        // Não mostrar erro se a coluna não existir ainda (migração pendente)
         if (
-          !error.message?.includes("column") &&
-          !error.message?.includes("does not exist") &&
-          error.code !== "PGRST116"
+          !error?.message?.includes("column") &&
+          !error?.message?.includes("does not exist") &&
+          error?.code !== "PGRST116"
         ) {
           toast.error("Erro ao carregar configuração do Levontech");
         }
-        // Setar valores padrão em caso de erro
         setConfig({
           sistema_levontech: false,
           levontech_url: "",
@@ -117,11 +117,36 @@ export const useLevontechConfig = () => {
           levontech_password: "",
         });
       } finally {
-        setLoading(false);
+        if (isActive) setLoading(false);
       }
     };
 
-    loadConfig();
+    // Primeira carga
+    void loadConfig();
+
+    // Realtime: se alguém atualizar a config no mesmo cartório,
+    // os outros usuários com a tela aberta também devem refletir.
+    const channel = supabase
+      .channel(`levontech-config-${cartorioId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "cartorios",
+          filter: `id=eq.${cartorioId}`,
+        },
+        () => {
+          // Recarrega do banco para garantir consistência
+          void loadConfig();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isActive = false;
+      supabase.removeChannel(channel);
+    };
   }, [cartorioId]);
 
   // Salvar configuração do Levontech (via API admin — evita falha por RLS)

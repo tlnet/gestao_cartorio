@@ -37,6 +37,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Brain,
   FileText,
@@ -49,6 +50,7 @@ import {
   BarChart3,
   AlertCircle,
   Edit,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRelatoriosIA, RelatorioIA } from "@/hooks/use-relatorios-ia";
@@ -60,7 +62,7 @@ import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
 import { CamposPendentesDialog } from "@/components/ia/campos-pendentes-dialog";
 
 const AnaliseIA = () => {
-  const { user } = useAuth();
+  const { user, session, userType } = useAuth();
   const {
     relatorios,
     loading,
@@ -73,6 +75,7 @@ const AnaliseIA = () => {
     processarMinutaDocumento,
     fetchRelatorios,
     limparRelatoriosProcessando,
+    deleteRelatoriosAdmin,
   } = useRelatoriosIA();
 
   const { config: n8nConfig, getWebhookUrl } = useN8NConfig();
@@ -86,11 +89,32 @@ const AnaliseIA = () => {
   );
   const [openDialogs, setOpenDialogs] = useState<Set<string>>(new Set());
   const [showConfirmLimparProcessando, setShowConfirmLimparProcessando] = useState(false);
+  const [selectedRelatorioIds, setSelectedRelatorioIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean;
+    ids: string[];
+  }>({ open: false, ids: [] });
+  const [deletingRelatorios, setDeletingRelatorios] = useState(false);
   const [metricas, setMetricas] = useState({
     analisesHoje: 0,
     tempoMedio: "N/A",
     taxaSucesso: "0%",
   });
+
+  const canDeleteRelatorios =
+    userType === "admin" || userType === "admin_geral";
+
+  const [deleteModeOpen, setDeleteModeOpen] = useState(false);
+
+  const idsDeletaveis = relatorios
+    .filter((r) => r.status !== "processando")
+    .map((r) => r.id);
+
+  const allDeletaveisSelecionados =
+    idsDeletaveis.length > 0 &&
+    idsDeletaveis.every((id) => selectedRelatorioIds.has(id));
   
   // Estado para controle do popup de campos pendentes
   const [camposPendentesDialog, setCamposPendentesDialog] = useState<{
@@ -1023,6 +1047,91 @@ const AnaliseIA = () => {
                     />
                   </>
                 )}
+
+                    {canDeleteRelatorios && !deleteModeOpen && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedRelatorioIds(new Set());
+                          setDeleteModeOpen(true);
+                          setDeleteDialog({ open: false, ids: [] });
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Apagar Análises
+                      </Button>
+                    )}
+
+                    {canDeleteRelatorios && deleteModeOpen && (
+                      <>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={selectedRelatorioIds.size === 0}
+                          onClick={() =>
+                            setDeleteDialog({
+                              open: true,
+                              ids: Array.from(selectedRelatorioIds),
+                            })
+                          }
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Apagar Selecionados ({selectedRelatorioIds.size})
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={deletingRelatorios}
+                          onClick={() => {
+                            setDeleteModeOpen(false);
+                            setSelectedRelatorioIds(new Set());
+                            setDeleteDialog({ open: false, ids: [] });
+                          }}
+                        >
+                          Cancelar
+                        </Button>
+                      </>
+                    )}
+
+                    <ConfirmationDialog
+                      open={deleteDialog.open}
+                      onOpenChange={(open) =>
+                        setDeleteDialog((prev) => ({
+                          ...prev,
+                          open,
+                          ids: open ? prev.ids : [],
+                        }))
+                      }
+                      onConfirm={async () => {
+                        if (!deleteDialog.ids.length) return;
+                        if (!session?.access_token) {
+                          toast.error("Sessão expirada. Faça login novamente.");
+                          setDeleteDialog({ open: false, ids: [] });
+                          return;
+                        }
+                        setDeletingRelatorios(true);
+                        try {
+                          await deleteRelatoriosAdmin(
+                            deleteDialog.ids,
+                            session.access_token
+                          );
+                          setSelectedRelatorioIds(new Set());
+                          setDeleteDialog({ open: false, ids: [] });
+                        } finally {
+                          setDeletingRelatorios(false);
+                        }
+                      }}
+                      title="Confirmar Exclusão"
+                      description={`Tem certeza que deseja apagar ${
+                        deleteDialog.ids.length
+                      } análise(s)? Esta ação não pode ser desfeita.`}
+                      confirmText={
+                        deletingRelatorios ? "Apagando..." : "Sim, Apagar"
+                      }
+                      cancelText="Cancelar"
+                      variant="destructive"
+                    />
               </div>
             </div>
           </CardHeader>
@@ -1058,6 +1167,23 @@ const AnaliseIA = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      {deleteModeOpen && (
+                        <TableHead className="w-10">
+                          <Checkbox
+                            checked={allDeletaveisSelecionados}
+                            disabled={idsDeletaveis.length === 0}
+                            onCheckedChange={(checked) => {
+                              const nextChecked = checked === true;
+                              if (nextChecked) {
+                                setSelectedRelatorioIds(new Set(idsDeletaveis));
+                              } else {
+                                setSelectedRelatorioIds(new Set());
+                              }
+                            }}
+                            aria-label="Selecionar todas as análises"
+                          />
+                        </TableHead>
+                      )}
                       <TableHead>Tipo de Análise</TableHead>
                       <TableHead>Arquivo</TableHead>
                       <TableHead>Processado em</TableHead>
@@ -1069,6 +1195,24 @@ const AnaliseIA = () => {
                   <TableBody>
                     {relatorios.map((relatorio) => (
                     <TableRow key={relatorio.id}>
+                      {deleteModeOpen && (
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedRelatorioIds.has(relatorio.id)}
+                            disabled={relatorio.status === "processando"}
+                            onCheckedChange={(checked) => {
+                              const isChecked = checked === true;
+                              setSelectedRelatorioIds((prev) => {
+                                const next = new Set(prev);
+                                if (!isChecked) next.delete(relatorio.id);
+                                else next.add(relatorio.id);
+                                return next;
+                              });
+                            }}
+                            aria-label="Selecionar análise para exclusão"
+                          />
+                        </TableCell>
+                      )}
                       <TableCell>
                         <Badge variant="outline">
                           {getTipoLabel(relatorio.tipo)}
@@ -1248,7 +1392,45 @@ const AnaliseIA = () => {
                       </TableCell>
                       <TableCell>
                         <div className="flex space-x-1">
-                          {(relatorio.status === "concluido" || relatorio.status === "analise_incompleta") && (
+                          {deleteModeOpen && relatorio.status === "processando" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled
+                              title="A exclusão não está disponível durante o processamento"
+                              className="h-8 w-8 p-0 text-gray-400"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+
+                          {deleteModeOpen && relatorio.status !== "processando" && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    setDeleteDialog({
+                                      open: true,
+                                      ids: [relatorio.id],
+                                    })
+                                  }
+                                  title="Excluir análise"
+                                  className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Excluir análise</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+
+                          {!deleteModeOpen &&
+                            (relatorio.status === "concluido" ||
+                              relatorio.status === "analise_incompleta") && (
                             <>
                               {/* Botão de visualizar — abre o melhor formato disponível */}
                               {getArquivoGeradoUrl(relatorio) && (
@@ -1305,12 +1487,14 @@ const AnaliseIA = () => {
                               )}
                             </>
                           )}
-                          {relatorio.status === "processando" && (
+                          {!deleteModeOpen && relatorio.status === "processando" && (
                             <Button variant="ghost" size="sm" disabled>
                               <Clock className="h-4 w-4" />
                             </Button>
                           )}
-                          {(relatorio.status === "analise_incompleta" || relatorio.status === "erro") && (
+                          {!deleteModeOpen &&
+                            (relatorio.status === "analise_incompleta" ||
+                              relatorio.status === "erro") && (
                             <>
                               {temCamposPendentes(relatorio) ? (
                                 <Tooltip>
