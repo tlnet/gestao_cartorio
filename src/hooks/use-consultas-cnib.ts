@@ -209,7 +209,9 @@ export const useConsultasCNIB = () => {
 
   useEffect(() => {
     if (authLoading) return;
-    fetchConsultas();
+    const safetyTimer = setTimeout(() => setLoading(false), 8000);
+    fetchConsultas().finally(() => clearTimeout(safetyTimer));
+    return () => clearTimeout(safetyTimer);
   }, [authLoading]);
 
   return {

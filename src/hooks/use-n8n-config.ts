@@ -319,7 +319,9 @@ export const useN8NConfig = () => {
 
   useEffect(() => {
     if (authLoading) return;
-    fetchConfig();
+    const safetyTimer = setTimeout(() => setLoading(false), 8000);
+    fetchConfig().finally(() => clearTimeout(safetyTimer));
+    return () => clearTimeout(safetyTimer);
   }, [authLoading]);
 
   return {

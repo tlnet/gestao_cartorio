@@ -27,8 +27,10 @@ const finalUrl = supabaseUrl || "https://placeholder.supabase.co";
 const finalKey = supabaseAnonKey || "placeholder-key";
 
 // Fetch com timeout global para prevenir loading infinito quando o token
-// expira e o SDK fica preso tentando fazer refresh (comum em produção com F5)
-const SUPABASE_FETCH_TIMEOUT_MS = 15000;
+// expira e o SDK fica preso tentando fazer refresh (comum em produção com F5).
+// Deve ser menor que LOADING_TIMEOUT_MS (10s) no auth-context para que a
+// falha de refresh libere as queries enfileiradas ANTES do timeout de auth.
+const SUPABASE_FETCH_TIMEOUT_MS = 8000;
 
 const fetchWithTimeout = (url: RequestInfo | URL, options?: RequestInit): Promise<Response> => {
   const controller = new AbortController();

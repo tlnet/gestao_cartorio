@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import MainLayout from "@/components/layout/main-layout";
 import { useContasPagar } from "@/hooks/use-contas-pagar";
 import { useAuth } from "@/contexts/auth-context";
@@ -41,8 +41,10 @@ import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function ContasPage() {
-  const { user } = useAuth();
-  const [cartorioId, setCartorioId] = useState<string | undefined>();
+  const { user, userProfile } = useAuth();
+  // Usar cartorio_id diretamente do perfil já carregado pelo auth context
+  // (evita uma query Supabase separada que pode ficar presa durante token refresh)
+  const cartorioId = (userProfile as any)?.cartorio_id as string | undefined;
   const [dialogNovaContaOpen, setDialogNovaContaOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("todas");
   const [filtrosAtuais, setFiltrosAtuais] = useState<FiltrosContas>({});
@@ -65,28 +67,6 @@ export default function ContasPage() {
     buscarContasVencidas,
     adicionarDocumentoConta,
   } = useContasPagar(cartorioId);
-
-  // Buscar cartório do usuário
-  useEffect(() => {
-    const fetchUserCartorio = async () => {
-      if (!user?.id) return;
-
-      try {
-        const { data, error } = await supabase
-          .from("users")
-          .select("cartorio_id")
-          .eq("id", user.id)
-          .single();
-
-        if (error) throw error;
-        setCartorioId(data?.cartorio_id);
-      } catch (error) {
-        console.error("Erro ao buscar cartório do usuário:", error);
-      }
-    };
-
-    fetchUserCartorio();
-  }, [user]);
 
   // Função wrapper para atualizar conta e refresh dos documentos
   const handleAtualizarConta = async (
@@ -564,6 +544,3 @@ export default function ContasPage() {
     </MainLayout>
   );
 }
-
-// Importar o supabase
-import { supabase } from "@/lib/supabase";

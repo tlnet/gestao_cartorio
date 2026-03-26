@@ -62,7 +62,7 @@ const profileSchema = z.object({
 type ProfileFormData = z.infer<typeof profileSchema>;
 
 const PerfilPage = () => {
-  const { user, userRoles } = useAuth();
+  const { user, userRoles, loading: authLoading } = useAuth();
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -98,48 +98,53 @@ const PerfilPage = () => {
 
   // Buscar dados do usuário
   useEffect(() => {
+    if (authLoading) return; // aguarda auth resolver antes de buscar
+    if (!user) {
+      setLoading(false); // sem usuário autenticado, não há perfil para carregar
+      return;
+    }
     const fetchUserProfile = async () => {
-      if (user) {
-        try {
-          setLoading(true);
-          const { data, error } = await supabase
-            .from("users")
-            .select("*, cartorio:cartorios(nome)")
-            .eq("id", user.id)
-            .single();
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from("users")
+          .select("*, cartorio:cartorios(nome)")
+          .eq("id", user.id)
+          .single();
 
-          if (error) {
-            console.error("Erro ao buscar perfil:", error);
-            toast.error("Erro ao carregar perfil");
-            return;
-          }
-
-          let profile = data as any;
-          if (profile?.cartorio_id && !profile?.cartorio?.nome) {
-            const { data: cartorio } = await supabase
-              .from("cartorios")
-              .select("nome")
-              .eq("id", profile.cartorio_id)
-              .single();
-            if (cartorio?.nome) profile = { ...profile, cartorio: { nome: cartorio.nome } };
-          }
-          setUserProfile(profile);
-          setProfileImage(profile.avatar_url);
-          form.reset({
-            name: profile.name || "",
-            telefone: profile.telefone || "",
-          });
-        } catch (error) {
+        if (error) {
           console.error("Erro ao buscar perfil:", error);
           toast.error("Erro ao carregar perfil");
-        } finally {
-          setLoading(false);
+          return;
         }
+
+        let profile = data as any;
+        if (profile?.cartorio_id && !profile?.cartorio?.nome) {
+          const { data: cartorio } = await supabase
+            .from("cartorios")
+            .select("nome")
+            .eq("id", profile.cartorio_id)
+            .single();
+          if (cartorio?.nome) profile = { ...profile, cartorio: { nome: cartorio.nome } };
+        }
+        setUserProfile(profile);
+        setProfileImage(profile.avatar_url);
+        form.reset({
+          name: profile.name || "",
+          telefone: profile.telefone || "",
+        });
+      } catch (error) {
+        console.error("Erro ao buscar perfil:", error);
+        toast.error("Erro ao carregar perfil");
+      } finally {
+        setLoading(false);
       }
     };
 
-    fetchUserProfile();
-  }, [user, form]);
+    const safetyTimer = setTimeout(() => setLoading(false), 8000);
+    fetchUserProfile().finally(() => clearTimeout(safetyTimer));
+    return () => clearTimeout(safetyTimer);
+  }, [user, authLoading, form]);
 
   const getUserInitials = (name: string) => {
     if (!name) return "U";

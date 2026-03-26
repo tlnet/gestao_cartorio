@@ -112,10 +112,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Verificar sessão inicial (com timeout para evitar loading infinito em F5 com cache)
-    // 8s é suficiente para uma conexão lenta; fetchWithTimeout no supabase client
-    // garante que as requisições HTTP individualmente também tenham timeout de 15s.
-    const LOADING_TIMEOUT_MS = 8000;
+    // Timeout de segurança: garante que authLoading nunca trava para sempre.
+    // Reduzido para 5s — o único caminho de init (INITIAL_SESSION) é mais rápido
+    // que o padrão anterior de dois caminhos concorrentes (getInitialSession + INITIAL_SESSION).
+    const LOADING_TIMEOUT_MS = 5000;
     let loadingCleared = false;
     const clearLoadingOnce = () => {
       if (!loadingCleared) {
@@ -124,49 +124,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    const getInitialSession = async () => {
-      try {
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession();
-        if (error) throw error;
+    const timeoutId = window.setTimeout(clearLoadingOnce, LOADING_TIMEOUT_MS);
 
-        setSession(session);
-        setUser(session?.user ?? null);
-
-        if (session?.user) {
-          await fetchUserProfile(session.user.id);
-        }
-      } catch (error: any) {
-        const isAbort = error?.name === "AbortError";
-        if (!isAbort) {
-          console.error("Erro ao verificar sessão:", error);
-          setError(error);
-          if (!error?.message?.includes("placeholder")) {
-            try {
-              toast.error("Erro ao verificar sessão: " + (error?.message || "Erro desconhecido"));
-            } catch (toastError) {
-              console.error("Erro ao exibir toast:", toastError);
-            }
-          }
-        }
-        // Erro de abort (timeout de fetch) é silencioso — o usuário será redirecionado
-        // ao login naturalmente pois user/session ficam nulos.
-      } finally {
-        clearLoadingOnce();
-      }
-    };
-
-    const timeoutId = window.setTimeout(() => {
-      clearLoadingOnce();
-    }, LOADING_TIMEOUT_MS);
-
-    getInitialSession().finally(() => {
-      window.clearTimeout(timeoutId);
-    });
-
-    // Escutar mudanças de autenticação
+    // Escutar mudanças de autenticação.
+    // Não há mais getInitialSession() separado — o evento INITIAL_SESSION do SDK
+    // dispara automaticamente após o cliente de auth inicializar (incluindo qualquer
+    // refresh de token necessário), eliminando a concorrência de mutex que causava
+    // lentidão e loading infinito no F5.
     try {
       const {
         data: { subscription },
@@ -176,10 +140,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(session);
           setUser(session?.user ?? null);
 
+          if (event === "INITIAL_SESSION") {
+            // Único caminho de inicialização — sem concorrência com getSession() externo.
+            // O SDK já processou (e eventualmente fez refresh) o token antes de disparar este evento.
+            try {
+              if (session?.user) {
+                await fetchUserProfile(session.user.id);
+              }
+            } catch (err: any) {
+              if (err?.name !== "AbortError") {
+                console.error("Erro ao carregar perfil no INITIAL_SESSION:", err);
+              }
+            } finally {
+              clearLoadingOnce();
+            }
+            return;
+          }
+
           if (event === "SIGNED_IN" && session?.user) {
             setError(null);
             await fetchUserProfile(session.user.id);
             setLoading(false);
+            return;
           }
 
           if (event === "SIGNED_OUT") {
@@ -194,34 +176,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } catch (routerError) {
               console.error("Erro ao redirecionar após logout:", routerError);
             }
+            return;
           }
 
           if (event === "USER_UPDATED") {
             try {
-              const { error } = await supabase.auth.getSession();
-              if (error) {
-                setError(error);
-                toast.error("Erro ao atualizar sessão: " + error.message);
-              } else if (session?.user) {
+              if (session?.user) {
                 await fetchUserProfile(session.user.id);
               }
             } catch (sessionError) {
               console.error("Erro ao atualizar sessão:", sessionError);
             }
             setLoading(false);
+            return;
           }
 
-          // INITIAL_SESSION não deve desligar o loading aqui — getInitialSession() cuida disso
-          // após carregar o perfil do usuário. Desligar antes causava race condition onde
-          // user estava setado mas userProfile/userRoles ainda estavam nulos.
-          if (
-            event !== "SIGNED_IN" &&
-            event !== "SIGNED_OUT" &&
-            event !== "USER_UPDATED" &&
-            event !== "INITIAL_SESSION"
-          ) {
-            setLoading(false);
-          }
+          // TOKEN_REFRESHED e outros eventos — apenas sincroniza sessão
+          setLoading(false);
         }
       );
 

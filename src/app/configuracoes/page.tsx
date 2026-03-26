@@ -75,7 +75,7 @@ import { putCartorioUpdate } from "@/lib/admin-cartorio-api";
 
 const Configuracoes = () => {
   const [activeTab, setActiveTab] = useState("cartorio");
-  const { user, session } = useAuth();
+  const { user, session, loading: authLoading } = useAuth();
   const [cartorioId, setCartorioId] = useStateAuth<string | undefined>();
   const { isValid: isCartorioValid, missingFields, revalidate: revalidateCartorio } = useCartorioValidation();
   const [showStatusDialog, setShowStatusDialog] = useState(false);
@@ -143,9 +143,10 @@ const Configuracoes = () => {
 
   // Buscar cartório do usuário
   useEffect(() => {
-    const fetchUserCartorio = async () => {
-      if (!user?.id) return;
+    if (authLoading) return; // aguarda auth resolver antes de buscar
+    if (!user?.id) return;
 
+    const fetchUserCartorio = async () => {
       try {
         const { data, error } = await supabase
           .from("users")
@@ -161,7 +162,7 @@ const Configuracoes = () => {
     };
 
     fetchUserCartorio();
-  }, [user]);
+  }, [user, authLoading]);
 
   // Carregar dados do cartório do banco
   useEffect(() => {

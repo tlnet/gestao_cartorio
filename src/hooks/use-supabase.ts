@@ -168,7 +168,11 @@ export function useCartorios(cartorioId?: string) {
 
   useEffect(() => {
     if (authLoading) return;
-    fetchCartorios();
+    // Safety: garante que o skeleton some em no máximo 8s após auth resolver,
+    // mesmo que a query Supabase trave ou o AbortError não se propague corretamente.
+    const safetyTimer = setTimeout(() => setLoading(false), 8000);
+    fetchCartorios().finally(() => clearTimeout(safetyTimer));
+    return () => clearTimeout(safetyTimer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cartorioId, authLoading]);
 
@@ -804,7 +808,9 @@ export function useProtocolos(cartorioId?: string) {
 
   useEffect(() => {
     if (authLoading) return;
-    fetchProtocolos();
+    const safetyTimer = setTimeout(() => setLoading(false), 8000);
+    fetchProtocolos().finally(() => clearTimeout(safetyTimer));
+    return () => clearTimeout(safetyTimer);
   }, [cartorioId, authLoading]);
 
   return {
@@ -1076,7 +1082,9 @@ export function useUsuarios(cartorioId?: string) {
 
   useEffect(() => {
     if (authLoading) return;
-    fetchUsuarios();
+    const safetyTimer = setTimeout(() => setLoading(false), 8000);
+    fetchUsuarios().finally(() => clearTimeout(safetyTimer));
+    return () => clearTimeout(safetyTimer);
   }, [cartorioId, authLoading]);
 
   return {

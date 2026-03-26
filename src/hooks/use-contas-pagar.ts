@@ -804,6 +804,9 @@ export const useContasPagar = (cartorioId?: string) => {
   useEffect(() => {
     if (cartorioId) {
       fetchContas();
+    } else {
+      // Sem cartorioId, não há dados para buscar — mas loading deve ser false
+      setLoading(false);
     }
   }, [cartorioId, fetchContas]);
 
