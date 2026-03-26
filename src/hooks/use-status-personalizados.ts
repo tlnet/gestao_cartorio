@@ -19,7 +19,7 @@ export const useStatusPersonalizados = () => {
   >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const fetchStatusPersonalizados = async () => {
     try {
@@ -179,8 +179,13 @@ export const useStatusPersonalizados = () => {
   };
 
   useEffect(() => {
-    fetchStatusPersonalizados();
-  }, [user]);
+    if (authLoading) return;
+    const safetyTimer = setTimeout(() => setLoading(false), 8000);
+    fetchStatusPersonalizados().finally(() => clearTimeout(safetyTimer));
+    return () => clearTimeout(safetyTimer);
+  // user?.id — evita re-fetch por mudança de referência em TOKEN_REFRESHED
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, authLoading]);
 
   return {
     statusPersonalizados,

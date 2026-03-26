@@ -14,15 +14,20 @@ interface LevontechConfig {
 }
 
 export const useLevontechConfig = () => {
-  const { user, session } = useAuth();
+  const { user, session, loading: authLoading } = useAuth();
   const [config, setConfig] = useState<LevontechConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [cartorioId, setCartorioId] = useState<string | null>(null);
 
   // Buscar cartório do usuário
   useEffect(() => {
+    if (authLoading) return;
+
     const fetchCartorioId = async () => {
-      if (!user?.id) return;
+      if (!user?.id) {
+        setCartorioId(null);
+        return;
+      }
 
       try {
         const { data, error } = await supabase
@@ -39,7 +44,9 @@ export const useLevontechConfig = () => {
     };
 
     fetchCartorioId();
-  }, [user]);
+  // user?.id evita re-fetch por nova referência de objeto em TOKEN_REFRESHED
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, authLoading]);
 
   // Carregar configuração do Levontech
   useEffect(() => {

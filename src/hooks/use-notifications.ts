@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
+import { debugLoading } from "@/lib/debug-loading";
 import { CATEGORIA_LABELS } from "@/types";
 
 export interface Notificacao {
@@ -850,6 +851,12 @@ export const useNotifications = () => {
   useEffect(() => {
     if (!user?.id) return;
 
+    debugLoading("notifications", "useEffect:start", {
+      userId: user.id,
+      userType,
+      userRoles,
+    });
+
     fetchNotificacoes();
 
     // Limpar notificações duplicadas na inicialização
@@ -867,10 +874,14 @@ export const useNotifications = () => {
     }, 2 * 60 * 1000);
 
     return () => {
+      debugLoading("notifications", "useEffect:cleanup", { userId: user.id });
       clearInterval(interval);
       clearInterval(notificationInterval);
     };
-  }, [user?.id, userType, userRoles]);
+  // userRoles.join(',') converte o array em string estável para comparação,
+  // evitando re-disparos por nova referência de array em TOKEN_REFRESHED / SIGNED_IN.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, userType, userRoles.join(',')]);
 
   return {
     notificacoes,

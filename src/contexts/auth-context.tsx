@@ -8,6 +8,7 @@ import {
   AuthChangeEvent,
 } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { debugLoading } from "@/lib/debug-loading";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { 
@@ -51,8 +52,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const routerRef = useRef(router);
   useEffect(() => { routerRef.current = router; }, [router]);
 
-  const fetchUserProfile = React.useCallback(async (userId: string) => {
+  // Ref para verificar se já temos perfil carregado para um determinado userId,
+  // evitando limpar o perfil existente em re-fetches disparados por SIGNED_IN ao voltar de outra aba.
+  const loadedUserIdRef = useRef<string | null>(null);
+
+  const fetchUserProfile = React.useCallback(async (userId: string, forceOverwrite = false) => {
+    const hasExistingProfile = loadedUserIdRef.current === userId;
     try {
+      debugLoading("auth", "fetchUserProfile:start", { userId, forceOverwrite, hasExistingProfile });
       const { data: profile, error: profileError } = await supabase
         .from("users")
         .select("*")
@@ -61,32 +68,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (profileError) {
         console.warn("Erro ao buscar perfil do usuário:", profileError);
-        setUserType("atendente");
-        setUserRoles(["atendente"]);
-        setPermissions(getPermissoes("atendente"));
-        setUserProfile(null);
+        debugLoading("auth", "fetchUserProfile:error", {
+          userId,
+          code: (profileError as any)?.code,
+          message: (profileError as any)?.message,
+          keptExistingProfile: hasExistingProfile && !forceOverwrite,
+        });
+        // Se já temos perfil carregado para este usuário, mantém os dados existentes
+        // para não causar cartorioId = undefined em páginas já abertas.
+        if (!hasExistingProfile || forceOverwrite) {
+          setUserType("atendente");
+          setUserRoles(["atendente"]);
+          setPermissions(getPermissoes("atendente"));
+          setUserProfile(null);
+        }
         return;
       }
 
       if (profile) {
         const roles = normalizarRoles(profile.role, profile.roles);
+        loadedUserIdRef.current = userId;
         setUserProfile({ ...profile, tipo: getTipoPrincipal(roles), roles } as Usuario);
         setUserType(getTipoPrincipal(roles));
         setUserRoles(roles);
         setPermissions(getPermissoesForRoles(roles));
+        debugLoading("auth", "fetchUserProfile:success", {
+          userId,
+          cartorio_id: (profile as any)?.cartorio_id ?? null,
+          roles,
+        });
       }
     } catch (err) {
       console.error("Erro ao processar perfil:", err);
-      setUserType("atendente");
-      setUserRoles(["atendente"]);
-      setPermissions(getPermissoes("atendente"));
-      setUserProfile(null);
+      debugLoading("auth", "fetchUserProfile:exception", {
+        userId,
+        keptExistingProfile: hasExistingProfile && !forceOverwrite,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      if (!hasExistingProfile || forceOverwrite) {
+        setUserType("atendente");
+        setUserRoles(["atendente"]);
+        setPermissions(getPermissoes("atendente"));
+        setUserProfile(null);
+      }
     }
   }, []);
 
   const refetchUserProfile = React.useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) await fetchUserProfile(session.user.id);
+    if (session?.user) await fetchUserProfile(session.user.id, true);
   }, [fetchUserProfile]);
 
   useEffect(() => {
@@ -125,6 +155,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const timeoutId = window.setTimeout(clearLoadingOnce, LOADING_TIMEOUT_MS);
+    debugLoading("auth", "authListener:setup", { LOADING_TIMEOUT_MS });
 
     // Escutar mudanças de autenticação.
     // Não há mais getInitialSession() separado — o evento INITIAL_SESSION do SDK
@@ -136,7 +167,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         data: { subscription },
       } = supabase.auth.onAuthStateChange(
         async (event: AuthChangeEvent, session: Session | null) => {
-
+          debugLoading("auth", "authStateChange:event", {
+            event,
+            hasSession: Boolean(session),
+            userId: session?.user?.id ?? null,
+            loadedUserId: loadedUserIdRef.current,
+          });
           setSession(session);
           setUser(session?.user ?? null);
 
@@ -159,17 +195,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           if (event === "SIGNED_IN" && session?.user) {
             setError(null);
-            await fetchUserProfile(session.user.id);
+            // Se já temos perfil carregado para o mesmo usuário (ex: volta de outra aba),
+            // evita o re-fetch que pode limpar cartorioId nas páginas abertas.
+            if (loadedUserIdRef.current !== session.user.id) {
+              debugLoading("auth", "SIGNED_IN:fetchUserProfile", { userId: session.user.id });
+              await fetchUserProfile(session.user.id);
+            } else {
+              debugLoading("auth", "SIGNED_IN:skipFetchUserProfile", { userId: session.user.id });
+            }
             setLoading(false);
             return;
           }
 
           if (event === "SIGNED_OUT") {
             setError(null);
+            loadedUserIdRef.current = null;
             setUserProfile(null);
             setUserType(null);
             setPermissions(null);
             setLoading(false);
+            debugLoading("auth", "SIGNED_OUT:cleared", {});
             try {
               toast.info("Logout realizado com sucesso!");
               routerRef.current.push("/login");

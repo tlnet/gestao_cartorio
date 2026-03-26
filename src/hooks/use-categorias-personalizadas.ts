@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
+import { debugLoading } from "@/lib/debug-loading";
 import type { CategoriaPersonalizada } from "@/types";
 
 interface CategoriaPersonalizadaDB {
@@ -46,12 +47,21 @@ export const useCategoriasPersonalizadas = (cartorioId?: string) => {
   // Função para buscar categorias
   const fetchCategorias = useCallback(async () => {
     try {
+      debugLoading("categorias_personalizadas", "fetchCategorias:start", {
+        cartorioId: cartorioId ?? null,
+        hasUser: Boolean(user?.id),
+      });
       setLoading(true);
       setError(null);
 
       if (!cartorioId) {
         setCategorias([]);
         setLoading(false);
+        debugLoading(
+          "categorias_personalizadas",
+          "fetchCategorias:skip:no_cartorioId",
+          {}
+        );
         return;
       }
 
@@ -68,13 +78,26 @@ export const useCategoriasPersonalizadas = (cartorioId?: string) => {
 
       const categoriasFormatadas = (data || []).map(dbToCategoriaPersonalizada);
       setCategorias(categoriasFormatadas);
+      debugLoading("categorias_personalizadas", "fetchCategorias:success", {
+        cartorioId,
+        count: categoriasFormatadas.length,
+      });
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Erro ao carregar categorias";
       setError(errorMessage);
       console.error("Erro ao carregar categorias:", err);
+      debugLoading("categorias_personalizadas", "fetchCategorias:error", {
+        cartorioId: cartorioId ?? null,
+        error: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       setLoading(false);
+      debugLoading(
+        "categorias_personalizadas",
+        "fetchCategorias:finally:setLoading(false)",
+        { cartorioId: cartorioId ?? null }
+      );
     }
   }, [cartorioId]);
 
@@ -299,12 +322,27 @@ export const useCategoriasPersonalizadas = (cartorioId?: string) => {
   // Carregar categorias quando o cartório mudar
   useEffect(() => {
     if (cartorioId) {
-      fetchCategorias();
+      const safetyTimer = setTimeout(() => setLoading(false), 8000);
+      debugLoading("categorias_personalizadas", "useEffect:initialFetch", {
+        cartorioId,
+      });
+      debugLoading("categorias_personalizadas", "useEffect:safetyTimer:set(8000ms)", {
+        cartorioId,
+      });
+      fetchCategorias().finally(() => clearTimeout(safetyTimer));
+      return () => clearTimeout(safetyTimer);
     } else {
       setCategorias([]);
       setLoading(false);
+      debugLoading(
+        "categorias_personalizadas",
+        "useEffect:no_cartorioId:setLoading(false)",
+        {}
+      );
     }
-  }, [cartorioId, fetchCategorias]);
+  // fetchCategorias muda referência apenas quando cartorioId muda (useCallback([cartorioId]))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartorioId]);
 
   return {
     categorias,

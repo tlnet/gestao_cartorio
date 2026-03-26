@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
+import { debugLoading } from "@/lib/debug-loading";
 import type {
   ContaPagar,
   StatusConta,
@@ -197,11 +198,17 @@ export const useContasPagar = (cartorioId?: string) => {
   const fetchContas = useCallback(
     async (filtros?: FiltrosContas) => {
       try {
+        debugLoading("contas_pagar", "fetchContas:start", {
+          cartorioId: cartorioId ?? null,
+          hasUser: Boolean(user?.id),
+          filtros: filtros ?? null,
+        });
         setLoading(true);
         setError(null);
 
         if (!cartorioId) {
           setContas([]);
+          debugLoading("contas_pagar", "fetchContas:skip:no_cartorioId", {});
           return;
         }
 
@@ -251,6 +258,10 @@ export const useContasPagar = (cartorioId?: string) => {
 
         const contasFormatadas = (data || []).map(dbToContaPagar);
         setContas(contasFormatadas);
+        debugLoading("contas_pagar", "fetchContas:success", {
+          cartorioId,
+          count: contasFormatadas.length,
+        });
 
         // Verificar e atualizar contas vencidas automaticamente
         await verificarContasVencidas();
@@ -262,9 +273,16 @@ export const useContasPagar = (cartorioId?: string) => {
           err instanceof Error ? err.message : "Erro ao carregar contas";
         setError(errorMessage);
         console.error("Erro ao carregar contas:", err);
+        debugLoading("contas_pagar", "fetchContas:error", {
+          cartorioId: cartorioId ?? null,
+          error: err instanceof Error ? err.message : String(err),
+        });
         toast.error(errorMessage);
       } finally {
         setLoading(false);
+        debugLoading("contas_pagar", "fetchContas:finally:setLoading(false)", {
+          cartorioId: cartorioId ?? null,
+        });
       }
     },
     [cartorioId]
@@ -803,12 +821,21 @@ export const useContasPagar = (cartorioId?: string) => {
   // Carregar contas ao montar o componente
   useEffect(() => {
     if (cartorioId) {
-      fetchContas();
+      const safetyTimer = setTimeout(() => setLoading(false), 8000);
+      debugLoading("contas_pagar", "useEffect:initialFetch", { cartorioId });
+      debugLoading("contas_pagar", "useEffect:safetyTimer:set(8000ms)", {
+        cartorioId,
+      });
+      fetchContas().finally(() => clearTimeout(safetyTimer));
+      return () => clearTimeout(safetyTimer);
     } else {
       // Sem cartorioId, não há dados para buscar — mas loading deve ser false
+      debugLoading("contas_pagar", "useEffect:no_cartorioId:setLoading(false)", {});
       setLoading(false);
     }
-  }, [cartorioId, fetchContas]);
+  // fetchContas muda referência apenas quando cartorioId muda (useCallback([cartorioId]))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartorioId]);
 
   // Função para obter todas as categorias disponíveis (apenas personalizadas do banco)
   const getTodasCategorias = () => {
