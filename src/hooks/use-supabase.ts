@@ -70,7 +70,7 @@ const mockRelatorios = [
 export function useCartorios(cartorioId?: string) {
   const [cartorios, setCartorios] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const { session } = useAuth();
+  const { session, loading: authLoading } = useAuth();
 
   const fetchCartorios = async () => {
     try {
@@ -167,9 +167,10 @@ export function useCartorios(cartorioId?: string) {
   };
 
   useEffect(() => {
+    if (authLoading) return;
     fetchCartorios();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cartorioId]);
+  }, [cartorioId, authLoading]);
 
   return {
     cartorios,
@@ -184,7 +185,7 @@ export function useCartorios(cartorioId?: string) {
 export function useProtocolos(cartorioId?: string) {
   const [protocolos, setProtocolos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const fetchProtocolos = async () => {
     try {
@@ -802,8 +803,9 @@ export function useProtocolos(cartorioId?: string) {
   };
 
   useEffect(() => {
+    if (authLoading) return;
     fetchProtocolos();
-  }, [cartorioId]);
+  }, [cartorioId, authLoading]);
 
   return {
     protocolos,
@@ -818,7 +820,7 @@ export function useProtocolos(cartorioId?: string) {
 export function useUsuarios(cartorioId?: string) {
   const [usuarios, setUsuarios] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const { session } = useAuth();
+  const { session, loading: authLoading } = useAuth();
 
   const fetchUsuarios = async () => {
     try {
@@ -1073,8 +1075,9 @@ export function useUsuarios(cartorioId?: string) {
   };
 
   useEffect(() => {
+    if (authLoading) return;
     fetchUsuarios();
-  }, [cartorioId]);
+  }, [cartorioId, authLoading]);
 
   return {
     usuarios,

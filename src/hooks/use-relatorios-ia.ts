@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useN8NConfig } from "./use-n8n-config";
 import { getWebhookUrl as getDefaultWebhookUrl } from "@/lib/webhooks-config";
+import { useAuth } from "@/contexts/auth-context";
 
 export interface RelatorioIA {
   id: string;
@@ -39,6 +40,7 @@ export const useRelatoriosIA = () => {
   const inFlightFetchRef = useRef<Promise<void> | null>(null);
   const fetchSeqRef = useRef(0);
 
+  const { loading: authLoading } = useAuth();
   // Hook para configuração N8N (com tratamento de erro)
   const { config: n8nConfig } = useN8NConfig();
 
@@ -761,7 +763,7 @@ export const useRelatoriosIA = () => {
         }] : [];
 
         // Construir estrutura de vendedores
-        const vendedores = dadosFormulario.vendedores?.vendedores.map((vendedor, index) => ({
+        const vendedores = dadosFormulario.vendedores?.vendedores.map((vendedor: any, index: number) => ({
           id: index + 1,
           email: vendedor.email,
           qualificacao_profissional: vendedor.qualificacaoProfissional,
@@ -1391,8 +1393,9 @@ export const useRelatoriosIA = () => {
   };
 
   useEffect(() => {
+    if (authLoading) return;
     fetchRelatorios({ force: true });
-  }, []);
+  }, [authLoading, fetchRelatorios]);
 
   return {
     relatorios,

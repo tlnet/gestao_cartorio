@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/auth-context";
 
 export interface ConsultaCNIB {
   id: string;
@@ -32,6 +33,7 @@ export const useConsultasCNIB = () => {
   const [consultas, setConsultas] = useState<ConsultaCNIB[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { loading: authLoading } = useAuth();
 
   const fetchConsultas = async () => {
     try {
@@ -205,10 +207,10 @@ export const useConsultasCNIB = () => {
     }
   };
 
-  // Carregar consultas ao montar o componente
   useEffect(() => {
+    if (authLoading) return;
     fetchConsultas();
-  }, []);
+  }, [authLoading]);
 
   return {
     consultas,

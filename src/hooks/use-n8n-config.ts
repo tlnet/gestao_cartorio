@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/auth-context";
 
 export interface N8NConfig {
   id: string;
@@ -19,6 +20,7 @@ export const useN8NConfig = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tableExists, setTableExists] = useState<boolean | null>(null);
+  const { loading: authLoading } = useAuth();
 
   const fetchConfig = async (cartorioId?: string) => {
     try {
@@ -316,8 +318,9 @@ export const useN8NConfig = () => {
   };
 
   useEffect(() => {
+    if (authLoading) return;
     fetchConfig();
-  }, []);
+  }, [authLoading]);
 
   return {
     config,

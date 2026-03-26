@@ -1010,7 +1010,10 @@ const AnaliseIA = () => {
           })}
 
           {/* Minuta de Documento - Componente Especial */}
-          <MinutaDocumentoForm onProcessComplete={handleProcessComplete} />
+          <MinutaDocumentoForm
+            onProcessComplete={handleProcessComplete}
+            processarMinutaDocumento={processarMinutaDocumento}
+          />
         </div>
 
         {/* Histórico de Análises */}

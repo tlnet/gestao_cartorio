@@ -35,7 +35,6 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useRelatoriosIA } from "@/hooks/use-relatorios-ia";
 import { useN8NConfig } from "@/hooks/use-n8n-config";
 import { useAuth } from "@/contexts/auth-context";
 import { supabase } from "@/lib/supabase";
@@ -126,13 +125,14 @@ interface MinutaFormData {
 
 interface MinutaDocumentoFormProps {
   onProcessComplete: (result: any) => void;
+  processarMinutaDocumento: (...args: any[]) => Promise<any>;
 }
 
 const MinutaDocumentoForm: React.FC<MinutaDocumentoFormProps> = ({
   onProcessComplete,
+  processarMinutaDocumento,
 }) => {
   const { user } = useAuth();
-  const { processarMinutaDocumento } = useRelatoriosIA();
   const { getWebhookUrl } = useN8NConfig();
 
   const [isProcessing, setIsProcessing] = useState(false);
