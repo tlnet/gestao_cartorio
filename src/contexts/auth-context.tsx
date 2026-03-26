@@ -113,7 +113,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Verificar sessão inicial (com timeout para evitar loading infinito em F5 com cache)
-    const LOADING_TIMEOUT_MS = 10000;
+    // 8s é suficiente para uma conexão lenta; fetchWithTimeout no supabase client
+    // garante que as requisições HTTP individualmente também tenham timeout de 15s.
+    const LOADING_TIMEOUT_MS = 8000;
     let loadingCleared = false;
     const clearLoadingOnce = () => {
       if (!loadingCleared) {
@@ -137,15 +139,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await fetchUserProfile(session.user.id);
         }
       } catch (error: any) {
-        console.error("Erro ao verificar sessão:", error);
-        setError(error);
-        if (!error?.message?.includes("placeholder")) {
-          try {
-            toast.error("Erro ao verificar sessão: " + (error?.message || "Erro desconhecido"));
-          } catch (toastError) {
-            console.error("Erro ao exibir toast:", toastError);
+        const isAbort = error?.name === "AbortError";
+        if (!isAbort) {
+          console.error("Erro ao verificar sessão:", error);
+          setError(error);
+          if (!error?.message?.includes("placeholder")) {
+            try {
+              toast.error("Erro ao verificar sessão: " + (error?.message || "Erro desconhecido"));
+            } catch (toastError) {
+              console.error("Erro ao exibir toast:", toastError);
+            }
           }
         }
+        // Erro de abort (timeout de fetch) é silencioso — o usuário será redirecionado
+        // ao login naturalmente pois user/session ficam nulos.
       } finally {
         clearLoadingOnce();
       }

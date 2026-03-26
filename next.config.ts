@@ -45,6 +45,20 @@ const nextConfig: NextConfig = {
   // Headers de segurança
   async headers() {
     return [
+      // Garante que páginas HTML nunca sejam servidas do cache do browser.
+      // Em produção, o browser pode cachear o HTML antigo que aponta para
+      // chunks JS com hashes velhas — que já não existem no CDN após um novo
+      // deploy — causando loading infinito no F5. Ctrl+Shift+R ignora o cache
+      // e por isso funciona. Este header corrige a causa raiz.
+      {
+        source: "/((?!_next/static|_next/image|favicon\\.ico).*)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-store, must-revalidate",
+          },
+        ],
+      },
       {
         source: "/api/:path*",
         headers: [

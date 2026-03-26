@@ -26,11 +26,26 @@ if (!supabaseUrl || !supabaseAnonKey) {
 const finalUrl = supabaseUrl || "https://placeholder.supabase.co";
 const finalKey = supabaseAnonKey || "placeholder-key";
 
+// Fetch com timeout global para prevenir loading infinito quando o token
+// expira e o SDK fica preso tentando fazer refresh (comum em produção com F5)
+const SUPABASE_FETCH_TIMEOUT_MS = 15000;
+
+const fetchWithTimeout = (url: RequestInfo | URL, options?: RequestInit): Promise<Response> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SUPABASE_FETCH_TIMEOUT_MS);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() =>
+    clearTimeout(timeoutId)
+  );
+};
+
 export const supabase = createClient<Database>(finalUrl, finalKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
+  },
+  global: {
+    fetch: fetchWithTimeout,
   },
 });
 
