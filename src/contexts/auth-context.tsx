@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
   User,
   Session,
@@ -48,6 +48,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userRoles, setUserRoles] = useState<TipoUsuario[]>([]);
   const [permissions, setPermissions] = useState<PermissoesUsuario | null>(null);
   const router = useRouter();
+  const routerRef = useRef(router);
+  useEffect(() => { routerRef.current = router; }, [router]);
 
   const fetchUserProfile = React.useCallback(async (userId: string) => {
     try {
@@ -181,9 +183,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setLoading(false);
             try {
               toast.info("Logout realizado com sucesso!");
-              if (router) {
-                router.push("/login");
-              }
+              routerRef.current.push("/login");
             } catch (routerError) {
               console.error("Erro ao redirecionar após logout:", routerError);
             }
@@ -204,7 +204,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setLoading(false);
           }
 
-          if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") {
+          // INITIAL_SESSION não deve desligar o loading aqui — getInitialSession() cuida disso
+          // após carregar o perfil do usuário. Desligar antes causava race condition onde
+          // user estava setado mas userProfile/userRoles ainda estavam nulos.
+          if (
+            event !== "SIGNED_IN" &&
+            event !== "SIGNED_OUT" &&
+            event !== "USER_UPDATED" &&
+            event !== "INITIAL_SESSION"
+          ) {
             setLoading(false);
           }
         }
@@ -225,7 +233,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       return () => {}; // Retornar função vazia se houver erro
     }
-  }, [router, fetchUserProfile]);
+  }, [fetchUserProfile]);
 
   const signOut = async () => {
     try {

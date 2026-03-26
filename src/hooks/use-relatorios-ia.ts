@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useN8NConfig } from "./use-n8n-config";
@@ -61,7 +61,7 @@ export const useRelatoriosIA = () => {
     });
   };
 
-  const fetchRelatorios = async (options?: { silent?: boolean; force?: boolean }) => {
+  const fetchRelatorios = useCallback(async (options?: { silent?: boolean; force?: boolean }) => {
     const silent = options?.silent ?? false;
     const force = options?.force ?? false;
     const fetchSeq = ++fetchSeqRef.current;
@@ -191,7 +191,7 @@ export const useRelatoriosIA = () => {
 
     inFlightFetchRef.current = task;
     return task;
-  };
+  }, []);
 
   const createRelatorio = async (relatorioData: {
     tipo: "resumo_matricula" | "analise_malote" | "minuta_documento";
@@ -253,7 +253,7 @@ export const useRelatoriosIA = () => {
     }
   };
 
-  const updateRelatorio = async (
+  const updateRelatorio = useCallback(async (
     id: string,
     updates: Partial<RelatorioIA>,
     options?: { silent?: boolean }
@@ -284,10 +284,10 @@ export const useRelatoriosIA = () => {
       if (!options?.silent) {
         toast.error(errorMessage);
       }
-      
+
       throw err;
     }
-  };
+  }, [fetchRelatorios]);
 
   const deleteRelatorio = async (id: string) => {
     try {

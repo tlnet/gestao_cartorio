@@ -1,13 +1,14 @@
+import { useCallback } from "react";
 import { useAuth } from "@/contexts/auth-context";
-import { 
-  TipoUsuario, 
-  PermissoesUsuario, 
+import {
+  TipoUsuario,
+  PermissoesUsuario,
   podeAcessarRota,
   isAdmin as checkIsAdmin,
   isSuperAdmin as checkIsSuperAdmin,
   isAtendente as checkIsAtendente,
   isFinanceiro as checkIsFinanceiro,
-  getPermissoes 
+  getPermissoes
 } from "@/types";
 
 /**
@@ -36,9 +37,9 @@ export function usePermissions() {
    * @param rota - Caminho da rota a ser verificada
    * @returns true se pode acessar, false caso contrário
    */
-  const canAccess = (rota: string): boolean => {
+  const canAccess = useCallback((rota: string): boolean => {
     return podeAcessarRota(userRoles?.length ? userRoles : userType, rota);
-  };
+  }, [userRoles, userType]);
 
   /**
    * Verifica se o usuário tem o role administrador (em qualquer uma das permissões)
@@ -66,15 +67,13 @@ export function usePermissions() {
    * @param permissao - Nome da permissão a ser verificada
    * @returns true se tem a permissão, false caso contrário
    */
-  const hasPermission = (permissao: keyof PermissoesUsuario): boolean => {
+  const hasPermission = useCallback((permissao: keyof PermissoesUsuario): boolean => {
     if (!permissions) return false;
     const value = permissions[permissao];
-    // Se for booleano, retornar o valor
     if (typeof value === "boolean") return value;
-    // Se for array, retornar true se não estiver vazio
     if (Array.isArray(value)) return value.length > 0;
     return false;
-  };
+  }, [permissions]);
 
   return {
     /** Tipo principal do usuário (para exibição) */
