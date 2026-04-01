@@ -60,6 +60,7 @@ import { useServicos } from "@/hooks/use-servicos";
 import { LoadingAnimation } from "@/components/ui/loading-spinner";
 import { useLevontechConfig } from "@/hooks/use-levontech-config";
 import { useAuth } from "@/contexts/auth-context";
+import { useUsuarios } from "@/hooks/use-supabase";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
@@ -88,6 +89,14 @@ const protocoloSchema = z.object({
     .min(1, "Pelo menos um serviço deve ser selecionado"),
   status: z.string().min(1, "Status é obrigatório"),
   apresentante: z.string().optional(),
+  responsavelServicoId: z
+    .union([z.literal(""), z.string().uuid()])
+    .optional()
+    .transform((v) => (v === undefined ? "" : v)),
+  entidadeId: z
+    .union([z.literal(""), z.string().uuid()])
+    .optional()
+    .transform((v) => (v === undefined ? "" : v)),
   email: z
     .string()
     .refine((value) => !value || isValidEmail(value), "Email inválido")
@@ -104,6 +113,12 @@ interface ProtocoloFormProps {
   onCancel: () => void;
   initialData?: Partial<ProtocoloFormData>;
   isEditing?: boolean;
+  /** Filtra a lista de responsáveis pelos usuários deste cartório */
+  cartorioId?: string;
+  /** Habilita o campo Entidade (RCPn) */
+  usaEntidadesRcpn?: boolean;
+  /** Lista de entidades ativas para seleção */
+  entidades?: { id: string; nome: string }[];
 }
 
 const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
@@ -111,6 +126,9 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   onCancel,
   initialData,
   isEditing = false,
+  cartorioId,
+  usaEntidadesRcpn = false,
+  entidades = [],
 }) => {
   const [servicosSelecionados, setServicosSelecionados] = React.useState<
     string[]
@@ -129,6 +147,16 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   const { servicos, loading: servicosLoading, createServico, fetchServicos } = useServicos();
   const { config: levontechConfig, loading: levontechLoading } = useLevontechConfig();
   const { user } = useAuth();
+  const { usuarios: usuariosCartorio, loading: usuariosLoading } =
+    useUsuarios(cartorioId);
+
+  const usuariosAtivos = React.useMemo(
+    () =>
+      (usuariosCartorio || []).filter(
+        (u: { ativo?: boolean }) => u.ativo !== false
+      ),
+    [usuariosCartorio]
+  );
   
   // Estado para controlar loading do webhook
   const [consultingLevontech, setConsultingLevontech] = React.useState(false);
@@ -207,6 +235,8 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
       servicos: initialData?.servicos || [],
       status: initialData?.status || "Aguardando Análise",
       apresentante: initialData?.apresentante || "",
+      responsavelServicoId: initialData?.responsavelServicoId || "",
+      entidadeId: initialData?.entidadeId || "",
       email: initialData?.email || "",
       observacao: initialData?.observacao || "",
       prazoExecucao: initialData?.prazoExecucao,
@@ -1229,22 +1259,99 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
             />
           </div>
 
-            <FormField
-              control={form.control}
-              name="apresentante"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Apresentante</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Nome do apresentante (se diferente do solicitante)"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="apresentante"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Apresentante</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Nome do apresentante (se diferente do solicitante)"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="responsavelServicoId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Responsável pelo serviço</FormLabel>
+                    <Select
+                      value={field.value ? field.value : "__none__"}
+                      onValueChange={(v) =>
+                        field.onChange(v === "__none__" ? "" : v)
+                      }
+                      disabled={usuariosLoading}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue
+                            placeholder={
+                              usuariosLoading
+                                ? "Carregando usuários..."
+                                : "Selecione um usuário"
+                            }
+                          />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="__none__">Nenhum</SelectItem>
+                        {usuariosAtivos.map((u: { id: string; name?: string; email?: string }) => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.name || u.email || u.id}
+                            {u.name && u.email
+                              ? ` (${u.email})`
+                              : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            {/* Entidade (RCPn) */}
+            {usaEntidadesRcpn && entidades.length > 0 && (
+              <FormField
+                control={form.control}
+                name="entidadeId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Entidade</FormLabel>
+                    <Select
+                      value={field.value ? field.value : "__none__"}
+                      onValueChange={(v) =>
+                        field.onChange(v === "__none__" ? "" : v)
+                      }
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione uma entidade" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="__none__">Nenhuma</SelectItem>
+                        {entidades.map((e) => (
+                          <SelectItem key={e.id} value={e.id}>
+                            {e.nome}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
         </div>
 
         {/* Serviços */}

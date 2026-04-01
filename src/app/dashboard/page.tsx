@@ -8,6 +8,7 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useProtocolos, useCartorios, useUsuarios } from "@/hooks/use-supabase";
 import IANotifications from "@/components/notifications/ia-notifications";
 import { useAuth } from "@/contexts/auth-context";
+import { useEntidades } from "@/hooks/use-entidades";
 import {
   Card,
   CardContent,
@@ -69,6 +70,9 @@ const Dashboard = () => {
   } = useProtocolos(scopedCartorioId);
   const { cartorios, loading: cartoriosLoading } = useCartorios(scopedCartorioId);
   const { usuarios, loading: usuariosLoading } = useUsuarios(scopedCartorioId);
+  const { entidadesAtivas } = useEntidades(scopedCartorioId);
+  const usaEntidadesRcpn: boolean =
+    (cartorios?.[0] as any)?.usa_entidades_rcpn ?? false;
 
   const [metricas, setMetricas] = useState({
     processosHoje: 0,
@@ -225,6 +229,8 @@ const Dashboard = () => {
       prazoExecucao: protocolo.prazo_execucao,
       observacao: protocolo.observacao || "Sem observações",
       apresentante: protocolo.apresentante || "",
+      responsavel_servico_id: protocolo.responsavel_servico_id ?? null,
+      entidade_id: protocolo.entidade_id ?? null,
     }));
 
   const [selectedProtocolo, setSelectedProtocolo] = useState<any>(null);
@@ -259,6 +265,8 @@ const Dashboard = () => {
       apresentante: protocolo.apresentante || "",
       observacao: protocolo.observacao || "",
       prazoExecucao,
+      responsavelServicoId: protocolo.responsavel_servico_id || "",
+      entidadeId: protocolo.entidade_id || "",
     };
     setEditingProtocolo(protocoloEditavel);
     setShowProtocoloForm(true);
@@ -570,6 +578,47 @@ const Dashboard = () => {
             </Card>
           </div>
 
+          {/* Protocolos por Entidade (RCPn) */}
+          {usaEntidadesRcpn && (() => {
+            const distribuicaoPorEntidade = [
+              ...entidadesAtivas.map((e) => ({
+                nome: e.nome,
+                quantidade: protocolos.filter((p: any) => p.entidade_id === e.id).length,
+              })),
+              {
+                nome: "Sem entidade",
+                quantidade: protocolos.filter((p: any) => !p.entidade_id).length,
+              },
+            ].filter((e) => e.quantidade > 0);
+
+            return distribuicaoPorEntidade.length > 0 ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Protocolos por Entidade (RCPn)</CardTitle>
+                  <CardDescription>
+                    Distribuição de protocolos por entidade de origem
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <BarChart
+                      data={distribuicaoPorEntidade}
+                      margin={{ top: 8, right: 16, left: 0, bottom: 8 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="nome" tick={{ fontSize: 12 }} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                      <Tooltip
+                        formatter={(value: number) => [value, "Protocolos"]}
+                      />
+                      <Bar dataKey="quantidade" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            ) : null;
+          })()}
+
           {/* Tabela de Protocolos Recentes */}
           <Card>
             <CardHeader>
@@ -678,6 +727,10 @@ const Dashboard = () => {
                   </DialogDescription>
                 </DialogHeader>
                 <ProtocoloForm
+                  key={editingProtocolo?.id ?? "novo"}
+                  cartorioId={scopedCartorioId}
+                  usaEntidadesRcpn={usaEntidadesRcpn}
+                  entidades={entidadesAtivas}
                   onSubmit={async (data) => {
                     try {
                       if (editingProtocolo) {
@@ -692,6 +745,12 @@ const Dashboard = () => {
                           servicos: data.servicos,
                           status: data.status,
                           apresentante: data.apresentante,
+                          responsavel_servico_id: data.responsavelServicoId?.trim()
+                            ? data.responsavelServicoId
+                            : null,
+                          entidade_id: (data as any).entidadeId?.trim()
+                            ? (data as any).entidadeId
+                            : null,
                           observacao: data.observacao,
                           prazo_execucao: data.prazoExecucao
                             ? formatDateForDatabase(data.prazoExecucao)

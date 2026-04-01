@@ -9,6 +9,7 @@ import StatusSelector from "@/components/protocolos/status-selector";
 import { useProtocolos, useCartorios } from "@/hooks/use-supabase";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
 import { useAuth } from "@/contexts/auth-context";
+import { useEntidades } from "@/hooks/use-entidades";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { LoadingAnimation } from "@/components/ui/loading-spinner";
@@ -84,6 +85,9 @@ const ProtocolosContent = () => {
   } = useProtocolos(scopedCartorioId);
   const { cartorios } = useCartorios(scopedCartorioId);
   const { statusPersonalizados } = useStatusPersonalizados();
+  const { entidadesAtivas } = useEntidades(scopedCartorioId);
+  const usaEntidadesRcpn: boolean =
+    (cartorios?.[0] as any)?.usa_entidades_rcpn ?? false;
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [busca, setBusca] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -136,17 +140,14 @@ const ProtocolosContent = () => {
   ];
 
   const getStatusColor = (status: string) => {
-    // Verificar se é um status personalizado
     const statusPersonalizado = statusPersonalizados.find(
       (s) => s.nome === status
     );
     if (statusPersonalizado) {
-      // Usar a cor personalizada
       const corBase = statusPersonalizado.cor;
       return `bg-${corBase}-100 text-${corBase}-800`;
     }
 
-    // Status padrão
     switch (status) {
       case "Concluído":
         return "bg-green-100 text-green-800";
@@ -331,6 +332,12 @@ const ProtocolosContent = () => {
         telefone: data.telefone,
         email: data.email || null,
         apresentante: data.apresentante || null,
+        responsavel_servico_id: data.responsavelServicoId?.trim()
+          ? data.responsavelServicoId
+          : null,
+        entidade_id: (data as any).entidadeId?.trim()
+          ? (data as any).entidadeId
+          : null,
         servicos: Array.isArray(data.servicos)
           ? data.servicos
           : [data.servicos],
@@ -380,6 +387,8 @@ const ProtocolosContent = () => {
       ...protocolo,
       cpfCnpj: protocolo.cpf_cnpj, // Mapear cpf_cnpj para cpfCnpj
       prazoExecucao,
+      responsavelServicoId: protocolo.responsavel_servico_id || "",
+      entidadeId: protocolo.entidade_id || "",
     };
     setEditingProtocolo(protocoloComData);
     setShowForm(true);
@@ -905,10 +914,14 @@ const ProtocolosContent = () => {
               </DialogDescription>
             </DialogHeader>
             <ProtocoloForm
+              key={editingProtocolo?.id ?? "novo"}
               onSubmit={handleSubmitProtocolo}
               onCancel={() => setShowForm(false)}
               initialData={editingProtocolo}
               isEditing={!!editingProtocolo}
+              cartorioId={scopedCartorioId}
+              usaEntidadesRcpn={usaEntidadesRcpn}
+              entidades={entidadesAtivas}
             />
           </DialogContent>
         </Dialog>

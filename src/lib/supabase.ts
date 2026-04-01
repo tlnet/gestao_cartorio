@@ -81,6 +81,7 @@ export interface Database {
           estado: string | null;
           numero_oficio: string | null;
           tabeliao_responsavel: string | null;
+          usa_entidades_rcpn: boolean | null;
           created_at: string;
           updated_at: string;
         };
@@ -109,6 +110,7 @@ export interface Database {
           estado?: string | null;
           numero_oficio?: string | null;
           tabeliao_responsavel?: string | null;
+          usa_entidades_rcpn?: boolean | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -137,6 +139,7 @@ export interface Database {
           estado?: string | null;
           numero_oficio?: string | null;
           tabeliao_responsavel?: string | null;
+          usa_entidades_rcpn?: boolean | null;
           updated_at?: string;
         };
       };
@@ -187,6 +190,8 @@ export interface Database {
           telefone: string;
           email: string | null;
           apresentante: string | null;
+          responsavel_servico_id: string | null;
+          entidade_id: string | null;
           servicos: string[];
           status: string;
           observacao: string | null;
@@ -206,6 +211,8 @@ export interface Database {
           telefone: string;
           email?: string | null;
           apresentante?: string | null;
+          responsavel_servico_id?: string | null;
+          entidade_id?: string | null;
           servicos: string[];
           status: string;
           observacao?: string | null;
@@ -225,6 +232,8 @@ export interface Database {
           telefone?: string;
           email?: string | null;
           apresentante?: string | null;
+          responsavel_servico_id?: string | null;
+          entidade_id?: string | null;
           servicos?: string[];
           status?: string;
           observacao?: string | null;

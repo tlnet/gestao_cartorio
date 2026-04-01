@@ -72,6 +72,7 @@ import { Smartphone, Receipt, Clipboard, Database } from "lucide-react";
 import { useLevontechConfig } from "@/hooks/use-levontech-config";
 import { useCartorioValidation } from "@/hooks/use-cartorio-validation";
 import { putCartorioUpdate } from "@/lib/admin-cartorio-api";
+import { useEntidades } from "@/hooks/use-entidades";
 
 const Configuracoes = () => {
   const [activeTab, setActiveTab] = useState("cartorio");
@@ -201,7 +202,7 @@ const Configuracoes = () => {
 
       try {
         const selectBase =
-          "nome, cnpj, endereco, telefone, email, tenant_id_zdg, external_id_zdg, api_token_zdg, channel_id_zdg, notificacao_whatsapp, whatsapp_contas, whatsapp_protocolos, cidade, estado, numero_oficio, tabeliao_responsavel";
+          "nome, cnpj, endereco, telefone, email, tenant_id_zdg, external_id_zdg, api_token_zdg, channel_id_zdg, notificacao_whatsapp, usa_entidades_rcpn, whatsapp_contas, whatsapp_protocolos, cidade, estado, numero_oficio, tabeliao_responsavel";
         const selectCnibSemCpf = `${selectBase}, cnib_client_id, cnib_client_secret`;
         const selectCnibCompleto = `${selectCnibSemCpf}, cnib_cpf_usuario`;
 
@@ -265,6 +266,7 @@ const Configuracoes = () => {
             apiTokenZdg: data.api_token_zdg ?? "",
             channelIdZdg: data.channel_id_zdg ?? "",
             notificacaoWhatsApp: data.notificacao_whatsapp ?? false,
+            usaEntidadesRcpn: data.usa_entidades_rcpn ?? false,
             whatsappContas: data.whatsapp_contas ?? "",
             whatsappProtocolos: data.whatsapp_protocolos ?? "",
             cidade: data.cidade ?? "",
@@ -331,6 +333,7 @@ const Configuracoes = () => {
     cnibClientSecret: "",
     cnibCpfUsuario: "",
     notificacaoWhatsApp: false,
+    usaEntidadesRcpn: false,
     whatsappContas: "",
     whatsappProtocolos: "",
     webhookN8N: "",
@@ -373,13 +376,30 @@ const Configuracoes = () => {
     ordem: 1,
   });
 
-  const tabs = [
+  const {
+    entidades,
+    entidadesAtivas,
+    loading: entidadesLoading,
+    criarEntidade,
+    atualizarEntidade,
+    deletarEntidade,
+  } = useEntidades(cartorioId);
+
+  const [entidadeForm, setEntidadeForm] = useState({ nome: "" });
+  const [showEntidadeDialog, setShowEntidadeDialog] = useState(false);
+  const [editingEntidade, setEditingEntidade] = useState<any>(null);
+
+  const allTabs = [
     { id: "cartorio", label: "Dados do Cartório", icon: Building2 },
     { id: "status", label: "Status Personalizados", icon: Settings },
     { id: "servicos", label: "Serviços", icon: Users },
     { id: "categorias", label: "Categorias de Contas", icon: Tag },
+    { id: "entidades", label: "Entidades", icon: Building2 },
     { id: "integracoes", label: "Integrações", icon: Webhook },
   ];
+  const tabs = allTabs.filter(
+    (t) => t.id !== "entidades" || configCartorio.usaEntidadesRcpn
+  );
 
   const handleSaveCartorio = async () => {
     if (!cartorioId) {
@@ -405,6 +425,7 @@ const Configuracoes = () => {
         api_token_zdg: configCartorio.apiTokenZdg || null,
         channel_id_zdg: configCartorio.channelIdZdg || null,
         notificacao_whatsapp: configCartorio.notificacaoWhatsApp,
+        usa_entidades_rcpn: configCartorio.usaEntidadesRcpn,
         whatsapp_contas: configCartorio.whatsappContas || null,
         whatsapp_protocolos: configCartorio.whatsappProtocolos || null,
         cidade: configCartorio.cidade || null,
@@ -1082,7 +1103,7 @@ const Configuracoes = () => {
 
               <div className="border-t pt-6">
                 <h3 className="text-lg font-medium mb-4">
-                  Preferências de Notificação
+                  Definições do Cartório
                 </h3>
                 <div className="space-y-4">
                   <div className="flex items-center space-x-2">
@@ -1110,7 +1131,7 @@ const Configuracoes = () => {
                     )}
                   </div>
 
-                  {/* Configurações de WhatsApp - Exibido apenas quando habilitado */}
+                  {/* Configurações de WhatsApp — logo abaixo da opção, quando habilitado */}
                   {configCartorio.notificacaoWhatsApp && (
                     <FadeInUp delay={50}>
                       <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-4">
@@ -1194,6 +1215,32 @@ const Configuracoes = () => {
                       </div>
                     </FadeInUp>
                   )}
+
+                  {/* Entidades (Recepção de RCPn) — abaixo das configurações de WhatsApp quando habilitadas */}
+                  <div className="flex items-center space-x-2 pt-2">
+                    {cartorioLoading ? (
+                      <>
+                        <Skeleton className="h-5 w-10 rounded-full" />
+                        <Skeleton className="h-4 w-64" />
+                      </>
+                    ) : (
+                      <>
+                        <Switch
+                          id="entidades-rcpn"
+                          checked={configCartorio.usaEntidadesRcpn}
+                          onCheckedChange={(checked) =>
+                            setConfigCartorio((prev) => ({
+                              ...prev,
+                              usaEntidadesRcpn: checked,
+                            }))
+                          }
+                        />
+                        <Label htmlFor="entidades-rcpn">
+                          Atua com Entidades (Recepção de RCPn)
+                        </Label>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1860,6 +1907,234 @@ const Configuracoes = () => {
         )}
 
         {/* Integrações */}
+        {/* Entidades (Recepção de RCPn) */}
+        {activeTab === "entidades" && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5" />
+                  Entidades (Recepção de RCPn)
+                </div>
+                <Dialog
+                  open={showEntidadeDialog && !editingEntidade}
+                  onOpenChange={(open) => {
+                    if (!open) {
+                      setShowEntidadeDialog(false);
+                      setEntidadeForm({ nome: "" });
+                    } else {
+                      setShowEntidadeDialog(true);
+                    }
+                  }}
+                >
+                  <DialogTrigger asChild>
+                    <Button onClick={() => setEditingEntidade(null)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Nova Entidade
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Adicionar Nova Entidade</DialogTitle>
+                      <DialogDescription>
+                        Cadastre uma entidade parceira para Recepção de RCPn
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="nomeEntidade">Nome da Entidade</Label>
+                        <Input
+                          id="nomeEntidade"
+                          placeholder="Ex: Hospital Municipal"
+                          value={entidadeForm.nome}
+                          onChange={(e) =>
+                            setEntidadeForm((prev) => ({
+                              ...prev,
+                              nome: e.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setShowEntidadeDialog(false);
+                            setEntidadeForm({ nome: "" });
+                          }}
+                        >
+                          Cancelar
+                        </Button>
+                        <Button
+                          onClick={async () => {
+                            try {
+                              await criarEntidade(entidadeForm.nome);
+                              setShowEntidadeDialog(false);
+                              setEntidadeForm({ nome: "" });
+                            } catch {}
+                          }}
+                        >
+                          <Save className="mr-2 h-4 w-4" />
+                          Salvar
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </CardTitle>
+              <CardDescription>
+                Gerencie as entidades parceiras que encaminham protocolos ao cartório
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {entidadesLoading ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : entidades.length === 0 ? (
+                <div className="text-center py-12">
+                  <Building2 className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    Nenhuma entidade cadastrada
+                  </h3>
+                  <p className="text-gray-500">
+                    Adicione entidades parceiras para controlar a origem dos protocolos.
+                  </p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nome</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {entidades.map((entidade) => (
+                      <TableRow key={entidade.id}>
+                        <TableCell className="font-medium">
+                          {entidade.nome}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={entidade.ativo ? "default" : "secondary"}
+                          >
+                            {entidade.ativo ? "Ativo" : "Inativo"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setEditingEntidade(entidade);
+                                setEntidadeForm({ nome: entidade.nome });
+                                setShowEntidadeDialog(true);
+                              }}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                atualizarEntidade(entidade.id, {
+                                  ativo: !entidade.ativo,
+                                })
+                              }
+                            >
+                              {entidade.ativo ? (
+                                <XCircle className="h-4 w-4 text-red-500" />
+                              ) : (
+                                <CheckCircle className="h-4 w-4 text-green-500" />
+                              )}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => deletarEntidade(entidade.id)}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Diálogo de edição de entidade */}
+        <Dialog
+          open={showEntidadeDialog && !!editingEntidade}
+          onOpenChange={(open) => {
+            if (!open) {
+              setShowEntidadeDialog(false);
+              setEditingEntidade(null);
+              setEntidadeForm({ nome: "" });
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Editar Entidade</DialogTitle>
+              <DialogDescription>
+                Atualize o nome da entidade
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="editNomeEntidade">Nome da Entidade</Label>
+                <Input
+                  id="editNomeEntidade"
+                  value={entidadeForm.nome}
+                  onChange={(e) =>
+                    setEntidadeForm((prev) => ({
+                      ...prev,
+                      nome: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowEntidadeDialog(false);
+                    setEditingEntidade(null);
+                    setEntidadeForm({ nome: "" });
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={async () => {
+                    if (!editingEntidade) return;
+                    try {
+                      await atualizarEntidade(editingEntidade.id, {
+                        nome: entidadeForm.nome,
+                      });
+                      setShowEntidadeDialog(false);
+                      setEditingEntidade(null);
+                      setEntidadeForm({ nome: "" });
+                    } catch {}
+                  }}
+                >
+                  <Save className="mr-2 h-4 w-4" />
+                  Salvar
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {activeTab === "integracoes" && (
           <Card>
             <CardHeader>

@@ -47,6 +47,7 @@ import AddCommentForm from "./add-comment-form";
 import HistoricoFallback from "./historico-fallback";
 import { formatDateForDisplay } from "@/lib/utils";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 
 interface ProtocoloDetailsProps {
   isOpen: boolean;
@@ -62,6 +63,7 @@ interface ProtocoloDetailsProps {
     cpfCnpj: string;
     telefone: string;
     apresentante?: string;
+    responsavel_servico_id?: string | null;
     email?: string;
     status: string;
     prazoExecucao: string;
@@ -83,6 +85,39 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
     error: historicoError,
     fetchHistorico,
   } = useHistoricoProtocolos(protocolo.id);
+
+  const [responsavelServicoLabel, setResponsavelServicoLabel] = React.useState<
+    string | null
+  >(null);
+
+  React.useEffect(() => {
+    const id = protocolo.responsavel_servico_id;
+    if (!id) {
+      setResponsavelServicoLabel(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("users")
+        .select("name, email")
+        .eq("id", id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error || !data) {
+        setResponsavelServicoLabel(id);
+        return;
+      }
+      const row = data as { name?: string | null; email?: string | null };
+      const nome = row.name?.trim() || "";
+      const email = row.email?.trim() || "";
+      if (nome && email) setResponsavelServicoLabel(`${nome} (${email})`);
+      else setResponsavelServicoLabel(nome || email || id);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [protocolo.id, protocolo.responsavel_servico_id]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -375,6 +410,12 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
         yPosition += 8;
       }
 
+      if (responsavelServicoLabel) {
+        doc.text("Responsavel pelo servico:", 20, yPosition);
+        doc.text(removerAcentos(responsavelServicoLabel), 50, yPosition);
+        yPosition += 8;
+      }
+
       yPosition += 10;
 
       // Histórico de Alterações
@@ -645,6 +686,17 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
                       Apresentante
                     </label>
                     <p className="text-sm">{protocolo.apresentante}</p>
+                  </div>
+                )}
+
+                {protocolo.responsavel_servico_id && (
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">
+                      Responsável pelo serviço
+                    </label>
+                    <p className="text-sm">
+                      {responsavelServicoLabel ?? "Carregando…"}
+                    </p>
                   </div>
                 )}
               </CardContent>

@@ -9,6 +9,7 @@ export interface Protocolo {
   cpfCnpj: string;
   telefone: string;
   apresentante?: string;
+  responsavelServicoId?: string;
   email?: string;
   observacao?: string;
   prazoExecucao?: Date;

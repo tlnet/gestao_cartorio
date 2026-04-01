@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Select,
   SelectContent,
@@ -8,12 +8,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
 import { useProtocolos } from "@/hooks/use-supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
+import {
+  buildStatusSelectOptions,
+  normalizeStatusKey,
+  resolveStatusDotColor,
+} from "@/lib/status-resolve";
 
 interface StatusSelectorProps {
   protocoloId: string;
@@ -49,7 +53,7 @@ const StatusSelector: React.FC<StatusSelectorProps> = ({
       };
 
       // Se o novo status for "Concluído", definir data_conclusao
-      if (newStatus === "Concluído") {
+      if (normalizeStatusKey(newStatus) === normalizeStatusKey("Concluído")) {
         updateData.data_conclusao = new Date().toISOString();
       }
 
@@ -66,28 +70,33 @@ const StatusSelector: React.FC<StatusSelectorProps> = ({
     }
   };
 
-  const getStatusColor = (status: string) => {
-    const statusPersonalizado = statusPersonalizados.find(
-      (s) => s.nome === status
-    );
-    if (statusPersonalizado) {
-      return statusPersonalizado.cor;
-    }
-
-    // Cores padrão para status não personalizados
-    switch (status) {
-      case "Concluído":
+  const getStatusBadgeClass = (status: string) => {
+    const key = normalizeStatusKey(status);
+    switch (key) {
+      case normalizeStatusKey("Concluído"):
         return "bg-green-100 text-green-800";
-      case "Em Andamento":
+      case normalizeStatusKey("Em Andamento"):
         return "bg-blue-100 text-blue-800";
-      case "Aguardando Análise":
+      case normalizeStatusKey("Aguardando Análise"):
         return "bg-yellow-100 text-yellow-800";
-      case "Pendente":
+      case normalizeStatusKey("Pendente"):
         return "bg-red-100 text-red-800";
+      case normalizeStatusKey("Cancelado"):
+        return "bg-gray-100 text-gray-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
   };
+
+  const selectOptions = useMemo(
+    () => buildStatusSelectOptions(statusPersonalizados, currentStatus ?? ""),
+    [statusPersonalizados, currentStatus]
+  );
+
+  const triggerDotColor = resolveStatusDotColor(
+    currentStatus ?? "",
+    statusPersonalizados
+  );
 
   if (loading) {
     return (
@@ -99,31 +108,51 @@ const StatusSelector: React.FC<StatusSelectorProps> = ({
 
   if (statusPersonalizados.length === 0) {
     return (
-      <Badge className={`${getStatusColor(currentStatus)} ${className}`}>
-        {currentStatus}
-      </Badge>
+      <div className={`flex items-center gap-2 ${className}`}>
+        <div
+          className="h-2.5 w-2.5 shrink-0 rounded-full"
+          style={{ backgroundColor: triggerDotColor }}
+          aria-hidden
+        />
+        <Badge className={getStatusBadgeClass(currentStatus ?? "")}>
+          {currentStatus?.trim() ? currentStatus : "Sem status"}
+        </Badge>
+      </div>
     );
   }
+
+  const selectValue =
+    currentStatus?.trim() !== "" ? currentStatus : undefined;
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
       <Select
-        value={currentStatus}
+        value={selectValue}
         onValueChange={handleStatusChange}
         disabled={isUpdating}
       >
-        <SelectTrigger className="w-48">
-          <SelectValue />
+        <SelectTrigger className="w-48 min-w-[12rem]">
+          {selectValue ? (
+            <SelectValue placeholder="Selecionar status" />
+          ) : (
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <div
+                className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#9ca3af]"
+                aria-hidden
+              />
+              <SelectValue placeholder="Selecionar status" />
+            </div>
+          )}
         </SelectTrigger>
         <SelectContent>
-          {statusPersonalizados.map((status) => (
-            <SelectItem key={status.id} value={status.nome}>
+          {selectOptions.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
               <div className="flex items-center gap-2">
                 <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: status.cor }}
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: opt.dotColor }}
                 />
-                {status.nome}
+                <span className="truncate">{opt.label}</span>
               </div>
             </SelectItem>
           ))}
