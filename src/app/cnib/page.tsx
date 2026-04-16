@@ -25,7 +25,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Search, FileText, AlertCircle, CheckCircle, XCircle, User, Building2, Calendar, Hash, Shield, ShieldCheck, AlertTriangle, Eye, X } from "lucide-react";
+import { Search, FileText, AlertCircle, CheckCircle, XCircle, User, Building2, Calendar, Hash, Shield, ShieldCheck, AlertTriangle, Eye, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -49,6 +49,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const cnibConsultaSchema = z.object({
@@ -105,7 +107,7 @@ interface CNIBResultado {
 }
 
 const CNIBPage = () => {
-  const { user } = useAuth();
+  const { user, userType } = useAuth();
   const { token, loading: tokenLoading, isTokenValid, error: tokenError } = useCNIBToken();
   const { consultas, loading: consultasLoading, fetchConsultas } = useConsultasCNIB();
   const [isConsulting, setIsConsulting] = useState(false);
@@ -115,6 +117,21 @@ const CNIBPage = () => {
   const [resultado, setResultado] = useState<CNIBResultado | null>(null);
   const [showConsultaDialog, setShowConsultaDialog] = useState(false);
   const [consultaSelecionada, setConsultaSelecionada] = useState<CNIBResultado | null>(null);
+  const [deleteModeOpen, setDeleteModeOpen] = useState(false);
+  const [selectedConsultaIds, setSelectedConsultaIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean;
+    ids: string[];
+  }>({ open: false, ids: [] });
+  const [deletingConsultas, setDeletingConsultas] = useState(false);
+  const canDeleteConsultas =
+    userType === "admin" || userType === "admin_geral";
+  const idsDeletaveis = consultas.map((c) => c.id);
+  const allDeletaveisSelecionados =
+    idsDeletaveis.length > 0 &&
+    idsDeletaveis.every((id) => selectedConsultaIds.has(id));
 
   const form = useForm<CNIBConsultaFormData>({
     resolver: zodResolver(cnibConsultaSchema),
@@ -427,6 +444,44 @@ const CNIBPage = () => {
     form.reset();
     setConsultedDocument(null);
     setResultado(null);
+  };
+
+  const handleDeleteConsultas = async (ids: string[]) => {
+    if (!ids.length) return;
+    setDeletingConsultas(true);
+    try {
+      const { error, count } = await supabase
+        .from("consultas_cnib")
+        .delete({ count: "exact" })
+        .in("id", ids);
+      if (error) throw error;
+      if (!count || count === 0) {
+        throw new Error(
+          "Nenhuma consulta foi apagada. Verifique a política RLS de DELETE da tabela consultas_cnib."
+        );
+      }
+
+      setSelectedConsultaIds((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+      setDeleteDialog({ open: false, ids: [] });
+      setDeleteModeOpen(false);
+      toast.success(
+        count === 1
+          ? "Consulta CNIB removida com sucesso!"
+          : `${count} consultas CNIB removidas com sucesso!`
+      );
+      await fetchConsultas();
+    } catch (error: any) {
+      toast.error(
+        "Erro ao remover consulta(s) CNIB: " +
+          (error?.message || "Erro desconhecido")
+      );
+    } finally {
+      setDeletingConsultas(false);
+    }
   };
 
   return (
@@ -805,13 +860,65 @@ const CNIBPage = () => {
           <FadeInUp delay={300}>
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-blue-600" />
-                  Histórico de Consultas
-                </CardTitle>
-                <CardDescription>
-                  Consultas CNIB realizadas anteriormente
-                </CardDescription>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-blue-600" />
+                      Histórico de Consultas
+                    </CardTitle>
+                    <CardDescription>
+                      Consultas CNIB realizadas anteriormente
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    {canDeleteConsultas && !deleteModeOpen && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => {
+                          setDeleteModeOpen(true);
+                          setSelectedConsultaIds(new Set());
+                        }}
+                        className="w-full sm:w-auto"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Apagar Consultas
+                      </Button>
+                    )}
+
+                    {canDeleteConsultas && deleteModeOpen && (
+                      <>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={selectedConsultaIds.size === 0 || deletingConsultas}
+                          onClick={() =>
+                            setDeleteDialog({
+                              open: true,
+                              ids: Array.from(selectedConsultaIds),
+                            })
+                          }
+                          className="w-full sm:w-auto"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Apagar Selecionadas ({selectedConsultaIds.size})
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={deletingConsultas}
+                          onClick={() => {
+                            setDeleteModeOpen(false);
+                            setSelectedConsultaIds(new Set());
+                            setDeleteDialog({ open: false, ids: [] });
+                          }}
+                        >
+                          Cancelar
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
                 {consultasLoading ? (
@@ -843,6 +950,23 @@ const CNIBPage = () => {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        {canDeleteConsultas && deleteModeOpen && (
+                          <TableHead className="w-10">
+                            <Checkbox
+                              checked={allDeletaveisSelecionados}
+                              disabled={idsDeletaveis.length === 0}
+                              onCheckedChange={(checked) => {
+                                const nextChecked = checked === true;
+                                if (nextChecked) {
+                                  setSelectedConsultaIds(new Set(idsDeletaveis));
+                                } else {
+                                  setSelectedConsultaIds(new Set());
+                                }
+                              }}
+                              aria-label="Selecionar consultas CNIB"
+                            />
+                          </TableHead>
+                        )}
                         <TableHead>Documento</TableHead>
                         <TableHead>Nome / Razão Social</TableHead>
                         <TableHead>Hash da Consulta</TableHead>
@@ -855,6 +979,23 @@ const CNIBPage = () => {
                     <TableBody>
                       {consultas.map((consulta) => (
                         <TableRow key={consulta.id}>
+                          {canDeleteConsultas && deleteModeOpen && (
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedConsultaIds.has(consulta.id)}
+                                onCheckedChange={(checked) => {
+                                  const isChecked = checked === true;
+                                  setSelectedConsultaIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (!isChecked) next.delete(consulta.id);
+                                    else next.add(consulta.id);
+                                    return next;
+                                  });
+                                }}
+                                aria-label="Selecionar consulta CNIB para exclusão"
+                              />
+                            </TableCell>
+                          )}
                           <TableCell className="font-medium">
                             {consulta.tipo_documento === "CPF"
                               ? formatCPF(consulta.documento)
@@ -898,67 +1039,83 @@ const CNIBPage = () => {
                             )}
                           </TableCell>
                           <TableCell>
-                            {consulta.status === "sucesso" && consulta.dados_consulta && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  try {
-                                    // Garantir que dados_consulta seja um objeto
-                                    let dadosConsulta = consulta.dados_consulta;
-                                    
-                                    // Se for string, fazer parse
-                                    if (typeof dadosConsulta === 'string') {
-                                      dadosConsulta = JSON.parse(dadosConsulta);
+                            <div className="flex items-center gap-1">
+                              {consulta.status === "sucesso" && consulta.dados_consulta && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    try {
+                                      // Garantir que dados_consulta seja um objeto
+                                      let dadosConsulta = consulta.dados_consulta;
+
+                                      // Se for string, fazer parse
+                                      if (typeof dadosConsulta === "string") {
+                                        dadosConsulta = JSON.parse(dadosConsulta);
+                                      }
+
+                                      // Extrair os dados reais da estrutura salva
+                                      // A estrutura salva pode ser: { success: true, data: { data: {...} } } ou { data: {...} } ou {...}
+                                      let dadosReais = dadosConsulta;
+
+                                      // Se tiver estrutura aninhada, extrair os dados reais
+                                      if (dadosConsulta?.data?.data) {
+                                        dadosReais = dadosConsulta.data.data;
+                                      } else if (dadosConsulta?.data) {
+                                        dadosReais = dadosConsulta.data;
+                                      } else if (dadosConsulta) {
+                                        dadosReais = dadosConsulta;
+                                      }
+
+                                      // Garantir que dadosReais seja um objeto válido
+                                      if (!dadosReais || typeof dadosReais !== "object") {
+                                        throw new Error("Estrutura de dados inválida");
+                                      }
+
+                                      // Preparar dados para o dialog
+                                      const consultaData: CNIBResultado = {
+                                        success: true,
+                                        data: {
+                                          ...dadosReais,
+                                          documento: consulta.documento,
+                                        },
+                                      };
+
+                                      setConsultaSelecionada(consultaData);
+                                      setShowConsultaDialog(true);
+                                    } catch (error) {
+                                      console.error("Erro ao processar dados da consulta:", error);
+                                      toast.error("Erro ao carregar dados da consulta", {
+                                        description:
+                                          error instanceof Error
+                                            ? error.message
+                                            : "Não foi possível processar os dados salvos",
+                                      });
                                     }
-                                    
-                                    // Extrair os dados reais da estrutura salva
-                                    // A estrutura salva pode ser: { success: true, data: { data: {...} } } ou { data: {...} } ou {...}
-                                    let dadosReais = dadosConsulta;
-                                    
-                                    // Se tiver estrutura aninhada, extrair os dados reais
-                                    if (dadosConsulta?.data?.data) {
-                                      dadosReais = dadosConsulta.data.data;
-                                    } else if (dadosConsulta?.data) {
-                                      dadosReais = dadosConsulta.data;
-                                    } else if (dadosConsulta) {
-                                      dadosReais = dadosConsulta;
-                                    }
-                                    
-                                    // Garantir que dadosReais seja um objeto válido
-                                    if (!dadosReais || typeof dadosReais !== 'object') {
-                                      throw new Error("Estrutura de dados inválida");
-                                    }
-                                    
-                                    // Formatar o documento para exibição
-                                    const documentoFormatado = consulta.tipo_documento === "CPF"
-                                      ? formatCPF(consulta.documento)
-                                      : formatCNPJ(consulta.documento);
-                                    
-                                    // Preparar dados para o dialog
-                                    const consultaData: CNIBResultado = {
-                                    success: true,
-                                      data: {
-                                        ...dadosReais,
-                                        documento: consulta.documento,
-                                      },
-                                    };
-                                    
-                                    setConsultaSelecionada(consultaData);
-                                    setShowConsultaDialog(true);
-                                  } catch (error) {
-                                    console.error("Erro ao processar dados da consulta:", error);
-                                    toast.error("Erro ao carregar dados da consulta", {
-                                      description: error instanceof Error ? error.message : "Não foi possível processar os dados salvos",
-                                    });
-                                    }
-                                }}
-                                title="Visualizar resultado da consulta"
-                                className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            )}
+                                  }}
+                                  title="Visualizar resultado da consulta"
+                                  className="h-8 w-8 p-0 text-gray-600 hover:text-gray-700"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {canDeleteConsultas && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
+                                  onClick={() =>
+                                    setDeleteDialog({
+                                      open: true,
+                                      ids: [consulta.id],
+                                    })
+                                  }
+                                  title="Apagar consulta"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1208,6 +1365,26 @@ const CNIBPage = () => {
               )}
             </DialogContent>
           </Dialog>
+
+          <ConfirmationDialog
+            open={deleteDialog.open}
+            onOpenChange={(open) =>
+              setDeleteDialog((prev) => ({
+                ...prev,
+                open,
+                ids: open ? prev.ids : [],
+              }))
+            }
+            onConfirm={() => handleDeleteConsultas(deleteDialog.ids)}
+            title="Confirmar Exclusão"
+            description={`Tem certeza que deseja apagar ${
+              deleteDialog.ids.length
+            } consulta(s) CNIB? Esta ação não pode ser desfeita.`}
+            confirmText={deletingConsultas ? "Apagando..." : "Sim, Apagar"}
+            cancelText="Cancelar"
+            variant="destructive"
+            isLoading={deletingConsultas}
+          />
         </div>
       </MainLayout>
     </ProtectedRoute>
