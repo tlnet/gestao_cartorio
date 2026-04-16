@@ -51,6 +51,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmationDialog } from "@/components/ui/confirmation-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Plus,
@@ -64,6 +66,8 @@ import {
   ChevronDown,
   ChevronUp,
   MoreHorizontal,
+  Trash2,
+  X,
 } from "lucide-react";
 
 const ProtocolosContent = () => {
@@ -101,6 +105,17 @@ const ProtocolosContent = () => {
     protocolo: string;
     servicos: string[];
   } | null>(null);
+  const [deleteModeOpen, setDeleteModeOpen] = useState(false);
+  const [selectedProtocoloIds, setSelectedProtocoloIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean;
+    ids: string[];
+  }>({ open: false, ids: [] });
+  const [deletingProtocolos, setDeletingProtocolos] = useState(false);
+  const canDeleteProtocolos =
+    userType === "admin" || userType === "admin_geral";
 
   // Sincronizar estado local com estado global
   React.useEffect(() => {
@@ -289,6 +304,17 @@ const ProtocolosContent = () => {
   const totalProtocolos = localProtocolos.length;
   const totalConcluidos = protocolosConcluidos.length;
   const totalEmAberto = protocolosEmAberto.length;
+  const idsDeletaveis = Array.from(
+    new Set(
+      [
+        ...protocolosEmAberto,
+        ...(showConcluidos ? protocolosConcluidos : []),
+      ].map((p) => p.id)
+    )
+  );
+  const allDeletaveisSelecionados =
+    idsDeletaveis.length > 0 &&
+    idsDeletaveis.every((id) => selectedProtocoloIds.has(id));
 
   const handleSubmitProtocolo = async (data: any) => {
     try {
@@ -399,6 +425,35 @@ const ProtocolosContent = () => {
     setShowForm(true);
   };
 
+  const handleDeleteProtocolos = async (ids: string[]) => {
+    if (!ids.length) return;
+    setDeletingProtocolos(true);
+    try {
+      const { error } = await supabase.from("protocolos").delete().in("id", ids);
+      if (error) throw error;
+
+      setSelectedProtocoloIds((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+      setDeleteDialog({ open: false, ids: [] });
+      setDeleteModeOpen(false);
+      toast.success(
+        ids.length === 1
+          ? "Protocolo removido com sucesso!"
+          : `${ids.length} protocolos removidos com sucesso!`
+      );
+      await refetchProtocolos();
+    } catch (error: any) {
+      toast.error(
+        "Erro ao remover protocolo(s): " + (error?.message || "Erro desconhecido")
+      );
+    } finally {
+      setDeletingProtocolos(false);
+    }
+  };
+
   const handleStatusChange = (protocoloId: string, newStatus: string) => {
     // Atualizar estado local imediatamente para feedback visual
     setLocalProtocolos((prev) =>
@@ -483,11 +538,55 @@ const ProtocolosContent = () => {
             </Select>
           </div>
 
-          {/* Botão Novo Protocolo */}
-          <Button onClick={handleNewProtocolo}>
-            <Plus className="mr-2 h-4 w-4" />
-            Novo Protocolo
-          </Button>
+          <div className="flex items-center gap-2">
+            {canDeleteProtocolos && !deleteModeOpen && (
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  setDeleteModeOpen(true);
+                  setSelectedProtocoloIds(new Set());
+                }}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Apagar Protocolos
+              </Button>
+            )}
+
+            {canDeleteProtocolos && deleteModeOpen && (
+              <>
+                <Button
+                  variant="destructive"
+                  disabled={selectedProtocoloIds.size === 0 || deletingProtocolos}
+                  onClick={() =>
+                    setDeleteDialog({
+                      open: true,
+                      ids: Array.from(selectedProtocoloIds),
+                    })
+                  }
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Apagar Selecionados ({selectedProtocoloIds.size})
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={deletingProtocolos}
+                  onClick={() => {
+                    setDeleteModeOpen(false);
+                    setSelectedProtocoloIds(new Set());
+                    setDeleteDialog({ open: false, ids: [] });
+                  }}
+                >
+                  <X className="mr-2 h-4 w-4" />
+                  Cancelar
+                </Button>
+              </>
+            )}
+
+            <Button onClick={handleNewProtocolo}>
+              <Plus className="mr-2 h-4 w-4" />
+              Novo Protocolo
+            </Button>
+          </div>
         </div>
 
         {/* Mensagem de busca ativa */}
@@ -626,6 +725,23 @@ const ProtocolosContent = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {canDeleteProtocolos && deleteModeOpen && (
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={allDeletaveisSelecionados}
+                          disabled={idsDeletaveis.length === 0}
+                          onCheckedChange={(checked) => {
+                            const nextChecked = checked === true;
+                            if (nextChecked) {
+                              setSelectedProtocoloIds(new Set(idsDeletaveis));
+                            } else {
+                              setSelectedProtocoloIds(new Set());
+                            }
+                          }}
+                          aria-label="Selecionar protocolos para exclusão"
+                        />
+                      </TableHead>
+                    )}
                     <TableHead>Protocolo</TableHead>
                     <TableHead>Solicitante</TableHead>
                     <TableHead>Demanda</TableHead>
@@ -639,6 +755,23 @@ const ProtocolosContent = () => {
                 <TableBody>
                   {protocolosEmAberto.map((protocolo) => (
                     <TableRow key={protocolo.id}>
+                      {canDeleteProtocolos && deleteModeOpen && (
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedProtocoloIds.has(protocolo.id)}
+                            onCheckedChange={(checked) => {
+                              const isChecked = checked === true;
+                              setSelectedProtocoloIds((prev) => {
+                                const next = new Set(prev);
+                                if (!isChecked) next.delete(protocolo.id);
+                                else next.add(protocolo.id);
+                                return next;
+                              });
+                            }}
+                            aria-label="Selecionar protocolo para exclusão"
+                          />
+                        </TableCell>
+                      )}
                       <TableCell className="font-medium">
                         {protocolo.protocolo}
                       </TableCell>
@@ -723,6 +856,21 @@ const ProtocolosContent = () => {
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
+                          {canDeleteProtocolos && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-600 hover:text-red-700"
+                              onClick={() =>
+                                setDeleteDialog({
+                                  open: true,
+                                  ids: [protocolo.id],
+                                })
+                              }
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -781,6 +929,23 @@ const ProtocolosContent = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      {canDeleteProtocolos && deleteModeOpen && (
+                        <TableHead className="w-10">
+                          <Checkbox
+                            checked={allDeletaveisSelecionados}
+                            disabled={idsDeletaveis.length === 0}
+                            onCheckedChange={(checked) => {
+                              const nextChecked = checked === true;
+                              if (nextChecked) {
+                                setSelectedProtocoloIds(new Set(idsDeletaveis));
+                              } else {
+                                setSelectedProtocoloIds(new Set());
+                              }
+                            }}
+                            aria-label="Selecionar protocolos para exclusão"
+                          />
+                        </TableHead>
+                      )}
                       <TableHead>Protocolo</TableHead>
                       <TableHead>Solicitante</TableHead>
                       <TableHead>Demanda</TableHead>
@@ -794,6 +959,23 @@ const ProtocolosContent = () => {
                   <TableBody>
                     {protocolosConcluidos.map((protocolo) => (
                       <TableRow key={protocolo.id} className="bg-green-50/50">
+                        {canDeleteProtocolos && deleteModeOpen && (
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedProtocoloIds.has(protocolo.id)}
+                              onCheckedChange={(checked) => {
+                                const isChecked = checked === true;
+                                setSelectedProtocoloIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (!isChecked) next.delete(protocolo.id);
+                                  else next.add(protocolo.id);
+                                  return next;
+                                });
+                              }}
+                              aria-label="Selecionar protocolo para exclusão"
+                            />
+                          </TableCell>
+                        )}
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             {protocolo.protocolo}
@@ -887,6 +1069,21 @@ const ProtocolosContent = () => {
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
+                            {canDeleteProtocolos && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-600 hover:text-red-700"
+                                onClick={() =>
+                                  setDeleteDialog({
+                                    open: true,
+                                    ids: [protocolo.id],
+                                  })
+                                }
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -965,6 +1162,26 @@ const ProtocolosContent = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        <ConfirmationDialog
+          open={deleteDialog.open}
+          onOpenChange={(open) =>
+            setDeleteDialog((prev) => ({
+              ...prev,
+              open,
+              ids: open ? prev.ids : [],
+            }))
+          }
+          onConfirm={() => handleDeleteProtocolos(deleteDialog.ids)}
+          title="Confirmar Exclusão"
+          description={`Tem certeza que deseja apagar ${
+            deleteDialog.ids.length
+          } protocolo(s)? Esta ação não pode ser desfeita.`}
+          confirmText={deletingProtocolos ? "Apagando..." : "Sim, Apagar"}
+          cancelText="Cancelar"
+          variant="destructive"
+          isLoading={deletingProtocolos}
+        />
       </div>
     </MainLayout>
   );
