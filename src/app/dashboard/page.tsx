@@ -246,12 +246,14 @@ const Dashboard = () => {
   };
 
   const handleEditProtocolo = (protocolo: any) => {
-    // Converter prazo_execucao de string para Date se existir
-    const prazoExecucao = protocolo.prazoExecucao
-      ? parseLocalDate(protocolo.prazoExecucao)
-      : undefined;
+    const dataAbertura = protocolo.dataAbertura
+      ? parseLocalDate(
+          typeof protocolo.dataAbertura === "string"
+            ? protocolo.dataAbertura.split("T")[0]
+            : protocolo.dataAbertura
+        )
+      : new Date();
 
-    // Mapear dados do protocolo para o formato esperado pelo formulário
     const protocoloEditavel = {
       id: protocolo.id,
       demanda: protocolo.demanda,
@@ -264,7 +266,7 @@ const Dashboard = () => {
       status: protocolo.status,
       apresentante: protocolo.apresentante || "",
       observacao: protocolo.observacao || "",
-      prazoExecucao,
+      dataAbertura,
       responsavelServicoId: protocolo.responsavel_servico_id || "",
       entidadeId: protocolo.entidade_id || "",
     };
@@ -752,9 +754,14 @@ const Dashboard = () => {
                             ? (data as any).entidadeId
                             : null,
                           observacao: data.observacao,
-                          prazo_execucao: data.prazoExecucao
-                            ? formatDateForDatabase(data.prazoExecucao)
+                          prazo_execucao: (data as any).prazoExecucao
+                            ? formatDateForDatabase((data as any).prazoExecucao)
                             : null,
+                          ...(data.dataAbertura
+                            ? {
+                                created_at: `${formatDateForDatabase(data.dataAbertura)}T12:00:00.000Z`,
+                              }
+                            : {}),
                         };
 
                         await updateProtocolo(

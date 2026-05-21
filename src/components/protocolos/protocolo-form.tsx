@@ -103,10 +103,40 @@ const protocoloSchema = z.object({
     .optional()
     .or(z.literal("")),
   observacao: z.string().optional(),
-  prazoExecucao: z.date().optional(),
+  dataAbertura: z.date({
+    required_error: "Data de abertura é obrigatória",
+  }),
 });
 
 type ProtocoloFormData = z.infer<typeof protocoloSchema>;
+
+function startOfDay(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/** Prazo de execução = data de abertura + maior prazo (dias) entre os serviços. */
+function calcularPrazoExecucaoPorServicos(
+  dataAbertura: Date | undefined | null,
+  servicosNomes: string[],
+  catalogo: { nome: string; prazo_execucao?: number }[]
+): Date | null {
+  if (!dataAbertura || servicosNomes.length === 0) return null;
+
+  let maiorPrazoDias = 0;
+  for (const nome of servicosNomes) {
+    const info = catalogo.find((s) => s.nome === nome);
+    if (info?.prazo_execucao && info.prazo_execucao > maiorPrazoDias) {
+      maiorPrazoDias = info.prazo_execucao;
+    }
+  }
+  if (maiorPrazoDias <= 0) return null;
+
+  const prazo = startOfDay(dataAbertura);
+  prazo.setDate(prazo.getDate() + maiorPrazoDias);
+  return prazo;
+}
 
 interface ProtocoloFormProps {
   onSubmit: (data: ProtocoloFormData) => void;
@@ -142,6 +172,8 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
       mensagem: string;
     }>
   >([]);
+  const [prazoExecucaoPrevisto, setPrazoExecucaoPrevisto] =
+    React.useState<Date | null>(null);
 
   const { statusPersonalizados } = useStatusPersonalizados();
   const { servicos, loading: servicosLoading, createServico, fetchServicos } = useServicos();
@@ -239,107 +271,82 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
       entidadeId: initialData?.entidadeId || "",
       email: initialData?.email || "",
       observacao: initialData?.observacao || "",
-      prazoExecucao: initialData?.prazoExecucao,
+      dataAbertura: initialData?.dataAbertura
+        ? startOfDay(initialData.dataAbertura)
+        : startOfDay(new Date()),
     },
   });
 
-  // Função para atualizar avisos de prazos
-  const atualizarAvisosPrazos = React.useCallback((servicosParaVerificar: string[]) => {
-    const prazoExecucaoProtocolo = form.getValues("prazoExecucao");
-    const novosAvisos: Array<{
-      servico: string;
-      tipo: "warning" | "info" | "success";
-      mensagem: string;
-    }> = [];
-    
-    if (prazoExecucaoProtocolo && servicosParaVerificar.length > 0) {
-      const hoje = new Date();
-      hoje.setHours(0, 0, 0, 0);
-      const dataVencimentoProtocolo = new Date(prazoExecucaoProtocolo);
-      dataVencimentoProtocolo.setHours(0, 0, 0, 0);
-      
-      servicosParaVerificar.forEach((nomeServico) => {
-        const servicoInfo = servicos.find((s) => s.nome === nomeServico);
-        
-        if (servicoInfo && servicoInfo.prazo_execucao) {
-          // Calcular data de vencimento do serviço (hoje + prazo do serviço)
-          const dataVencimentoServico = new Date(hoje);
-          dataVencimentoServico.setDate(dataVencimentoServico.getDate() + servicoInfo.prazo_execucao);
-          dataVencimentoServico.setHours(0, 0, 0, 0);
-          
-          // Comparar prazos
-          if (dataVencimentoServico > dataVencimentoProtocolo) {
-            novosAvisos.push({
-              servico: nomeServico,
-              tipo: "warning",
-              mensagem: `O prazo do serviço "${nomeServico}" (${servicoInfo.prazo_execucao} dias) ultrapassa o prazo de execução do protocolo (${prazoExecucaoProtocolo.toLocaleDateString("pt-BR")}).`,
-            });
-          } else if (dataVencimentoServico <= dataVencimentoProtocolo) {
-            const diasDiferenca = Math.ceil((dataVencimentoProtocolo.getTime() - dataVencimentoServico.getTime()) / (1000 * 60 * 60 * 24));
-            if (diasDiferenca > 0) {
+  const recalcularPrazos = React.useCallback(
+    (servicosParaVerificar: string[]) => {
+      const dataAbertura = form.getValues("dataAbertura");
+      const prazoCalculado = calcularPrazoExecucaoPorServicos(
+        dataAbertura,
+        servicosParaVerificar,
+        servicos
+      );
+      setPrazoExecucaoPrevisto(prazoCalculado);
+
+      const novosAvisos: Array<{
+        servico: string;
+        tipo: "warning" | "info" | "success";
+        mensagem: string;
+      }> = [];
+
+      if (dataAbertura && prazoCalculado && servicosParaVerificar.length > 0) {
+        const dataAberturaBase = startOfDay(dataAbertura);
+        const dataVencimentoProtocolo = startOfDay(prazoCalculado);
+
+        servicosParaVerificar.forEach((nomeServico) => {
+          const servicoInfo = servicos.find((s) => s.nome === nomeServico);
+
+          if (servicoInfo?.prazo_execucao) {
+            const dataVencimentoServico = startOfDay(dataAberturaBase);
+            dataVencimentoServico.setDate(
+              dataVencimentoServico.getDate() + servicoInfo.prazo_execucao
+            );
+
+            if (dataVencimentoServico > dataVencimentoProtocolo) {
               novosAvisos.push({
                 servico: nomeServico,
-                tipo: "info",
-                mensagem: `O prazo do serviço "${nomeServico}" (${servicoInfo.prazo_execucao} dias) está dentro do prazo do protocolo. Há ${diasDiferenca} dia(s) de margem.`,
+                tipo: "warning",
+                mensagem: `O prazo do serviço "${nomeServico}" (${servicoInfo.prazo_execucao} dias) ultrapassa o prazo de execução previsto (${prazoCalculado.toLocaleDateString("pt-BR")}).`,
               });
             } else {
-              novosAvisos.push({
-                servico: nomeServico,
-                tipo: "success",
-                mensagem: `O prazo do serviço "${nomeServico}" (${servicoInfo.prazo_execucao} dias) coincide com o prazo do protocolo.`,
-              });
+              const diasDiferenca = Math.ceil(
+                (dataVencimentoProtocolo.getTime() -
+                  dataVencimentoServico.getTime()) /
+                  (1000 * 60 * 60 * 24)
+              );
+              if (diasDiferenca > 0) {
+                novosAvisos.push({
+                  servico: nomeServico,
+                  tipo: "info",
+                  mensagem: `O prazo do serviço "${nomeServico}" (${servicoInfo.prazo_execucao} dias) está dentro do prazo previsto. Há ${diasDiferenca} dia(s) de margem.`,
+                });
+              } else {
+                novosAvisos.push({
+                  servico: nomeServico,
+                  tipo: "success",
+                  mensagem: `O prazo do serviço "${nomeServico}" (${servicoInfo.prazo_execucao} dias) define o prazo de execução do protocolo.`,
+                });
+              }
             }
           }
-        }
-      });
-    }
-    
-    setAvisosPrazos(novosAvisos);
-  }, [form, servicos]);
-
-  // Função para calcular e preencher o prazo de execução baseado nos serviços
-  const calcularPrazoExecucao = React.useCallback((servicosParaCalcular: string[]) => {
-    const prazoAtual = form.getValues("prazoExecucao");
-    
-    // Se já tiver prazo preenchido manualmente, não alterar
-    if (prazoAtual) {
-      return;
-    }
-    
-    // Encontrar o maior prazo entre os serviços selecionados
-    let maiorPrazo = 0;
-    
-    servicosParaCalcular.forEach((nomeServico) => {
-      const servicoInfo = servicos.find((s) => s.nome === nomeServico);
-      if (servicoInfo && servicoInfo.prazo_execucao) {
-        if (servicoInfo.prazo_execucao > maiorPrazo) {
-          maiorPrazo = servicoInfo.prazo_execucao;
-        }
+        });
       }
-    });
-    
-    // Se encontrou um prazo, calcular a data (hoje + prazo em dias)
-    if (maiorPrazo > 0) {
-      const dataPrazo = new Date();
-      dataPrazo.setDate(dataPrazo.getDate() + maiorPrazo);
-      dataPrazo.setHours(0, 0, 0, 0);
-      
-      form.setValue("prazoExecucao", dataPrazo);
-      console.log(`✅ Prazo de execução calculado: ${dataPrazo.toLocaleDateString("pt-BR")} (${maiorPrazo} dias a partir de hoje)`);
-    }
-  }, [form, servicos]);
+
+      setAvisosPrazos(novosAvisos);
+    },
+    [form, servicos]
+  );
 
   const adicionarServico = (servico: string) => {
     if (!servicosSelecionados.includes(servico)) {
       const novosServicos = [...servicosSelecionados, servico];
       setServicosSelecionados(novosServicos);
       form.setValue("servicos", novosServicos);
-      
-      // Calcular e preencher prazo de execução se não estiver preenchido
-      calcularPrazoExecucao(novosServicos);
-      
-      // Atualizar avisos de prazos
-      atualizarAvisosPrazos(novosServicos);
+      recalcularPrazos(novosServicos);
     }
   };
 
@@ -347,15 +354,22 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     const novosServicos = servicosSelecionados.filter((s) => s !== servico);
     setServicosSelecionados(novosServicos);
     form.setValue("servicos", novosServicos);
-    
-    // Atualizar avisos de prazos
-    atualizarAvisosPrazos(novosServicos);
+    recalcularPrazos(novosServicos);
   };
 
   const handleSubmit = (data: ProtocoloFormData) => {
+    const prazoExecucao = calcularPrazoExecucaoPorServicos(
+      data.dataAbertura,
+      servicosSelecionados,
+      servicos
+    );
+
     onSubmit({
       ...data,
       servicos: servicosSelecionados,
+      prazoExecucao: prazoExecucao ?? undefined,
+    } as ProtocoloFormData & {
+      prazoExecucao?: Date;
     });
   };
 
@@ -435,11 +449,15 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     };
   }, []);
 
-  // Validar prazos quando o prazo de execução do protocolo for alterado
-  const prazoExecucaoProtocolo = form.watch("prazoExecucao");
+  const dataAberturaWatch = form.watch("dataAbertura");
   React.useEffect(() => {
-    atualizarAvisosPrazos(servicosSelecionados);
-  }, [prazoExecucaoProtocolo, servicosSelecionados, atualizarAvisosPrazos]);
+    recalcularPrazos(servicosSelecionados);
+  }, [dataAberturaWatch, servicosSelecionados, recalcularPrazos]);
+
+  React.useEffect(() => {
+    recalcularPrazos(servicosSelecionados);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatEmail(e.target.value);
@@ -628,23 +646,6 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                   if (statusEncontrado) {
                     form.setValue("status", statusEncontrado);
                   }
-                }
-              }
-              
-              // Preencher Prazo de Execução
-              // IMPORTANTE: Só preencher se não tiver sido preenchido por um serviço
-              // O prazo será calculado automaticamente quando o serviço for adicionado
-              // Se a Levontech retornar um prazo, só usar se não houver serviço ou se o serviço ainda não foi processado
-              const prazoAtual = form.getValues("prazoExecucao");
-              if (protocoloData.prazoExecucao && !prazoAtual) {
-                try {
-                  const dataPrazo = new Date(protocoloData.prazoExecucao);
-                  if (!isNaN(dataPrazo.getTime())) {
-                    form.setValue("prazoExecucao", dataPrazo);
-                    console.log("✅ Prazo de execução preenchido pela Levontech:", dataPrazo.toLocaleDateString("pt-BR"));
-                  }
-                } catch (error) {
-                  console.error("Erro ao converter data do prazo:", error);
                 }
               }
               
@@ -850,19 +851,8 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
         setServicosSelecionados(novosServicos);
         form.setValue("servicos", novosServicos);
         
-        // Calcular prazo de execução usando o serviço recém-criado
-        const prazoAtual = form.getValues("prazoExecucao");
-        if (!prazoAtual && novoServico && novoServico.prazo_execucao) {
-          const dataPrazo = new Date();
-          dataPrazo.setDate(dataPrazo.getDate() + novoServico.prazo_execucao);
-          dataPrazo.setHours(0, 0, 0, 0);
-          form.setValue("prazoExecucao", dataPrazo);
-          console.log(`✅ Prazo de execução calculado: ${dataPrazo.toLocaleDateString("pt-BR")} (${novoServico.prazo_execucao} dias a partir de hoje)`);
-        } else {
-          // Se não conseguiu usar o serviço recém-criado, aguardar e usar a função normal
-          await new Promise(resolve => setTimeout(resolve, 200));
-          calcularPrazoExecucao(novosServicos);
-        }
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        recalcularPrazos(novosServicos);
         
         console.log(`✅ Serviço "${servicoForm.nome}" adicionado ao protocolo após criação`);
       }
@@ -1153,10 +1143,10 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
 
             <FormField
               control={form.control}
-              name="prazoExecucao"
+              name="dataAbertura"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Prazo de Execução</FormLabel>
+                  <FormLabel>Data de Abertura</FormLabel>
                   <FormControl>
                     <DatePicker
                       selected={field.value || null}
@@ -1164,6 +1154,19 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                       placeholderText="Selecione a data"
                     />
                   </FormControl>
+                  <FormDescription>
+                    O prazo de execução é calculado automaticamente conforme o
+                    prazo cadastrado de cada serviço.
+                    {prazoExecucaoPrevisto && (
+                      <>
+                        {" "}
+                        Prazo previsto:{" "}
+                        <strong>
+                          {prazoExecucaoPrevisto.toLocaleDateString("pt-BR")}
+                        </strong>
+                      </>
+                    )}
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

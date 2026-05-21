@@ -27,6 +27,21 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+    } else if (body.fluxo === "notificar-cliente") {
+      if (
+        !body.cartorio_id ||
+        !body.protocolo_id ||
+        !body.telefone_destino ||
+        !body.mensagem
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Payload inválido para fluxo 'notificar-cliente'. Campos obrigatórios: cartorio_id, protocolo_id, telefone_destino, mensagem",
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // Definir URL do webhook baseado no fluxo
@@ -39,6 +54,9 @@ export async function POST(request: NextRequest) {
     } else if (body.fluxo === "status-protocolo") {
       // Webhook específico para notificação de mudança de status
       webhookUrl = "https://webhook.conversix.com.br/webhook/api/n8n/protocolos/status";
+    } else if (body.fluxo === "notificar-cliente") {
+      webhookUrl =
+        "https://webhook.conversix.com.br/webhook/api/n8n/protocolos/notificar-cliente";
     } else {
       // Webhook padrão para outros fluxos
       webhookUrl = "https://webhook.cartorio.app.br/webhook/72c1eaa5-27a0-441e-8786-69f7c4937d63";

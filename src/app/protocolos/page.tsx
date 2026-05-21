@@ -6,6 +6,7 @@ import MainLayout from "@/components/layout/main-layout";
 import ProtocoloForm from "@/components/protocolos/protocolo-form";
 import ProtocoloDetails from "@/components/protocolos/protocolo-details";
 import StatusSelector from "@/components/protocolos/status-selector";
+import { NotificarClienteDialog } from "@/components/protocolos/notificar-cliente-dialog";
 import { useProtocolos, useCartorios } from "@/hooks/use-supabase";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
 import { useAuth } from "@/contexts/auth-context";
@@ -68,6 +69,7 @@ import {
   MoreHorizontal,
   Trash2,
   X,
+  MessageCircle,
 } from "lucide-react";
 
 const ProtocolosContent = () => {
@@ -114,6 +116,10 @@ const ProtocolosContent = () => {
     ids: string[];
   }>({ open: false, ids: [] });
   const [deletingProtocolos, setDeletingProtocolos] = useState(false);
+  const [notificarDialog, setNotificarDialog] = useState<{
+    open: boolean;
+    protocolo: any | null;
+  }>({ open: false, protocolo: null });
   const canDeleteProtocolos =
     userType === "admin" || userType === "admin_geral";
 
@@ -372,6 +378,11 @@ const ProtocolosContent = () => {
         prazo_execucao: data.prazoExecucao
           ? formatDateForDatabase(data.prazoExecucao)
           : null,
+        ...(data.dataAbertura
+          ? {
+              created_at: `${formatDateForDatabase(data.dataAbertura)}T12:00:00.000Z`,
+            }
+          : {}),
         cartorio_id: userData.cartorio_id,
         criado_por: user.id,
       };
@@ -404,15 +415,14 @@ const ProtocolosContent = () => {
   };
 
   const handleEditProtocolo = (protocolo: any) => {
-    // Converter prazo_execucao de string para Date se existir
-    const prazoExecucao = protocolo.prazo_execucao
-      ? parseLocalDate(protocolo.prazo_execucao)
-      : undefined;
+    const dataAbertura = protocolo.created_at
+      ? parseLocalDate(protocolo.created_at.split("T")[0])
+      : new Date();
 
     const protocoloComData = {
       ...protocolo,
       cpfCnpj: protocolo.cpf_cnpj, // Mapear cpf_cnpj para cpfCnpj
-      prazoExecucao,
+      dataAbertura,
       responsavelServicoId: protocolo.responsavel_servico_id || "",
       entidadeId: protocolo.entidade_id || "",
     };
@@ -856,6 +866,16 @@ const ProtocolosContent = () => {
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Notificar cliente"
+                            onClick={() =>
+                              setNotificarDialog({ open: true, protocolo })
+                            }
+                          >
+                            <MessageCircle className="h-4 w-4 text-green-600" />
+                          </Button>
                           {canDeleteProtocolos && (
                             <Button
                               variant="ghost"
@@ -1069,6 +1089,16 @@ const ProtocolosContent = () => {
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Notificar cliente"
+                              onClick={() =>
+                                setNotificarDialog({ open: true, protocolo })
+                              }
+                            >
+                              <MessageCircle className="h-4 w-4 text-green-600" />
+                            </Button>
                             {canDeleteProtocolos && (
                               <Button
                                 variant="ghost"
@@ -1094,6 +1124,18 @@ const ProtocolosContent = () => {
             </CardContent>
           )}
         </Card>
+
+        <NotificarClienteDialog
+          open={notificarDialog.open}
+          onOpenChange={(open) =>
+            setNotificarDialog((prev) => ({
+              ...prev,
+              open,
+              protocolo: open ? prev.protocolo : null,
+            }))
+          }
+          protocolo={notificarDialog.protocolo}
+        />
 
         {/* Modal de Formulário */}
         <Dialog open={showForm} onOpenChange={setShowForm}>
