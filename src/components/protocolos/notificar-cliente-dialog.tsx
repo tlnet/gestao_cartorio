@@ -16,9 +16,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatPhone } from "@/lib/formatters";
 import {
   buildNotificarClientePayload,
+  buildObservacaoNotificacaoCliente,
   dispararNotificarClienteWebhook,
   type ProtocoloNotificarClienteInput,
 } from "@/lib/protocolo-notificar-cliente";
+import { useHistoricoProtocolos } from "@/hooks/use-historico-protocolos";
+import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
 import { Loader2, MessageCircle } from "lucide-react";
 
@@ -36,6 +39,8 @@ export function NotificarClienteDialog({
   const [telefone, setTelefone] = useState("");
   const [mensagem, setMensagem] = useState("");
   const [enviando, setEnviando] = useState(false);
+  const { user } = useAuth();
+  const { createHistorico } = useHistoricoProtocolos(protocolo?.id);
 
   useEffect(() => {
     if (open && protocolo) {
@@ -70,6 +75,29 @@ export function NotificarClienteDialog({
         toast.error(result.error || "Erro ao enviar notificação.");
         return;
       }
+
+      const dataEnvio = new Date();
+      try {
+        await createHistorico({
+          protocolo_id: protocolo.id,
+          status_anterior: "Notificação ao cliente",
+          novo_status: "Mensagem enviada",
+          usuario_responsavel: (user?.user_metadata?.name ||
+            user?.email?.split("@")[0] ||
+            "Usuário") as string,
+          observacao: buildObservacaoNotificacaoCliente(
+            telefone,
+            mensagem,
+            dataEnvio
+          ),
+        });
+      } catch (histErr) {
+        console.error("Erro ao registrar notificação no histórico:", histErr);
+        toast.warning(
+          "Notificação enviada, mas não foi possível registrar no histórico."
+        );
+      }
+
       toast.success("Notificação enviada com sucesso.");
       onOpenChange(false);
     } catch (err: unknown) {

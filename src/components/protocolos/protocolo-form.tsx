@@ -63,6 +63,11 @@ import { useAuth } from "@/contexts/auth-context";
 import { useUsuarios } from "@/hooks/use-supabase";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import {
+  DocumentUpload,
+  type DocumentoAnexo,
+} from "@/components/contas/document-upload";
+import { useDocumentosProtocolo } from "@/hooks/use-documentos-protocolo";
 
 const protocoloSchema = z.object({
   demanda: z.string().min(1, "Demanda é obrigatória"),
@@ -139,9 +144,12 @@ function calcularPrazoExecucaoPorServicos(
 }
 
 interface ProtocoloFormProps {
-  onSubmit: (data: ProtocoloFormData) => void;
+  onSubmit: (
+    data: ProtocoloFormData & { prazoExecucao?: Date },
+    documentosNovos?: DocumentoAnexo[]
+  ) => void | Promise<void>;
   onCancel: () => void;
-  initialData?: Partial<ProtocoloFormData>;
+  initialData?: Partial<ProtocoloFormData> & { id?: string };
   isEditing?: boolean;
   /** Filtra a lista de responsáveis pelos usuários deste cartório */
   cartorioId?: string;
@@ -211,7 +219,20 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     dias_notificacao_antes_vencimento: 1,
     ativo: true,
   });
-  
+
+  const [documentos, setDocumentos] = React.useState<DocumentoAnexo[]>([]);
+  const [documentosExistentes, setDocumentosExistentes] = React.useState<
+    DocumentoAnexo[]
+  >([]);
+  const [isSubmittingForm, setIsSubmittingForm] = React.useState(false);
+
+  const protocoloIdEdicao = initialData?.id;
+  const {
+    buscarDocumentosProtocolo,
+    adicionarDocumentoProtocolo,
+    removerDocumentoProtocolo,
+  } = useDocumentosProtocolo();
+
   // Debug: Log da configuração Levontech
   React.useEffect(() => {
     console.log("🔍 Levontech Config:", {
@@ -357,20 +378,85 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     recalcularPrazos(novosServicos);
   };
 
-  const handleSubmit = (data: ProtocoloFormData) => {
+  React.useEffect(() => {
+    if (!protocoloIdEdicao) {
+      setDocumentos([]);
+      setDocumentosExistentes([]);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      const docs = await buscarDocumentosProtocolo(protocoloIdEdicao);
+      if (cancelled) return;
+      const anexos: DocumentoAnexo[] = docs.map((d) => ({
+        id: d.id,
+        nome: d.nomeArquivo,
+        url: d.urlArquivo,
+        tipo: d.tipoArquivo,
+        tamanho: d.tamanhoArquivo,
+        dataUpload: d.dataUpload,
+      }));
+      setDocumentos(anexos);
+      setDocumentosExistentes(anexos);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [protocoloIdEdicao, buscarDocumentosProtocolo]);
+
+  const handleSubmit = async (data: ProtocoloFormData) => {
     const prazoExecucao = calcularPrazoExecucaoPorServicos(
       data.dataAbertura,
       servicosSelecionados,
       servicos
     );
 
-    onSubmit({
+    const payload = {
       ...data,
       servicos: servicosSelecionados,
       prazoExecucao: prazoExecucao ?? undefined,
-    } as ProtocoloFormData & {
-      prazoExecucao?: Date;
-    });
+    } as ProtocoloFormData & { prazoExecucao?: Date };
+
+    const documentosNovosCriacao = !isEditing ? documentos : undefined;
+
+    setIsSubmittingForm(true);
+    try {
+      await onSubmit(payload, documentosNovosCriacao);
+
+      if (isEditing && protocoloIdEdicao && documentos.length > 0) {
+        const documentosNovos = documentos.filter(
+          (doc) =>
+            !documentosExistentes.some((existente) => existente.id === doc.id)
+        );
+
+        for (const documento of documentosNovos) {
+          await adicionarDocumentoProtocolo(
+            protocoloIdEdicao,
+            {
+              nomeArquivo: documento.nome,
+              urlArquivo: documento.url,
+              tipoArquivo: documento.tipo,
+              tamanhoArquivo: documento.tamanho,
+            },
+            true
+          );
+        }
+
+        if (documentosNovos.length > 0) {
+          toast.success(
+            `${documentosNovos.length} documento(s) vinculado(s) ao protocolo`
+          );
+        }
+      }
+
+      if (!isEditing) {
+        setDocumentos([]);
+      }
+    } finally {
+      setIsSubmittingForm(false);
+    }
   };
 
   // Handlers de formatação
@@ -1443,6 +1529,26 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
           )}
         </div>
 
+        {/* Documentos do protocolo */}
+        <div className="space-y-2">
+          <h3 className="text-lg font-medium">Documentos do protocolo</h3>
+          <p className="text-sm text-muted-foreground">
+            Anexe arquivos relacionados a este protocolo (PDF, imagens, Word).
+          </p>
+          <DocumentUpload
+            entityId={protocoloIdEdicao}
+            storagePathPrefix="protocolos"
+            limitePorEntidade="por protocolo"
+            documentos={documentos}
+            onDocumentsChange={setDocumentos}
+            onRemoveDocument={
+              protocoloIdEdicao ? removerDocumentoProtocolo : undefined
+            }
+            disabled={isSubmittingForm}
+            maxFiles={10}
+          />
+        </div>
+
         {/* Observações */}
         <FormField
           control={form.control}
@@ -1467,8 +1573,12 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancelar
           </Button>
-          <Button type="submit">
-            {isEditing ? "Atualizar Protocolo" : "Cadastrar Protocolo"}
+          <Button type="submit" disabled={isSubmittingForm}>
+            {isSubmittingForm
+              ? "Salvando..."
+              : isEditing
+                ? "Atualizar Protocolo"
+                : "Cadastrar Protocolo"}
           </Button>
         </div>
       </form>

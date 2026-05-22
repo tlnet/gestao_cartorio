@@ -7,7 +7,9 @@ import ProtocoloForm from "@/components/protocolos/protocolo-form";
 import ProtocoloDetails from "@/components/protocolos/protocolo-details";
 import StatusSelector from "@/components/protocolos/status-selector";
 import { NotificarClienteDialog } from "@/components/protocolos/notificar-cliente-dialog";
+import type { DocumentoAnexo } from "@/components/contas/document-upload";
 import { useProtocolos, useCartorios } from "@/hooks/use-supabase";
+import { useDocumentosProtocolo } from "@/hooks/use-documentos-protocolo";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
 import { useAuth } from "@/contexts/auth-context";
 import { useEntidades } from "@/hooks/use-entidades";
@@ -89,6 +91,7 @@ const ProtocolosContent = () => {
     deleteProtocolo,
     refetch: refetchProtocolos,
   } = useProtocolos(scopedCartorioId);
+  const { adicionarDocumentoProtocolo } = useDocumentosProtocolo();
   const { cartorios } = useCartorios(scopedCartorioId);
   const { statusPersonalizados } = useStatusPersonalizados();
   const { entidadesAtivas } = useEntidades(scopedCartorioId);
@@ -322,7 +325,10 @@ const ProtocolosContent = () => {
     idsDeletaveis.length > 0 &&
     idsDeletaveis.every((id) => selectedProtocoloIds.has(id));
 
-  const handleSubmitProtocolo = async (data: any) => {
+  const handleSubmitProtocolo = async (
+    data: any,
+    documentosNovos?: DocumentoAnexo[]
+  ) => {
     try {
       console.log("=== INÍCIO HANDLE SUBMIT PROTOCOLO ===");
       console.log(
@@ -398,7 +404,32 @@ const ProtocolosContent = () => {
         setEditingProtocolo(null);
       } else {
         console.log("Criando novo protocolo...");
-        await createProtocolo(protocoloData);
+        const criado = await createProtocolo(protocoloData);
+
+        if (criado?.id && documentosNovos && documentosNovos.length > 0) {
+          try {
+            let salvos = 0;
+            for (const documento of documentosNovos) {
+              const saved = await adicionarDocumentoProtocolo(criado.id, {
+                nomeArquivo: documento.nome,
+                urlArquivo: documento.url,
+                tipoArquivo: documento.tipo,
+                tamanhoArquivo: documento.tamanho,
+              });
+              if (saved) salvos += 1;
+            }
+            if (salvos > 0) {
+              toast.success(
+                `${salvos} documento(s) vinculado(s) ao protocolo`
+              );
+            }
+          } catch (docError) {
+            console.error("Erro ao salvar documentos do protocolo:", docError);
+            toast.warning(
+              "Protocolo criado, mas houve erro ao vincular alguns documentos."
+            );
+          }
+        }
       }
 
       console.log("Protocolo processado com sucesso!");

@@ -75,6 +75,26 @@ export async function buildNotificarClientePayload(
   };
 }
 
+export function buildObservacaoNotificacaoCliente(
+  telefone: string,
+  mensagem: string,
+  dataEnvio: Date = new Date()
+): string {
+  const dataFormatada = dataEnvio.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  return [
+    `Data: ${dataFormatada}`,
+    `Número: ${telefone.trim()}`,
+    `Mensagem: ${mensagem.trim()}`,
+  ].join("\n");
+}
+
 export async function dispararNotificarClienteWebhook(
   payload: NotificarClientePayload
 ): Promise<{ ok: boolean; error?: string }> {

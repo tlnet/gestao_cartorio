@@ -45,6 +45,7 @@ import { ptBR } from "date-fns/locale";
 import { useHistoricoProtocolos } from "@/hooks/use-historico-protocolos";
 import AddCommentForm from "./add-comment-form";
 import HistoricoFallback from "./historico-fallback";
+import { ProtocoloDocumentosDialog } from "./protocolo-documentos-dialog";
 import { formatDateForDisplay } from "@/lib/utils";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -144,6 +145,10 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
         return "⏳";
       case "Pendente":
         return "⚠️";
+      case "Mensagem enviada":
+        return "📱";
+      case "Comentário Adicionado":
+        return "💬";
       default:
         return "📋";
     }
@@ -557,22 +562,51 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center justify-between">
-            <span>Protocolo #{protocolo.protocolo}</span>
+      <DialogContent className="max-w-6xl w-[95vw] max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="pr-10">
+          <div className="flex flex-wrap items-center gap-3">
+            <DialogTitle className="leading-tight">
+              Protocolo #{protocolo.protocolo}
+            </DialogTitle>
             <Badge className={getStatusColor(protocolo.status)}>
               {protocolo.status}
             </Badge>
-          </DialogTitle>
+          </div>
           <DialogDescription>
             Detalhes completos do protocolo e histórico de alterações
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Informações Principais */}
-          <div className="space-y-6">
+        <div className="flex flex-wrap items-center gap-2 pb-4 border-b">
+          <ProtocoloDocumentosDialog
+            protocoloId={protocolo.id}
+            numeroProtocolo={protocolo.protocolo}
+          />
+          <Button variant="outline" size="sm" onClick={exportarPDF}>
+            <Download className="h-4 w-4 mr-2" />
+            Exportar PDF
+          </Button>
+          <Button variant="outline" size="sm">
+            <MessageSquare className="h-4 w-4 mr-2" />
+            Enviar WhatsApp
+          </Button>
+          {showEditButton && onEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                onEdit(protocolo);
+                onClose();
+              }}
+            >
+              <Edit className="h-4 w-4 mr-2" />
+              Editar
+            </Button>
+          )}
+        </div>
+
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -703,8 +737,8 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
             </Card>
           </div>
 
-          {/* Histórico */}
-          <div className="space-y-6">
+          {/* Histórico — largura total */}
+          <div>
             {historicoError ? (
               <HistoricoFallback
                 protocoloId={protocolo.id}
@@ -801,35 +835,8 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
           </div>
         </div>
 
-        {/* Ações */}
-        <div className="flex justify-between pt-6 border-t">
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={exportarPDF}>
-              <Download className="h-4 w-4 mr-2" />
-              Exportar PDF
-            </Button>
-            <Button variant="outline" size="sm">
-              <MessageSquare className="h-4 w-4 mr-2" />
-              Enviar WhatsApp
-            </Button>
-          </div>
-
-          <div className="flex gap-2">
-            {showEditButton && onEdit && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  onEdit(protocolo);
-                  onClose();
-                }}
-              >
-                <Edit className="h-4 w-4 mr-2" />
-                Editar
-              </Button>
-            )}
-            <Button onClick={onClose}>Fechar</Button>
-          </div>
+        <div className="flex justify-end pt-6 border-t">
+          <Button onClick={onClose}>Fechar</Button>
         </div>
       </DialogContent>
     </Dialog>

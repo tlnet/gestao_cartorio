@@ -35,7 +35,12 @@ export interface DocumentoAnexo {
 }
 
 interface DocumentUploadProps {
+  /** @deprecated Use entityId */
   contaId?: string;
+  /** ID da entidade (conta, protocolo, etc.) usada na pasta do storage */
+  entityId?: string;
+  /** Prefixo da pasta no bucket `documentos` (ex.: contas-pagar, protocolos) */
+  storagePathPrefix?: string;
   documentos: DocumentoAnexo[];
   onDocumentsChange: (documentos: DocumentoAnexo[]) => void;
   onRemoveDocument?: (documentoId: string) => Promise<boolean>;
@@ -43,16 +48,21 @@ interface DocumentUploadProps {
   disabled?: boolean;
   maxFiles?: number;
   acceptedTypes?: string[];
+  /** Texto do limite (ex.: "por conta", "por protocolo") */
+  limitePorEntidade?: string;
 }
 
 export function DocumentUpload({
   contaId,
+  entityId,
+  storagePathPrefix = "contas-pagar",
   documentos = [],
   onDocumentsChange,
   onRemoveDocument,
   onDocumentosMarcadosChange,
   disabled = false,
   maxFiles = 5,
+  limitePorEntidade = "por conta",
   acceptedTypes = [
     "application/pdf",
     "image/jpeg",
@@ -122,7 +132,8 @@ export function DocumentUpload({
     const fileName = `${Date.now()}-${Math.random()
       .toString(36)
       .substring(2)}.${fileExt}`;
-    const filePath = `contas-pagar/${contaId || "temp"}/${fileName}`;
+    const parentId = entityId || contaId || "temp";
+    const filePath = `${storagePathPrefix}/${parentId}/${fileName}`;
 
     console.log("🔍 DEBUG: uploadFile iniciado:", {
       fileName,
@@ -595,7 +606,7 @@ export function DocumentUpload({
 
       {/* Informações sobre limites */}
       <div className="text-xs text-muted-foreground">
-        <p>• Máximo {maxFiles} arquivos por conta</p>
+        <p>• Máximo {maxFiles} arquivos {limitePorEntidade}</p>
         <p>• Tamanho máximo: 10MB por arquivo</p>
         <p>• Formatos aceitos: PDF, DOC, DOCX, JPG, PNG</p>
       </div>
