@@ -29,12 +29,14 @@ interface NotificarClienteDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   protocolo: ProtocoloNotificarClienteInput | null;
+  onNotificacaoEnviada?: () => void;
 }
 
 export function NotificarClienteDialog({
   open,
   onOpenChange,
   protocolo,
+  onNotificacaoEnviada,
 }: NotificarClienteDialogProps) {
   const [telefone, setTelefone] = useState("");
   const [mensagem, setMensagem] = useState("");
@@ -99,6 +101,7 @@ export function NotificarClienteDialog({
       }
 
       toast.success("Notificação enviada com sucesso.");
+      onNotificacaoEnviada?.();
       onOpenChange(false);
     } catch (err: unknown) {
       const msg =

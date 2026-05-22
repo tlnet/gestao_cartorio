@@ -37,7 +37,6 @@ import {
   Calendar,
   Clock,
   Edit,
-  Download,
   MessageSquare,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -46,6 +45,8 @@ import { useHistoricoProtocolos } from "@/hooks/use-historico-protocolos";
 import AddCommentForm from "./add-comment-form";
 import HistoricoFallback from "./historico-fallback";
 import { ProtocoloDocumentosDialog } from "./protocolo-documentos-dialog";
+import { NotificarClienteDialog } from "./notificar-cliente-dialog";
+import type { ProtocoloNotificarClienteInput } from "@/lib/protocolo-notificar-cliente";
 import { formatDateForDisplay } from "@/lib/utils";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -69,6 +70,7 @@ interface ProtocoloDetailsProps {
     status: string;
     prazoExecucao: string;
     observacao?: string;
+    cartorio_id?: string;
   };
   showEditButton?: boolean;
 }
@@ -86,6 +88,22 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
     error: historicoError,
     fetchHistorico,
   } = useHistoricoProtocolos(protocolo.id);
+
+  const [notificarOpen, setNotificarOpen] = React.useState(false);
+
+  const protocoloParaNotificar = React.useMemo(
+    (): ProtocoloNotificarClienteInput => ({
+      id: protocolo.id,
+      protocolo: protocolo.protocolo,
+      demanda: protocolo.demanda,
+      status: protocolo.status,
+      solicitante: protocolo.solicitante,
+      telefone: protocolo.telefone,
+      servicos: protocolo.servicos,
+      cartorio_id: protocolo.cartorio_id,
+    }),
+    [protocolo]
+  );
 
   const [responsavelServicoLabel, setResponsavelServicoLabel] = React.useState<
     string | null
@@ -582,11 +600,11 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
             protocoloId={protocolo.id}
             numeroProtocolo={protocolo.protocolo}
           />
-          <Button variant="outline" size="sm" onClick={exportarPDF}>
-            <Download className="h-4 w-4 mr-2" />
-            Exportar PDF
-          </Button>
-          <Button variant="outline" size="sm">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setNotificarOpen(true)}
+          >
             <MessageSquare className="h-4 w-4 mr-2" />
             Enviar WhatsApp
           </Button>
@@ -838,6 +856,13 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
         <div className="flex justify-end pt-6 border-t">
           <Button onClick={onClose}>Fechar</Button>
         </div>
+
+        <NotificarClienteDialog
+          open={notificarOpen}
+          onOpenChange={setNotificarOpen}
+          protocolo={notificarOpen ? protocoloParaNotificar : null}
+          onNotificacaoEnviada={fetchHistorico}
+        />
       </DialogContent>
     </Dialog>
   );
