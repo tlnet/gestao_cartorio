@@ -814,7 +814,13 @@ const ProtocolosContent = () => {
                         </TableCell>
                       )}
                       <TableCell className="font-medium">
-                        {protocolo.protocolo}
+                        <button
+                          type="button"
+                          onClick={() => handleViewDetails(protocolo)}
+                          className="text-left text-primary hover:underline cursor-pointer font-medium"
+                        >
+                          {protocolo.protocolo}
+                        </button>
                       </TableCell>
                       <TableCell>
                         <div>
@@ -1029,8 +1035,14 @@ const ProtocolosContent = () => {
                         )}
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
-                            {protocolo.protocolo}
-                            <CheckCircle className="h-4 w-4 text-green-600" />
+                            <button
+                              type="button"
+                              onClick={() => handleViewDetails(protocolo)}
+                              className="text-left text-primary hover:underline cursor-pointer font-medium"
+                            >
+                              {protocolo.protocolo}
+                            </button>
+                            <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
                           </div>
                         </TableCell>
                         <TableCell>
