@@ -19,6 +19,7 @@ import {
   Receipt,
   FileSearch,
   ShieldCheck,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -26,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/contexts/auth-context";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useChatNotifications } from "@/contexts/chat-notifications-context";
 import { supabase } from "@/lib/supabase";
 import { UserSkeleton } from "@/components/ui/user-skeleton";
 import { useEffect, useState } from "react";
@@ -39,6 +41,7 @@ const Sidebar: React.FC<SidebarProps> = () => {
   const pathname = usePathname();
   const { user, loading: authLoading, signOut, userProfile: contextUserProfile, userType: contextUserType, userRoles: contextUserRoles } = useAuth();
   const { canAccess } = usePermissions();
+  const { unreadConversations } = useChatNotifications();
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const { isValid: isCartorioValid } = useCartorioValidation();
@@ -111,6 +114,11 @@ const Sidebar: React.FC<SidebarProps> = () => {
       title: "Protocolos",
       href: "/protocolos",
       icon: FileText,
+    },
+    {
+      title: "Chat",
+      href: "/chat",
+      icon: MessageSquare,
     },
     {
       title: "Contas a Pagar",
@@ -238,6 +246,8 @@ const Sidebar: React.FC<SidebarProps> = () => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
             const showWarning = item.href === "/configuracoes" && !isCartorioValid;
+            const showChatBadge =
+              item.href === "/chat" && unreadConversations > 0;
 
             return (
               <Link key={item.href} href={item.href}>
@@ -250,6 +260,18 @@ const Sidebar: React.FC<SidebarProps> = () => {
                 >
                   <Icon className="mr-3 h-4 w-4" />
                   {item.title}
+                  {showChatBadge && (
+                    <Badge
+                      className={cn(
+                        "ml-auto",
+                        isActive
+                          ? "bg-white text-blue-600"
+                          : "bg-green-500 text-white"
+                      )}
+                    >
+                      {unreadConversations}
+                    </Badge>
+                  )}
                   {showWarning && (
                     <span className="ml-auto h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
                   )}

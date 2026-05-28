@@ -70,6 +70,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { StaggeredCards, FadeInUp } from "@/components/ui/page-transition";
 import { Smartphone, Receipt, Clipboard, Database } from "lucide-react";
 import { useLevontechConfig } from "@/hooks/use-levontech-config";
+import { useChatwootConfig } from "@/hooks/use-chatwoot-config";
 import { useCartorioValidation } from "@/hooks/use-cartorio-validation";
 import { putCartorioUpdate } from "@/lib/admin-cartorio-api";
 import { useEntidades } from "@/hooks/use-entidades";
@@ -110,6 +111,12 @@ const Configuracoes = () => {
     disableConfig: disableLevontechConfig,
   } = useLevontechConfig();
   const {
+    config: chatwootConfig,
+    loading: chatwootLoading,
+    saveConfig: saveChatwootConfig,
+    disableConfig: disableChatwootConfig,
+  } = useChatwootConfig();
+  const {
     servicos,
     loading: servicosLoading,
     createServico,
@@ -134,6 +141,14 @@ const Configuracoes = () => {
   const [webhookUrl, setWebhookUrl] = useState("");
   const [testingWebhook, setTestingWebhook] = useState(false);
   
+  // Estados para Chatwoot
+  const [chatwootForm, setChatwootForm] = useState({
+    sistema_chatwoot: false,
+    chatwoot_account_id: "",
+    chatwoot_token: "",
+    chatwoot_inbox_id: "",
+  });
+
   // Estados para Levontech
   const [levontechForm, setLevontechForm] = useState({
     sistema_levontech: false,
@@ -317,6 +332,27 @@ const Configuracoes = () => {
       }
     }
   }, [levontechConfig, levontechLoading]);
+
+  // Carregar configuração do Chatwoot quando disponível
+  useEffect(() => {
+    if (!chatwootLoading) {
+      if (chatwootConfig) {
+        setChatwootForm({
+          sistema_chatwoot: chatwootConfig.sistema_chatwoot === true,
+          chatwoot_account_id: chatwootConfig.chatwoot_account_id || "",
+          chatwoot_token: chatwootConfig.chatwoot_token || "",
+          chatwoot_inbox_id: chatwootConfig.chatwoot_inbox_id || "",
+        });
+      } else {
+        setChatwootForm({
+          sistema_chatwoot: false,
+          chatwoot_account_id: "",
+          chatwoot_token: "",
+          chatwoot_inbox_id: "",
+        });
+      }
+    }
+  }, [chatwootConfig, chatwootLoading]);
 
   // Estado do cartório (evita mostrar "dados irreais" enquanto carrega).
   const [configCartorio, setConfigCartorio] = useState({
@@ -780,6 +816,39 @@ const Configuracoes = () => {
       });
     } catch (error) {
       console.error("Erro ao desabilitar configuração Levontech:", error);
+    }
+  };
+
+  // Funções para Chatwoot
+  const handleSaveChatwootConfig = async () => {
+    if (chatwootForm.sistema_chatwoot) {
+      if (!chatwootForm.chatwoot_account_id.trim()) {
+        toast.error("Account ID do Chatwoot é obrigatório");
+        return;
+      }
+      if (!chatwootForm.chatwoot_token.trim()) {
+        toast.error("Token do Chatwoot é obrigatório");
+        return;
+      }
+    }
+    try {
+      await saveChatwootConfig(chatwootForm);
+    } catch (error) {
+      console.error("Erro ao salvar configuração Chatwoot:", error);
+    }
+  };
+
+  const handleDisableChatwootConfig = async () => {
+    try {
+      await disableChatwootConfig();
+      setChatwootForm({
+        sistema_chatwoot: false,
+        chatwoot_account_id: "",
+        chatwoot_token: "",
+        chatwoot_inbox_id: "",
+      });
+    } catch (error) {
+      console.error("Erro ao desabilitar configuração Chatwoot:", error);
     }
   };
 
@@ -2286,6 +2355,163 @@ const Configuracoes = () => {
                             >
                               <Save className="mr-2 h-4 w-4" />
                               {levontechConfig?.sistema_levontech
+                                ? "Atualizar Configuração"
+                                : "Salvar Configuração"}
+                            </Button>
+                          </div>
+                        </FadeInUp>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Seção Chatwoot (Chat) */}
+              <div className="border-t pt-6 mt-6">
+                <h3 className="text-lg font-medium mb-4">Chat (Chatwoot)</h3>
+
+                {chatwootLoading ? (
+                  <div className="space-y-4">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-8 w-32" />
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {chatwootConfig?.sistema_chatwoot ? (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                          <span className="font-medium text-green-800">
+                            Chat configurado
+                          </span>
+                        </div>
+                        <p className="text-sm text-green-700 mb-2">
+                          <strong>Account ID:</strong>{" "}
+                          {chatwootConfig.chatwoot_account_id}
+                        </p>
+                        {chatwootConfig.chatwoot_inbox_id && (
+                          <p className="text-sm text-green-700 mb-2">
+                            <strong>Inbox ID:</strong>{" "}
+                            {chatwootConfig.chatwoot_inbox_id}
+                          </p>
+                        )}
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleDisableChatwootConfig}
+                          >
+                            <XCircle className="mr-2 h-4 w-4" />
+                            Desabilitar
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertCircle className="h-5 w-5 text-yellow-600" />
+                          <span className="font-medium text-yellow-800">
+                            Chat não configurado
+                          </span>
+                        </div>
+                        <p className="text-sm text-yellow-700 mb-4">
+                          Configure as credenciais do Chatwoot para habilitar a
+                          página de Chat.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="space-y-4">
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          id="sistemaChatwoot"
+                          checked={chatwootForm.sistema_chatwoot}
+                          onCheckedChange={(checked) =>
+                            setChatwootForm((prev) => ({
+                              ...prev,
+                              sistema_chatwoot: checked,
+                            }))
+                          }
+                        />
+                        <Label htmlFor="sistemaChatwoot">Utilizar o Chat</Label>
+                      </div>
+
+                      {chatwootForm.sistema_chatwoot && (
+                        <FadeInUp delay={50}>
+                          <div className="space-y-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                            <div>
+                              <Label htmlFor="chatwootAccountId">
+                                Account ID
+                              </Label>
+                              <Input
+                                id="chatwootAccountId"
+                                value={chatwootForm.chatwoot_account_id}
+                                onChange={(e) =>
+                                  setChatwootForm((prev) => ({
+                                    ...prev,
+                                    chatwoot_account_id: e.target.value,
+                                  }))
+                                }
+                                placeholder="Ex: 2"
+                              />
+                              <p className="text-sm text-gray-500 mt-1">
+                                Número da conta na URL do Chatwoot
+                                (/app/accounts/<strong>ID</strong>/...)
+                              </p>
+                            </div>
+
+                            <div>
+                              <Label htmlFor="chatwootToken">
+                                Token de acesso
+                              </Label>
+                              <Input
+                                id="chatwootToken"
+                                type="password"
+                                value={chatwootForm.chatwoot_token}
+                                onChange={(e) =>
+                                  setChatwootForm((prev) => ({
+                                    ...prev,
+                                    chatwoot_token: e.target.value,
+                                  }))
+                                }
+                                placeholder="Token do usuário Chatwoot"
+                              />
+                              <p className="text-sm text-gray-500 mt-1">
+                                Gerado em Profile Settings do Chatwoot
+                                (api_access_token)
+                              </p>
+                            </div>
+
+                            <div>
+                              <Label htmlFor="chatwootInboxId">
+                                Inbox ID (opcional)
+                              </Label>
+                              <Input
+                                id="chatwootInboxId"
+                                value={chatwootForm.chatwoot_inbox_id}
+                                onChange={(e) =>
+                                  setChatwootForm((prev) => ({
+                                    ...prev,
+                                    chatwoot_inbox_id: e.target.value,
+                                  }))
+                                }
+                                placeholder="Deixe vazio para todas as inboxes"
+                              />
+                              <p className="text-sm text-gray-500 mt-1">
+                                Limita as conversas a uma caixa de entrada
+                                específica
+                              </p>
+                            </div>
+
+                            <Button
+                              onClick={handleSaveChatwootConfig}
+                              disabled={
+                                !chatwootForm.chatwoot_account_id.trim() ||
+                                !chatwootForm.chatwoot_token.trim()
+                              }
+                            >
+                              <Save className="mr-2 h-4 w-4" />
+                              {chatwootConfig?.sistema_chatwoot
                                 ? "Atualizar Configuração"
                                 : "Salvar Configuração"}
                             </Button>

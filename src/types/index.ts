@@ -78,6 +78,7 @@ export const PERMISSOES_POR_TIPO: Record<TipoUsuario, PermissoesUsuario> = {
     podeGerenciarPermissoes: true,
     rotasPermitidas: [
       "/admin",
+      "/chat",
     ],
     rotasBloqueadas: [],
   },
@@ -89,6 +90,7 @@ export const PERMISSOES_POR_TIPO: Record<TipoUsuario, PermissoesUsuario> = {
     rotasPermitidas: [
       "/dashboard",
       "/protocolos",
+      "/chat",
       "/contas",
       "/relatorios",
       "/ia",
@@ -108,6 +110,7 @@ export const PERMISSOES_POR_TIPO: Record<TipoUsuario, PermissoesUsuario> = {
     rotasPermitidas: [
       "/dashboard",
       "/protocolos",
+      "/chat",
       "/relatorios",
       "/ia",
       "/cnib",
@@ -121,7 +124,7 @@ export const PERMISSOES_POR_TIPO: Record<TipoUsuario, PermissoesUsuario> = {
     podeAcessarConfiguracoes: false,
     podeModificarConfiguracoes: false,
     podeGerenciarPermissoes: false,
-    rotasPermitidas: ["/contas", "/notificacoes", "/perfil"],
+    rotasPermitidas: ["/contas", "/chat", "/notificacoes", "/perfil"],
     rotasBloqueadas: ["/usuarios", "/configuracoes"],
   },
 };
