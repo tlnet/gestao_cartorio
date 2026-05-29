@@ -144,7 +144,9 @@ export async function listConversations(
   opts?: { status?: string; page?: number }
 ): Promise<ChatwootConversation[]> {
   const params = new URLSearchParams();
-  if (opts?.status) params.set("status", opts.status);
+  // Sem status, o Chatwoot retorna só conversas "open" — usamos "all" para
+  // incluir também pendentes, snoozed e resolvidas.
+  params.set("status", opts?.status || "all");
   if (opts?.page) params.set("page", String(opts.page));
   if (config.inboxId) params.set("inbox_id", config.inboxId);
 
