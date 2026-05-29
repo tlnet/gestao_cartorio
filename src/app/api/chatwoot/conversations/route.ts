@@ -13,9 +13,11 @@ export async function GET(request: NextRequest) {
 
     const config = await getChatwootConfig(auth.cartorioId);
     const status = request.nextUrl.searchParams.get("status") || undefined;
+    const pageParam = request.nextUrl.searchParams.get("page");
+    const page = pageParam ? Number(pageParam) : undefined;
 
-    const conversations = await listConversations(config, { status });
-    return NextResponse.json({ conversations });
+    const { payload, meta } = await listConversations(config, { status, page });
+    return NextResponse.json({ conversations: payload, meta });
   } catch (e: any) {
     return NextResponse.json(
       { error: e?.message || "Erro ao listar conversas." },

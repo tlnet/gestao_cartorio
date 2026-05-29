@@ -83,10 +83,10 @@ export function ChatNotificationsProvider({
     }
   }, [accessToken]);
 
-  // Pede permissão de notificação uma vez.
+  // Pede permissão de notificação quando o usuário estiver autenticado.
   useEffect(() => {
-    ensureNotificationPermission();
-  }, []);
+    if (accessToken) ensureNotificationPermission();
+  }, [accessToken]);
 
   // Carrega a contagem quando houver token.
   useEffect(() => {

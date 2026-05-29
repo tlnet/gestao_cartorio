@@ -21,7 +21,11 @@ export interface ChatwootContact {
   id: number;
   name: string | null;
   phone_number: string | null;
+  email?: string | null;
   thumbnail: string | null;
+  identifier?: string | null;
+  additional_attributes?: Record<string, unknown> | null;
+  custom_attributes?: Record<string, unknown> | null;
 }
 
 export interface ChatwootMessage {
@@ -29,6 +33,8 @@ export interface ChatwootMessage {
   content: string | null;
   message_type: number; // 0 incoming, 1 outgoing, 2 activity, 3 template
   created_at: number; // epoch seconds
+  private?: boolean;
+  status?: string | null; // sent, delivered, read, failed (outgoing)
   sender?: { name?: string | null } | null;
   attachments?: Array<{ data_url?: string; file_type?: string }> | null;
 }
@@ -38,9 +44,25 @@ export interface ChatwootConversation {
   inbox_id: number;
   status: string;
   unread_count?: number;
+  muted?: boolean;
+  priority?: string | null;
+  snoozed_until?: string | number | null;
+  labels?: string[];
   meta?: { sender?: ChatwootContact | null } | null;
   last_non_activity_message?: ChatwootMessage | null;
   messages?: ChatwootMessage[];
+}
+
+export interface ChatwootLabel {
+  id: number;
+  title: string;
+  description?: string | null;
+  color?: string | null;
+}
+
+export interface ConversationsPage {
+  payload: ChatwootConversation[];
+  meta: Record<string, unknown>;
 }
 
 function getAdminClient(): SupabaseClient {
@@ -142,7 +164,7 @@ async function chatwootFetch<T>(
 export async function listConversations(
   config: ChatwootConfig,
   opts?: { status?: string; page?: number }
-): Promise<ChatwootConversation[]> {
+): Promise<ConversationsPage> {
   const params = new URLSearchParams();
   // Sem status, o Chatwoot retorna só conversas "open" — usamos "all" para
   // incluir também pendentes, snoozed e resolvidas.
@@ -152,10 +174,112 @@ export async function listConversations(
 
   const qs = params.toString();
   const data = await chatwootFetch<{
-    data?: { payload?: ChatwootConversation[] };
+    data?: { payload?: ChatwootConversation[]; meta?: Record<string, unknown> };
   }>(config, `/conversations${qs ? `?${qs}` : ""}`);
 
-  return data?.data?.payload ?? [];
+  return {
+    payload: data?.data?.payload ?? [],
+    meta: data?.data?.meta ?? {},
+  };
+}
+
+/** Altera o status da conversa: open | resolved | pending | snoozed. */
+export async function setConversationStatus(
+  config: ChatwootConfig,
+  conversationId: number | string,
+  status: "open" | "resolved" | "pending" | "snoozed",
+  snoozedUntil?: number | null
+): Promise<void> {
+  const body: Record<string, unknown> = { status };
+  if (status === "snoozed" && snoozedUntil) {
+    body.snoozed_until = snoozedUntil;
+  }
+  await chatwootFetch(
+    config,
+    `/conversations/${conversationId}/toggle_status`,
+    { method: "POST", body: JSON.stringify(body) }
+  );
+}
+
+/** Silencia / reativa uma conversa. */
+export async function setConversationMute(
+  config: ChatwootConfig,
+  conversationId: number | string,
+  mute: boolean
+): Promise<void> {
+  await chatwootFetch(
+    config,
+    `/conversations/${conversationId}/${mute ? "mute" : "unmute"}`,
+    { method: "POST" }
+  );
+}
+
+/** Lista as etiquetas (labels) da conta. */
+export async function listLabels(
+  config: ChatwootConfig
+): Promise<ChatwootLabel[]> {
+  const data = await chatwootFetch<{ payload?: ChatwootLabel[] }>(
+    config,
+    `/labels`
+  );
+  return data?.payload ?? [];
+}
+
+/** Etiquetas aplicadas a uma conversa. */
+export async function getConversationLabels(
+  config: ChatwootConfig,
+  conversationId: number | string
+): Promise<string[]> {
+  const data = await chatwootFetch<{ payload?: string[] }>(
+    config,
+    `/conversations/${conversationId}/labels`
+  );
+  return data?.payload ?? [];
+}
+
+/** Define (substitui) as etiquetas de uma conversa. */
+export async function setConversationLabels(
+  config: ChatwootConfig,
+  conversationId: number | string,
+  labels: string[]
+): Promise<string[]> {
+  const data = await chatwootFetch<{ payload?: string[] }>(
+    config,
+    `/conversations/${conversationId}/labels`,
+    { method: "POST", body: JSON.stringify({ labels }) }
+  );
+  return data?.payload ?? labels;
+}
+
+/** Detalhes de um contato. */
+export async function getContact(
+  config: ChatwootConfig,
+  contactId: number | string
+): Promise<ChatwootContact> {
+  const data = await chatwootFetch<{ payload?: ChatwootContact }>(
+    config,
+    `/contacts/${contactId}`
+  );
+  if (!data?.payload) throw new Error("Contato não encontrado.");
+  return data.payload;
+}
+
+/** Atualiza os dados de um contato. */
+export async function updateContact(
+  config: ChatwootConfig,
+  contactId: number | string,
+  payload: {
+    name?: string;
+    email?: string | null;
+    phone_number?: string | null;
+  }
+): Promise<ChatwootContact> {
+  const data = await chatwootFetch<{ payload?: ChatwootContact }>(
+    config,
+    `/contacts/${contactId}`,
+    { method: "PUT", body: JSON.stringify(payload) }
+  );
+  return (data?.payload ?? {}) as ChatwootContact;
 }
 
 /** Histórico de mensagens de uma conversa (ordem cronológica). */
@@ -230,18 +354,49 @@ export async function markConversationRead(
   }
 }
 
-/** Envia uma mensagem (outgoing) numa conversa. */
+/** Envia uma mensagem (outgoing) numa conversa. Opcionalmente como nota privada. */
 export async function sendMessage(
   config: ChatwootConfig,
   conversationId: number | string,
-  content: string
+  content: string,
+  opts?: { isPrivate?: boolean }
 ): Promise<ChatwootMessage> {
   return chatwootFetch<ChatwootMessage>(
     config,
     `/conversations/${conversationId}/messages`,
     {
       method: "POST",
-      body: JSON.stringify({ content, message_type: "outgoing" }),
+      body: JSON.stringify({
+        content,
+        message_type: "outgoing",
+        private: opts?.isPrivate === true,
+      }),
     }
   );
+}
+
+/**
+ * Envia uma mensagem com anexos (multipart). O FormData já deve conter os
+ * campos esperados pelo Chatwoot: content?, message_type, private?, attachments[].
+ */
+export async function sendMessageMultipart(
+  config: ChatwootConfig,
+  conversationId: number | string,
+  form: FormData
+): Promise<ChatwootMessage> {
+  const url = `${config.baseUrl}/api/v1/accounts/${config.accountId}/conversations/${conversationId}/messages`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      // NÃO definir Content-Type: o fetch adiciona o boundary do multipart.
+      api_access_token: config.token,
+    },
+    body: form,
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Chatwoot API ${res.status}: ${text || res.statusText}`);
+  }
+  return (await res.json()) as ChatwootMessage;
 }
