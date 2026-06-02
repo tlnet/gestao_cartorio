@@ -71,6 +71,7 @@ import { StaggeredCards, FadeInUp } from "@/components/ui/page-transition";
 import { Smartphone, Receipt, Clipboard, Database } from "lucide-react";
 import { useLevontechConfig } from "@/hooks/use-levontech-config";
 import { useChatwootConfig } from "@/hooks/use-chatwoot-config";
+import { WhatsappConnection } from "@/components/configuracoes/whatsapp-connection";
 import { useCartorioValidation } from "@/hooks/use-cartorio-validation";
 import { putCartorioUpdate } from "@/lib/admin-cartorio-api";
 import { useEntidades } from "@/hooks/use-entidades";
@@ -171,7 +172,7 @@ const Configuracoes = () => {
           .single();
 
         if (error) throw error;
-        setCartorioId(data?.cartorio_id);
+        setCartorioId((data as { cartorio_id?: string } | null)?.cartorio_id);
       } catch (error) {
         console.error("Erro ao buscar cartório do usuário:", error);
       }
@@ -205,6 +206,7 @@ const Configuracoes = () => {
         cnibClientSecret: "",
         cnibCpfUsuario: "",
         notificacaoWhatsApp: false,
+        usaEntidadesRcpn: false,
         whatsappContas: "",
         whatsappProtocolos: "",
         webhookN8N: "",
@@ -2521,6 +2523,12 @@ const Configuracoes = () => {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Seção WhatsApp (Uazapi) */}
+              <div className="border-t pt-6 mt-6">
+                <h3 className="text-lg font-medium mb-4">WhatsApp (Uazapi)</h3>
+                <WhatsappConnection />
               </div>
 
               {/* Seção Testes ZDG */}
