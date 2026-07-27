@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
+import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
+import { isStatusConclusao } from "@/lib/status-resolve";
 import { debugLoading } from "@/lib/debug-loading";
 import { CATEGORIA_LABELS } from "@/types";
 
@@ -30,12 +32,60 @@ export interface Notificacao {
   updated_at?: string;
 }
 
+/**
+ * Mantém apenas as notificações que não são de protocolo ou cujo protocolo tem
+ * o usuário informado como responsável pelo serviço.
+ *
+ * Em caso de falha na consulta, a lista original é devolvida sem filtro — a
+ * restrição é de ruído, não de segurança (cada usuário só lê as próprias linhas).
+ */
+const filtrarNotificacoesDeProtocolosDoUsuario = async (
+  list: Notificacao[],
+  usuarioId: string
+): Promise<Notificacao[]> => {
+  const protocoloIds = Array.from(
+    new Set(list.map((n) => n.protocolo_id).filter(Boolean))
+  ) as string[];
+
+  if (protocoloIds.length === 0) return list;
+
+  const { data: protocolos, error } = await supabase
+    .from("protocolos")
+    .select("id, responsavel_servico_id")
+    .in("id", protocoloIds);
+
+  if (error) {
+    console.error(
+      "Erro ao verificar responsável dos protocolos das notificações:",
+      error
+    );
+    return list;
+  }
+
+  const protocolosDoUsuario = new Set(
+    (protocolos || [])
+      .filter((p: any) => p.responsavel_servico_id === usuarioId)
+      .map((p: any) => p.id as string)
+  );
+
+  return list.filter(
+    (n) => !n.protocolo_id || protocolosDoUsuario.has(n.protocolo_id)
+  );
+};
+
 export const useNotifications = () => {
   const [notificacoes, setNotificacoes] = useState<Notificacao[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const { user, userType, userRoles } = useAuth();
+  const { statusPersonalizados } = useStatusPersonalizados();
+
+  const roles = userRoles?.length ? userRoles : userType ? [userType] : [];
+  // Administradores enxergam as notificações de todos os protocolos do cartório.
+  // Os demais (ex.: atendentes) veem apenas as dos protocolos sob sua responsabilidade.
+  const veTodosOsProtocolos =
+    roles.includes("admin") || roles.includes("admin_geral");
 
   const fetchNotificacoes = async () => {
     try {
@@ -59,12 +109,17 @@ export const useNotifications = () => {
 
       // Financeiro (em qualquer permissão): apenas notificações de contas a pagar
       // Apenas atendente (sem financeiro): não vê notificações de contas a pagar
-      let list = data || [];
-      const roles = userRoles?.length ? userRoles : (userType ? [userType] : []);
+      let list = (data || []) as unknown as Notificacao[];
       if (roles.includes("financeiro")) {
         list = list.filter((n) => n.tipo === "conta_pagar");
       } else if (roles.includes("atendente") && !roles.includes("admin")) {
         list = list.filter((n) => n.tipo !== "conta_pagar");
+      }
+
+      // Não-administradores só veem notificações dos protocolos em que são
+      // o responsável pelo serviço
+      if (!veTodosOsProtocolos) {
+        list = await filtrarNotificacoesDeProtocolosDoUsuario(list, user.id);
       }
 
       setNotificacoes(list);
@@ -237,7 +292,9 @@ export const useNotifications = () => {
 
     // Filtrar notificações de protocolos não concluídos
     const protocolosConcluidos = new Set(
-      protocolos?.filter((p) => p.status === "Concluído").map((p) => p.id) || []
+      protocolos
+        ?.filter((p: any) => isStatusConclusao(p.status, statusPersonalizados))
+        .map((p: any) => p.id) || []
     );
 
     return notificacoesPrazo.filter(
@@ -648,12 +705,19 @@ export const useNotifications = () => {
       proximos7Dias.setDate(hoje.getDate() + 7);
       proximos7Dias.setHours(0, 0, 0, 0);
 
-      const { data: protocolos, error } = await supabase
+      let protocolosQuery = supabase
         .from("protocolos")
         .select("id, protocolo, solicitante, prazo_execucao, status, servicos, created_at, demanda, telefone, email")
         .eq("cartorio_id", userData.cartorio_id)
         .neq("status", "Concluído")
         .not("servicos", "is", null);
+
+      // Não-administradores só geram notificações dos protocolos sob sua responsabilidade
+      if (!veTodosOsProtocolos) {
+        protocolosQuery = protocolosQuery.eq("responsavel_servico_id", user.id);
+      }
+
+      const { data: protocolos, error } = await protocolosQuery;
 
       if (error) {
         console.error("Erro ao buscar protocolos:", error);
@@ -661,6 +725,16 @@ export const useNotifications = () => {
       }
 
       if (!protocolos || protocolos.length === 0) {
+        return;
+      }
+
+      // A consulta exclui apenas o status padrão "Concluído"; aqui descartamos
+      // também os protocolos em status personalizado marcado como de conclusão
+      const protocolosAbertos = (protocolos as any[]).filter(
+        (p) => !isStatusConclusao(p.status, statusPersonalizados)
+      );
+
+      if (protocolosAbertos.length === 0) {
         return;
       }
 
@@ -686,7 +760,7 @@ export const useNotifications = () => {
       );
 
       // Criar notificações para protocolos próximos do vencimento
-      for (const protocolo of protocolos || []) {
+      for (const protocolo of protocolosAbertos) {
         try {
           const dataCriacaoProtocolo = new Date(protocolo.created_at);
           dataCriacaoProtocolo.setHours(0, 0, 0, 0);

@@ -396,6 +396,7 @@ const Configuracoes = () => {
     nome: "",
     cor: "#3b82f6",
     ordem: 1,
+    is_conclusao: false,
   });
 
   const [servicoForm, setServicoForm] = useState({
@@ -539,12 +540,14 @@ const Configuracoes = () => {
         nome: statusForm.nome,
         cor: statusForm.cor,
         ordem: statusForm.ordem,
+        is_conclusao: statusForm.is_conclusao,
       });
 
       setStatusForm({
         nome: "",
         cor: "#3b82f6",
         ordem: statusPersonalizados.length + 1,
+        is_conclusao: false,
       });
       setShowStatusDialog(false);
     } catch (error) {
@@ -565,10 +568,11 @@ const Configuracoes = () => {
         nome: statusForm.nome,
         cor: statusForm.cor,
         ordem: statusForm.ordem,
+        is_conclusao: statusForm.is_conclusao,
       });
 
       setEditingStatus(null);
-      setStatusForm({ nome: "", cor: "#3b82f6", ordem: 1 });
+      setStatusForm({ nome: "", cor: "#3b82f6", ordem: 1, is_conclusao: false });
       setShowEditStatusDialog(false);
     } catch (error) {
       // Erro já tratado no hook
@@ -709,6 +713,7 @@ const Configuracoes = () => {
       nome: status.nome,
       cor: status.cor,
       ordem: status.ordem,
+      is_conclusao: status.is_conclusao === true,
     });
     setShowEditStatusDialog(true);
   };
@@ -1400,6 +1405,28 @@ const Configuracoes = () => {
                           }
                         />
                       </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="flex items-center space-x-2">
+                          <Switch
+                            id="conclusaoStatus"
+                            checked={statusForm.is_conclusao}
+                            onCheckedChange={(checked) =>
+                              setStatusForm((prev) => ({
+                                ...prev,
+                                is_conclusao: checked,
+                              }))
+                            }
+                          />
+                          <Label htmlFor="conclusaoStatus">
+                            Status de conclusão
+                          </Label>
+                        </div>
+                        <p className="text-sm text-gray-500 mt-2">
+                          Ao ativar, os protocolos que receberem este status são
+                          tratados como concluídos e vão para a aba de
+                          Concluídos.
+                        </p>
+                      </div>
                       <Button className="w-full" onClick={handleAddStatus}>
                         Adicionar Status
                       </Button>
@@ -1420,6 +1447,7 @@ const Configuracoes = () => {
                     <TableHead>Nome</TableHead>
                     <TableHead>Cor</TableHead>
                     <TableHead>Preview</TableHead>
+                    <TableHead>Conclusão</TableHead>
                     <TableHead>Ações</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1440,6 +1468,9 @@ const Configuracoes = () => {
                           <Skeleton className="h-6 w-20" />
                         </TableCell>
                         <TableCell>
+                          <Skeleton className="h-6 w-16" />
+                        </TableCell>
+                        <TableCell>
                           <Skeleton className="h-8 w-16" />
                         </TableCell>
                       </TableRow>
@@ -1447,7 +1478,7 @@ const Configuracoes = () => {
                   ) : statusPersonalizados.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={5}
+                        colSpan={6}
                         className="text-center py-8 text-gray-500"
                       >
                         <div className="flex flex-col items-center gap-2">
@@ -1478,6 +1509,16 @@ const Configuracoes = () => {
                             >
                               {status.nome}
                             </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {status.is_conclusao ? (
+                              <Badge className="bg-green-100 text-green-800 border-green-200">
+                                <CheckCircle className="mr-1 h-3 w-3" />
+                                Conclui
+                              </Badge>
+                            ) : (
+                              <span className="text-sm text-gray-400">—</span>
+                            )}
                           </TableCell>
                           <TableCell>
                             <div className="flex space-x-2">
@@ -2749,6 +2790,27 @@ const Configuracoes = () => {
                     }))
                   }
                 />
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="editConclusaoStatus"
+                    checked={statusForm.is_conclusao}
+                    onCheckedChange={(checked) =>
+                      setStatusForm((prev) => ({
+                        ...prev,
+                        is_conclusao: checked,
+                      }))
+                    }
+                  />
+                  <Label htmlFor="editConclusaoStatus">
+                    Status de conclusão
+                  </Label>
+                </div>
+                <p className="text-sm text-gray-500 mt-2">
+                  Ao ativar, os protocolos que receberem este status são
+                  tratados como concluídos e vão para a aba de Concluídos.
+                </p>
               </div>
               <Button className="w-full" onClick={handleEditStatus}>
                 Salvar Alterações

@@ -42,10 +42,16 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useHistoricoProtocolos } from "@/hooks/use-historico-protocolos";
+import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
+import { isStatusConclusao } from "@/lib/status-resolve";
 import AddCommentForm from "./add-comment-form";
 import HistoricoFallback from "./historico-fallback";
 import { ProtocoloDocumentosDialog } from "./protocolo-documentos-dialog";
 import { NotificarClienteDialog } from "./notificar-cliente-dialog";
+import ResponsavelAvatar, {
+  getResponsavelNome,
+  type ResponsavelUsuario,
+} from "./responsavel-avatar";
 import type { ProtocoloNotificarClienteInput } from "@/lib/protocolo-notificar-cliente";
 import { formatDateForDisplay } from "@/lib/utils";
 import { toast } from "sonner";
@@ -89,6 +95,8 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
     fetchHistorico,
   } = useHistoricoProtocolos(protocolo.id);
 
+  const { statusPersonalizados } = useStatusPersonalizados();
+
   const [notificarOpen, setNotificarOpen] = React.useState(false);
 
   const protocoloParaNotificar = React.useMemo(
@@ -105,43 +113,48 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
     [protocolo]
   );
 
-  const [responsavelServicoLabel, setResponsavelServicoLabel] = React.useState<
-    string | null
-  >(null);
+  const [responsavelServico, setResponsavelServico] =
+    React.useState<ResponsavelUsuario | null>(null);
 
   React.useEffect(() => {
     const id = protocolo.responsavel_servico_id;
     if (!id) {
-      setResponsavelServicoLabel(null);
+      setResponsavelServico(null);
       return;
     }
     let cancelled = false;
     (async () => {
       const { data, error } = await supabase
         .from("users")
-        .select("name, email")
+        .select("id, name, email, avatar_url")
         .eq("id", id)
         .maybeSingle();
       if (cancelled) return;
       if (error || !data) {
-        setResponsavelServicoLabel(id);
+        setResponsavelServico({ id });
         return;
       }
-      const row = data as { name?: string | null; email?: string | null };
-      const nome = row.name?.trim() || "";
-      const email = row.email?.trim() || "";
-      if (nome && email) setResponsavelServicoLabel(`${nome} (${email})`);
-      else setResponsavelServicoLabel(nome || email || id);
+      setResponsavelServico(data as ResponsavelUsuario);
     })();
     return () => {
       cancelled = true;
     };
   }, [protocolo.id, protocolo.responsavel_servico_id]);
 
+  const responsavelServicoLabel = React.useMemo(() => {
+    if (!responsavelServico) return null;
+    const nome = responsavelServico.name?.trim() || "";
+    const email = responsavelServico.email?.trim() || "";
+    if (nome && email) return `${nome} (${email})`;
+    return nome || email || responsavelServico.id;
+  }, [responsavelServico]);
+
   const getStatusColor = (status: string) => {
+    if (isStatusConclusao(status, statusPersonalizados)) {
+      return "bg-green-100 text-green-800";
+    }
+
     switch (status) {
-      case "Concluído":
-        return "bg-green-100 text-green-800";
       case "Em Andamento":
         return "bg-blue-100 text-blue-800";
       case "Aguardando Análise":
@@ -154,9 +167,11 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
   };
 
   const getStatusIcon = (status: string) => {
+    if (isStatusConclusao(status, statusPersonalizados)) {
+      return "✅";
+    }
+
     switch (status) {
-      case "Concluído":
-        return "✅";
       case "Em Andamento":
         return "🔄";
       case "Aguardando Análise":
@@ -589,6 +604,36 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
             <Badge className={getStatusColor(protocolo.status)}>
               {protocolo.status}
             </Badge>
+
+            {/* Responsável pelo serviço */}
+            <div className="flex items-center gap-2 sm:ml-auto">
+              {responsavelServico ? (
+                <>
+                  <ResponsavelAvatar
+                    usuario={responsavelServico}
+                    className="h-9 w-9 border border-gray-200"
+                  />
+                  <div className="min-w-0 text-left">
+                    <p className="text-xs text-gray-500">Responsável</p>
+                    <p className="truncate text-sm font-medium">
+                      {getResponsavelNome(responsavelServico)}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-gray-300 text-gray-400">
+                    <User className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <p className="text-xs text-gray-500">Responsável</p>
+                    <p className="truncate text-sm text-gray-400">
+                      Não definido
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
           <DialogDescription>
             Detalhes completos do protocolo e histórico de alterações

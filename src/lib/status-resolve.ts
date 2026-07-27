@@ -44,6 +44,25 @@ export function findStatusPersonalizadoMatch(
   return list.find((s) => normalizeStatusKey(s.nome) === key);
 }
 
+/**
+ * Indica se o status representa a conclusão do protocolo.
+ *
+ * O status padrão "Concluído" sempre conclui. Os personalizados só concluem
+ * quando marcados com `is_conclusao` na tela de configurações.
+ */
+export function isStatusConclusao(
+  status: string,
+  list: StatusPersonalizado[]
+): boolean {
+  if (!status?.trim()) return false;
+
+  if (normalizeStatusKey(status) === normalizeStatusKey("Concluído")) {
+    return true;
+  }
+
+  return findStatusPersonalizadoMatch(status, list)?.is_conclusao === true;
+}
+
 /** Cor do indicador (sempre valor CSS válido para style.backgroundColor). */
 export function resolveStatusDotColor(
   status: string,

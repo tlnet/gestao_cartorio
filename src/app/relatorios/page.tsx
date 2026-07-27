@@ -5,6 +5,7 @@ import MainLayout from "@/components/layout/main-layout";
 import { useProtocolos, useUsuarios } from "@/hooks/use-supabase";
 import { useServicos } from "@/hooks/use-servicos";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
+import { isStatusConclusao } from "@/lib/status-resolve";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
@@ -86,6 +87,11 @@ const Relatorios = () => {
   const { statusPersonalizados, loading: statusLoading } =
     useStatusPersonalizados();
 
+  // Conclui pelo status padrão "Concluído" ou por status personalizado marcado
+  // como de conclusão nas configurações
+  const isConcluido = (status: string) =>
+    isStatusConclusao(status, statusPersonalizados);
+
   const [dataInicio, setDataInicio] = useState<Date>();
   const [dataFim, setDataFim] = useState<Date>();
   const [filtroStatus, setFiltroStatus] = useState("todos");
@@ -127,7 +133,7 @@ const Relatorios = () => {
     // Filtro por status
     if (filtroStatus !== "todos") {
       protocolosFiltrados = protocolosFiltrados.filter((p) => {
-        if (filtroStatus === "concluido") return p.status === "Concluído";
+        if (filtroStatus === "concluido") return isConcluido(p.status);
         if (filtroStatus === "andamento") return p.status === "Em Andamento";
         if (filtroStatus === "aguardando")
           return p.status === "Aguardando Análise";
@@ -158,7 +164,7 @@ const Relatorios = () => {
 
     const totalProtocolos = protocolosParaCalcular.length;
     const protocolosConcluidos = protocolosParaCalcular.filter(
-      (p) => p.status === "Concluído"
+      (p) => isConcluido(p.status)
     ).length;
     const protocolosAndamento = protocolosParaCalcular.filter(
       (p) => p.status === "Em Andamento"
@@ -168,7 +174,7 @@ const Relatorios = () => {
 
     // Calcular tempo médio de processamento
     const protocolosComPrazo = protocolosParaCalcular.filter(
-      (p) => p.prazo_execucao && p.status === "Concluído"
+      (p) => p.prazo_execucao && isConcluido(p.status)
     );
     const tempoMedio =
       protocolosComPrazo.length > 0
@@ -225,7 +231,7 @@ const Relatorios = () => {
       });
 
       const concluidosMes = protocolosMes.filter(
-        (p) => p.status === "Concluído"
+        (p) => isConcluido(p.status)
       ).length;
 
       const emAndamentoMes = protocolosMes.filter(
@@ -304,7 +310,7 @@ const Relatorios = () => {
           (p) => p.criado_por === usuario.id
         );
         const protocolosConcluidos = protocolosUsuario.filter(
-          (p) => p.status === "Concluído"
+          (p) => isConcluido(p.status)
         ).length;
         const taxa =
           protocolosUsuario.length > 0
@@ -336,7 +342,7 @@ const Relatorios = () => {
       });
 
       const protocolosComPrazo = protocolosDia.filter(
-        (p) => p.prazo_execucao && p.status === "Concluído"
+        (p) => p.prazo_execucao && isConcluido(p.status)
       );
       const tempoMedio =
         protocolosComPrazo.length > 0
@@ -390,7 +396,7 @@ const Relatorios = () => {
   // Função para gerar análise completa do cartório
   const gerarAnaliseCompleta = (protocolosParaAnalise: any[]) => {
     const protocolosConcluidos = protocolosParaAnalise.filter(
-      (p) => p.status === "Concluído"
+      (p) => isConcluido(p.status)
     );
     const protocolosEmAndamento = protocolosParaAnalise.filter(
       (p) => p.status === "Em Andamento"
@@ -463,7 +469,7 @@ const Relatorios = () => {
         acc[mes] = { total: 0, concluidos: 0, emAndamento: 0 };
       }
       acc[mes].total++;
-      if (p.status === "Concluído") acc[mes].concluidos++;
+      if (isConcluido(p.status)) acc[mes].concluidos++;
       if (p.status === "Em Andamento") acc[mes].emAndamento++;
       return acc;
     }, {});
@@ -508,7 +514,7 @@ const Relatorios = () => {
     });
 
     const protocolosConcluidos30Dias = ultimos30Dias.filter(
-      (p) => p.status === "Concluído"
+      (p) => isConcluido(p.status)
     );
     const tendenciaConclusao =
       ultimos30Dias.length > 0
@@ -636,13 +642,13 @@ const Relatorios = () => {
             "Data Abertura": dataAbertura.toLocaleDateString("pt-BR"),
             "Data Conclusão": dataConclusao
               ? dataConclusao.toLocaleDateString("pt-BR")
-              : protocolo.status === "Concluído"
+              : isConcluido(protocolo.status)
               ? "N/A"
               : "-",
             "Tempo Processamento":
               tempoProcessamento !== null
                 ? `${tempoProcessamento} dias`
-                : protocolo.status === "Concluído"
+                : isConcluido(protocolo.status)
                 ? "N/A"
                 : "Em andamento",
             "Prazo Execução": protocolo.prazo_execucao
@@ -1128,12 +1134,12 @@ const Relatorios = () => {
                     dataAbertura.toLocaleDateString("pt-BR"),
                     dataConclusao
                       ? dataConclusao.toLocaleDateString("pt-BR")
-                      : protocolo.status === "Concluído"
+                      : isConcluido(protocolo.status)
                       ? "N/A"
                       : "-",
                     tempoProcessamento !== null
                       ? `${tempoProcessamento} dias`
-                      : protocolo.status === "Concluído"
+                      : isConcluido(protocolo.status)
                       ? "N/A"
                       : "Em andamento",
                   ];

@@ -7,8 +7,11 @@ import ProtocoloForm from "@/components/protocolos/protocolo-form";
 import ProtocoloDetails from "@/components/protocolos/protocolo-details";
 import StatusSelector from "@/components/protocolos/status-selector";
 import { NotificarClienteDialog } from "@/components/protocolos/notificar-cliente-dialog";
+import ResponsavelFilter, {
+  SEM_RESPONSAVEL,
+} from "@/components/protocolos/responsavel-filter";
 import type { DocumentoAnexo } from "@/components/contas/document-upload";
-import { useProtocolos, useCartorios } from "@/hooks/use-supabase";
+import { useProtocolos, useCartorios, useUsuarios } from "@/hooks/use-supabase";
 import { useDocumentosProtocolo } from "@/hooks/use-documentos-protocolo";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
 import { useAuth } from "@/contexts/auth-context";
@@ -22,6 +25,7 @@ import {
   formatDateForDisplay,
   formatDateForDatabase,
 } from "@/lib/utils";
+import { isStatusConclusao } from "@/lib/status-resolve";
 import {
   Card,
   CardContent,
@@ -95,10 +99,19 @@ const ProtocolosContent = () => {
   const { cartorios } = useCartorios(scopedCartorioId);
   const { statusPersonalizados } = useStatusPersonalizados();
   const { entidadesAtivas } = useEntidades(scopedCartorioId);
+  const { usuarios, loading: usuariosLoading } = useUsuarios(scopedCartorioId);
   const usaEntidadesRcpn: boolean =
     (cartorios?.[0] as any)?.usa_entidades_rcpn ?? false;
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [busca, setBusca] = useState("");
+  // Lista vazia = todos os responsáveis. Por padrão, apenas o usuário logado.
+  const [filtroResponsaveis, setFiltroResponsaveis] = useState<string[]>([]);
+  const filtroResponsavelInicializado = React.useRef(false);
+  const usuariosAtivos = React.useMemo(
+    () =>
+      (usuarios || []).filter((u: { ativo?: boolean }) => u.ativo !== false),
+    [usuarios]
+  );
   const [showForm, setShowForm] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [selectedProtocolo, setSelectedProtocolo] = useState<any>(null);
@@ -130,6 +143,13 @@ const ProtocolosContent = () => {
   React.useEffect(() => {
     setLocalProtocolos(protocolos);
   }, [protocolos]);
+
+  // Aplicar o filtro padrão (protocolos do próprio usuário) na primeira carga
+  useEffect(() => {
+    if (filtroResponsavelInicializado.current || !user?.id) return;
+    filtroResponsavelInicializado.current = true;
+    setFiltroResponsaveis([user.id]);
+  }, [user?.id]);
 
   // Ler parâmetro de busca da URL
   useEffect(() => {
@@ -209,9 +229,10 @@ const ProtocolosContent = () => {
     );
   };
 
-  // Função para verificar se um protocolo está concluído
+  // Função para verificar se um protocolo está concluído. Além do status padrão
+  // "Concluído", vale qualquer status personalizado marcado como de conclusão.
   const isProtocoloConcluido = (protocolo: any) => {
-    return protocolo.status === "Concluído";
+    return isStatusConclusao(protocolo.status, statusPersonalizados);
   };
 
   // Função para filtrar protocolos por busca
@@ -296,13 +317,26 @@ const ProtocolosContent = () => {
     return false;
   };
 
+  // Função para filtrar protocolos por responsável pelo serviço
+  const filtrarPorResponsavel = (protocolo: any) => {
+    if (filtroResponsaveis.length === 0) return true;
+
+    const responsavelId = protocolo.responsavel_servico_id;
+    if (!responsavelId) return filtroResponsaveis.includes(SEM_RESPONSAVEL);
+
+    return filtroResponsaveis.includes(responsavelId);
+  };
+
+  // Protocolos visíveis após o filtro de responsável
+  const protocolosVisiveis = localProtocolos.filter(filtrarPorResponsavel);
+
   // Separar protocolos em concluídos e em aberto
-  const protocolosConcluidos = localProtocolos.filter(
+  const protocolosConcluidos = protocolosVisiveis.filter(
     (protocolo) => isProtocoloConcluido(protocolo) && filtrarPorBusca(protocolo)
   );
 
   // Protocolos em aberto são todos os que NÃO estão concluídos
-  const protocolosEmAberto = localProtocolos.filter(
+  const protocolosEmAberto = protocolosVisiveis.filter(
     (protocolo) =>
       !isProtocoloConcluido(protocolo) &&
       filtrarPorBusca(protocolo) &&
@@ -310,7 +344,7 @@ const ProtocolosContent = () => {
   );
 
   // Estatísticas
-  const totalProtocolos = localProtocolos.length;
+  const totalProtocolos = protocolosVisiveis.length;
   const totalConcluidos = protocolosConcluidos.length;
   const totalEmAberto = protocolosEmAberto.length;
   const idsDeletaveis = Array.from(
@@ -361,6 +395,12 @@ const ProtocolosContent = () => {
 
       console.log("Cartório encontrado:", userData.cartorio_id);
 
+      // Conclusão pelo formulário: registra a data ao concluir e limpa ao reabrir
+      const concluiAgora = isStatusConclusao(data.status, statusPersonalizados);
+      const jaEstavaConcluido = editingProtocolo
+        ? isStatusConclusao(editingProtocolo.status, statusPersonalizados)
+        : false;
+
       // Mapear campos do formulário para o banco de dados
       const protocoloData = {
         protocolo: data.protocolo,
@@ -389,6 +429,10 @@ const ProtocolosContent = () => {
               created_at: `${formatDateForDatabase(data.dataAbertura)}T12:00:00.000Z`,
             }
           : {}),
+        ...(concluiAgora && !jaEstavaConcluido
+          ? { data_conclusao: new Date().toISOString() }
+          : {}),
+        ...(!concluiAgora && jaEstavaConcluido ? { data_conclusao: null } : {}),
         cartorio_id: userData.cartorio_id,
         criado_por: user.id,
       };
@@ -577,6 +621,15 @@ const ProtocolosContent = () => {
                 ))}
               </SelectContent>
             </Select>
+
+            {/* Filtro rápido por Responsável */}
+            <ResponsavelFilter
+              usuarios={usuariosAtivos}
+              value={filtroResponsaveis}
+              onChange={setFiltroResponsaveis}
+              usuarioAtualId={user?.id}
+              loading={usuariosLoading}
+            />
           </div>
 
           <div className="flex items-center gap-2">
@@ -725,11 +778,11 @@ const ProtocolosContent = () => {
               <CardContent>
                 <div className="text-2xl font-bold text-red-600">
                   {
-                    localProtocolos.filter(
+                    protocolosVisiveis.filter(
                       (p) =>
                         p.prazo_execucao &&
                         isPrazoVencendo(p.prazo_execucao) &&
-                        p.status !== "Concluído"
+                        !isProtocoloConcluido(p)
                     ).length
                   }
                 </div>
@@ -758,9 +811,19 @@ const ProtocolosContent = () => {
                   Nenhum protocolo em aberto
                 </h3>
                 <p className="text-gray-500">
-                  Todos os protocolos foram concluídos ou não há protocolos
-                  cadastrados.
+                  {filtroResponsaveis.length > 0
+                    ? "Nenhum protocolo em aberto para o(s) responsável(is) selecionado(s)."
+                    : "Todos os protocolos foram concluídos ou não há protocolos cadastrados."}
                 </p>
+                {filtroResponsaveis.length > 0 && (
+                  <Button
+                    variant="link"
+                    className="mt-2"
+                    onClick={() => setFiltroResponsaveis([])}
+                  >
+                    Ver de todos os responsáveis
+                  </Button>
+                )}
               </div>
             ) : (
               <Table>

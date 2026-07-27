@@ -15,6 +15,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
 import {
   buildStatusSelectOptions,
+  isStatusConclusao,
   normalizeStatusKey,
   resolveStatusDotColor,
 } from "@/lib/status-resolve";
@@ -52,9 +53,13 @@ const StatusSelector: React.FC<StatusSelectorProps> = ({
         observacao: `Status alterado de "${currentStatus}" para "${newStatus}"`,
       };
 
-      // Se o novo status for "Concluído", definir data_conclusao
-      if (normalizeStatusKey(newStatus) === normalizeStatusKey("Concluído")) {
+      // Se o novo status concluir o protocolo (padrão "Concluído" ou
+      // personalizado marcado como de conclusão), definir data_conclusao
+      if (isStatusConclusao(newStatus, statusPersonalizados)) {
         updateData.data_conclusao = new Date().toISOString();
+      } else if (isStatusConclusao(currentStatus ?? "", statusPersonalizados)) {
+        // Protocolo reaberto: limpa a data de conclusão anterior
+        updateData.data_conclusao = null;
       }
 
       await updateProtocolo(protocoloId, updateData);

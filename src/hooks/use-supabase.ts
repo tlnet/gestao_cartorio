@@ -836,7 +836,7 @@ export function useUsuarios(cartorioId?: string) {
       let query = supabase
         .from("users")
         .select(
-          "id, name, email, telefone, role, roles, cartorio_id, ativo, created_at, updated_at"
+          "id, name, email, telefone, role, roles, cartorio_id, ativo, created_at, updated_at, avatar_url"
         );
 
       if (cartorioId) {
@@ -853,7 +853,7 @@ export function useUsuarios(cartorioId?: string) {
         // Tentar novamente sem campos de convite
         let fallbackQuery = supabase
           .from("users")
-          .select("id, name, email, telefone, role, roles, cartorio_id, ativo, created_at, updated_at");
+          .select("id, name, email, telefone, role, roles, cartorio_id, ativo, created_at, updated_at, avatar_url");
 
         if (cartorioId) {
           fallbackQuery = fallbackQuery.eq("cartorio_id", cartorioId);

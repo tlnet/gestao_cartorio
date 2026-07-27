@@ -8,10 +8,38 @@ export interface StatusPersonalizado {
   nome: string;
   cor: string;
   ordem: number;
+  /** Quando true, protocolos com este status são tratados como concluídos */
+  is_conclusao?: boolean;
   cartorio_id: string;
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * Erros do Supabase são objetos simples (PostgrestError), não instâncias de
+ * Error — por isso `err instanceof Error` engolia a causa real e sobrava só a
+ * mensagem genérica. Aqui a causa é registrada no console e devolvida ao toast.
+ */
+const descreverErroStatus = (err: any, fallback: string): string => {
+  console.error(fallback, {
+    message: err?.message,
+    details: err?.details,
+    hint: err?.hint,
+    code: err?.code,
+  });
+
+  // 42703 = coluna inexistente (migração pendente)
+  if (err?.code === "42703" && String(err?.message).includes("is_conclusao")) {
+    return (
+      "A coluna 'is_conclusao' não existe no banco. Execute a migração " +
+      "src/lib/add-status-conclusao.sql no SQL Editor do Supabase."
+    );
+  }
+
+  if (err?.message) return `${fallback}: ${err.message}`;
+  if (err instanceof Error) return err.message;
+  return fallback;
+};
 
 export const useStatusPersonalizados = () => {
   const [statusPersonalizados, setStatusPersonalizados] = useState<
@@ -75,6 +103,7 @@ export const useStatusPersonalizados = () => {
     nome: string;
     cor: string;
     ordem: number;
+    is_conclusao?: boolean;
   }) => {
     try {
       if (!user?.id) {
@@ -113,11 +142,9 @@ export const useStatusPersonalizados = () => {
       await fetchStatusPersonalizados();
       return data;
     } catch (err) {
-      const errorMessage =
-        err instanceof Error
-          ? err.message
-          : "Erro ao criar status personalizado";
-      toast.error(errorMessage);
+      toast.error(
+        descreverErroStatus(err, "Erro ao criar status personalizado")
+      );
       throw err;
     }
   };
@@ -133,6 +160,8 @@ export const useStatusPersonalizados = () => {
       if (updates.nome !== undefined) updateData.nome = updates.nome;
       if (updates.cor !== undefined) updateData.cor = updates.cor;
       if (updates.ordem !== undefined) updateData.ordem = updates.ordem;
+      if (updates.is_conclusao !== undefined)
+        updateData.is_conclusao = updates.is_conclusao;
 
       // Usar método direto após remover triggers problemáticos
       const { data, error } = await supabase
@@ -148,11 +177,9 @@ export const useStatusPersonalizados = () => {
       await fetchStatusPersonalizados();
       return data;
     } catch (err) {
-      const errorMessage =
-        err instanceof Error
-          ? err.message
-          : "Erro ao atualizar status personalizado";
-      toast.error(errorMessage);
+      toast.error(
+        descreverErroStatus(err, "Erro ao atualizar status personalizado")
+      );
       throw err;
     }
   };
@@ -169,11 +196,9 @@ export const useStatusPersonalizados = () => {
       toast.success("Status personalizado excluído com sucesso!");
       await fetchStatusPersonalizados();
     } catch (err) {
-      const errorMessage =
-        err instanceof Error
-          ? err.message
-          : "Erro ao excluir status personalizado";
-      toast.error(errorMessage);
+      toast.error(
+        descreverErroStatus(err, "Erro ao excluir status personalizado")
+      );
       throw err;
     }
   };

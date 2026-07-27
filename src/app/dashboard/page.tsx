@@ -9,6 +9,8 @@ import { useProtocolos, useCartorios, useUsuarios } from "@/hooks/use-supabase";
 import IANotifications from "@/components/notifications/ia-notifications";
 import { useAuth } from "@/contexts/auth-context";
 import { useEntidades } from "@/hooks/use-entidades";
+import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
+import { isStatusConclusao } from "@/lib/status-resolve";
 import {
   Card,
   CardContent,
@@ -71,6 +73,7 @@ const Dashboard = () => {
   const { cartorios, loading: cartoriosLoading } = useCartorios(scopedCartorioId);
   const { usuarios, loading: usuariosLoading } = useUsuarios(scopedCartorioId);
   const { entidadesAtivas } = useEntidades(scopedCartorioId);
+  const { statusPersonalizados } = useStatusPersonalizados();
   const usaEntidadesRcpn: boolean =
     (cartorios?.[0] as any)?.usa_entidades_rcpn ?? false;
 
@@ -109,8 +112,8 @@ const Dashboard = () => {
 
       const processosVencendoPrazo = protocolos.filter((p) => {
         if (!p.prazo_execucao) return false;
-        // Excluir protocolos concluídos
-        if (p.status === "Concluído") return false;
+        // Excluir protocolos concluídos (padrão ou status personalizado de conclusão)
+        if (isStatusConclusao(p.status, statusPersonalizados)) return false;
         const prazo = new Date(p.prazo_execucao);
         const hoje = new Date();
         const diffTime = prazo.getTime() - hoje.getTime();
@@ -132,6 +135,7 @@ const Dashboard = () => {
     protocolos,
     cartorios,
     usuarios,
+    statusPersonalizados,
     protocolosLoading,
     cartoriosLoading,
     usuariosLoading,
@@ -282,9 +286,11 @@ const Dashboard = () => {
   const loading = protocolosLoading || cartoriosLoading || usuariosLoading;
 
   const getStatusColorClass = (status: string) => {
+    if (isStatusConclusao(status, statusPersonalizados)) {
+      return "bg-green-100 text-green-800";
+    }
+
     switch (status) {
-      case "Concluído":
-        return "bg-green-100 text-green-800";
       case "Em Andamento":
         return "bg-blue-100 text-blue-800";
       case "Aguardando Análise":
