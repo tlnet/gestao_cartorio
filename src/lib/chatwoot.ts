@@ -163,7 +163,7 @@ async function chatwootFetch<T>(
 /** Lista conversas do cartório (opcionalmente filtradas pela inbox configurada). */
 export async function listConversations(
   config: ChatwootConfig,
-  opts?: { status?: string; page?: number }
+  opts?: { status?: string; page?: number; labels?: string[] }
 ): Promise<ConversationsPage> {
   const params = new URLSearchParams();
   // Sem status, o Chatwoot retorna só conversas "open" — usamos "all" para
@@ -171,6 +171,7 @@ export async function listConversations(
   params.set("status", opts?.status || "all");
   if (opts?.page) params.set("page", String(opts.page));
   if (config.inboxId) params.set("inbox_id", config.inboxId);
+  for (const l of opts?.labels ?? []) params.append("labels[]", l);
 
   const qs = params.toString();
   const data = await chatwootFetch<{
@@ -225,6 +226,149 @@ export async function listLabels(
   return data?.payload ?? [];
 }
 
+/** Cria uma etiqueta na conta. Exige token de administrador no Chatwoot. */
+export async function createLabel(
+  config: ChatwootConfig,
+  payload: {
+    title: string;
+    description?: string | null;
+    color?: string | null;
+    showOnSidebar?: boolean;
+  }
+): Promise<ChatwootLabel> {
+  const body: Record<string, unknown> = {
+    title: payload.title,
+    show_on_sidebar: payload.showOnSidebar ?? true,
+  };
+  if (payload.description) body.description = payload.description;
+  if (payload.color) body.color = payload.color;
+
+  // Conforme a versão, o Chatwoot devolve a etiqueta na raiz ou dentro de payload.
+  const data = await chatwootFetch<
+    ChatwootLabel & { payload?: ChatwootLabel }
+  >(config, `/labels`, { method: "POST", body: JSON.stringify(body) });
+
+  return (data?.payload ?? data) as ChatwootLabel;
+}
+
+/** Teto de páginas nas varreduras, para nunca entrar em laço infinito. */
+const MAX_SWEEP_PAGES = 40;
+
+/**
+ * Desvincula uma etiqueta de todas as conversas e contatos da conta.
+ *
+ * Necessário porque o Chatwoot NÃO remove os vínculos ao excluir a etiqueta:
+ * o registro da label some, mas as conversas/contatos continuam marcados com
+ * aquele texto, virando etiquetas órfãs.
+ */
+export async function unlinkLabelEverywhere(
+  config: ChatwootConfig,
+  title: string
+): Promise<{
+  conversations: number;
+  contacts: number;
+  contactSweepFailed: boolean;
+}> {
+  let conversations = 0;
+  let contacts = 0;
+
+  // --- Conversas: a listagem aceita o filtro labels[] ---
+  for (let page = 1; page <= MAX_SWEEP_PAGES; page++) {
+    const { payload } = await listConversations(config, {
+      status: "all",
+      page,
+      labels: [title],
+    });
+    if (payload.length === 0) break;
+
+    for (const conv of payload) {
+      const current = conv.labels ?? [];
+      if (!current.includes(title)) continue;
+      await setConversationLabels(
+        config,
+        conv.id,
+        current.filter((t) => t !== title)
+      );
+      conversations++;
+    }
+
+    if (payload.length < 25) break; // página parcial = última
+  }
+
+  // --- Contatos: o filtro por etiqueta não é documentado, então tratamos a
+  // varredura como best-effort e não deixamos ela derrubar a exclusão. ---
+  let contactSweepFailed = false;
+  try {
+    for (let page = 1; page <= MAX_SWEEP_PAGES; page++) {
+      const data = await chatwootFetch<{ payload?: Array<{ id: number }> }>(
+        config,
+        `/contacts/filter?page=${page}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            payload: [
+              {
+                attribute_key: "labels",
+                filter_operator: "equal_to",
+                values: [title],
+                query_operator: null,
+              },
+            ],
+          }),
+        }
+      );
+      const found = data?.payload ?? [];
+      if (found.length === 0) break;
+
+      for (const c of found) {
+        const current = await getContactLabels(config, c.id);
+        if (!current.includes(title)) continue;
+        await setContactLabels(
+          config,
+          c.id,
+          current.filter((t) => t !== title)
+        );
+        contacts++;
+      }
+
+      if (found.length < 15) break; // page size dos contatos
+    }
+  } catch (e) {
+    contactSweepFailed = true;
+    console.error(
+      "[chatwoot] Falha ao varrer contatos da etiqueta:",
+      e instanceof Error ? e.message : e
+    );
+  }
+
+  return { conversations, contacts, contactSweepFailed };
+}
+
+/**
+ * Remove uma etiqueta da conta. Exige token de administrador no Chatwoot.
+ * Atenção: não desvincula sozinha — use unlinkLabelEverywhere() antes.
+ */
+export async function deleteLabel(
+  config: ChatwootConfig,
+  labelId: number | string
+): Promise<void> {
+  const url = `${config.baseUrl}/api/v1/accounts/${config.accountId}/labels/${labelId}`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      api_access_token: config.token,
+    },
+    cache: "no-store",
+  });
+
+  // Resposta vem sem corpo (200/204), por isso não passa pelo chatwootFetch.
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Chatwoot API ${res.status}: ${text || res.statusText}`);
+  }
+}
+
 /** Etiquetas aplicadas a uma conversa. */
 export async function getConversationLabels(
   config: ChatwootConfig,
@@ -246,6 +390,32 @@ export async function setConversationLabels(
   const data = await chatwootFetch<{ payload?: string[] }>(
     config,
     `/conversations/${conversationId}/labels`,
+    { method: "POST", body: JSON.stringify({ labels }) }
+  );
+  return data?.payload ?? labels;
+}
+
+/** Etiquetas aplicadas a um contato (lista separada da conversa). */
+export async function getContactLabels(
+  config: ChatwootConfig,
+  contactId: number | string
+): Promise<string[]> {
+  const data = await chatwootFetch<{ payload?: string[] }>(
+    config,
+    `/contacts/${contactId}/labels`
+  );
+  return data?.payload ?? [];
+}
+
+/** Define (substitui) as etiquetas de um contato. */
+export async function setContactLabels(
+  config: ChatwootConfig,
+  contactId: number | string,
+  labels: string[]
+): Promise<string[]> {
+  const data = await chatwootFetch<{ payload?: string[] }>(
+    config,
+    `/contacts/${contactId}/labels`,
     { method: "POST", body: JSON.stringify({ labels }) }
   );
   return data?.payload ?? labels;
@@ -352,6 +522,19 @@ export async function markConversationRead(
       e instanceof Error ? e.message : e
     );
   }
+}
+
+/**
+ * Marca a conversa como não lida no Chatwoot
+ * (POST /conversations/{id}/unread).
+ */
+export async function markConversationUnread(
+  config: ChatwootConfig,
+  conversationId: number | string
+): Promise<void> {
+  await chatwootFetch(config, `/conversations/${conversationId}/unread`, {
+    method: "POST",
+  });
 }
 
 /** Envia uma mensagem (outgoing) numa conversa. Opcionalmente como nota privada. */

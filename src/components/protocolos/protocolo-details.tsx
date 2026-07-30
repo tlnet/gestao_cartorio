@@ -68,7 +68,8 @@ interface ProtocoloDetailsProps {
     dataAbertura: string;
     servicos: string[];
     solicitante: string;
-    cpfCnpj: string;
+    cpfCnpj?: string;
+    cpf_cnpj?: string;
     telefone: string;
     apresentante?: string;
     responsavel_servico_id?: string | null;
@@ -88,6 +89,8 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
   protocolo,
   showEditButton = true,
 }) => {
+  const cpfCnpj = protocolo.cpfCnpj || protocolo.cpf_cnpj || "";
+
   const {
     historico,
     loading: historicoLoading,
@@ -426,7 +429,7 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
 
       // CPF/CNPJ
       doc.text("CPF/CNPJ:", 20, yPosition);
-      doc.text(removerAcentos(protocolo.cpfCnpj), 50, yPosition);
+      doc.text(removerAcentos(cpfCnpj), 50, yPosition);
       yPosition += 8;
 
       // Telefone
@@ -752,7 +755,7 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
                   <label className="text-sm font-medium text-gray-500">
                     CPF/CNPJ
                   </label>
-                  <p className="text-sm">{protocolo.cpfCnpj}</p>
+                  <p className="text-sm">{cpfCnpj}</p>
                 </div>
 
                 <div>

@@ -945,6 +945,8 @@ const ProtocolosContent = () => {
                         <StatusSelector
                           protocoloId={protocolo.id}
                           currentStatus={protocolo.status}
+                          responsavelServicoId={protocolo.responsavel_servico_id}
+                          updateProtocoloFn={updateProtocolo}
                           onStatusChange={(newStatus) => {
                             handleStatusChange(protocolo.id, newStatus);
                           }}
@@ -1170,6 +1172,10 @@ const ProtocolosContent = () => {
                             <StatusSelector
                               protocoloId={protocolo.id}
                               currentStatus={protocolo.status}
+                              responsavelServicoId={
+                                protocolo.responsavel_servico_id
+                              }
+                              updateProtocoloFn={updateProtocolo}
                               onStatusChange={(newStatus) => {
                                 handleStatusChange(protocolo.id, newStatus);
                               }}
@@ -1279,6 +1285,7 @@ const ProtocolosContent = () => {
             onEdit={handleEditProtocolo}
             protocolo={{
               ...selectedProtocolo,
+              cpfCnpj: selectedProtocolo.cpf_cnpj,
               dataAbertura: selectedProtocolo.created_at,
               prazoExecucao:
                 selectedProtocolo.prazo_execucao || new Date().toISOString(),

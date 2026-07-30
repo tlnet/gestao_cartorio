@@ -3,6 +3,8 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { putCartorioUpdate } from "@/lib/admin-cartorio-api";
+import { patchProtocoloUpdate } from "@/lib/protocolo-update-api";
+import { canAlterarStatusProtocolo } from "@/lib/protocolo-permissoes";
 
 // Dados mockados para evitar chamadas de API durante o build
 const mockCartorios = [
@@ -189,7 +191,7 @@ export function useCartorios(cartorioId?: string) {
 export function useProtocolos(cartorioId?: string) {
   const [protocolos, setProtocolos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const { user, loading: authLoading } = useAuth();
+  const { user, session, userType, userRoles, loading: authLoading } = useAuth();
 
   const fetchProtocolos = async () => {
     try {
@@ -636,9 +638,41 @@ export function useProtocolos(cartorioId?: string) {
   const updateProtocolo = async (id: string, updates: any) => {
     try {
       // Buscar o protocolo atual para comparar mudanças
-      const protocoloAtual = protocolos.find((p) => p.id === id);
+      let protocoloAtual = protocolos.find((p) => p.id === id);
 
-      const { data, error } = await supabase
+      // Se a lista local não tiver o protocolo, busca no banco
+      if (!protocoloAtual) {
+        const { data: fetched } = await supabase
+          .from("protocolos")
+          .select("*")
+          .eq("id", id)
+          .maybeSingle();
+        protocoloAtual = fetched ?? undefined;
+      }
+
+      // Regra: atendente só altera status se for o responsável
+      if (
+        updates?.status !== undefined &&
+        protocoloAtual &&
+        protocoloAtual.status !== updates.status
+      ) {
+        const permitido = canAlterarStatusProtocolo({
+          userId: user?.id,
+          userType,
+          userRoles,
+          responsavelServicoId: protocoloAtual.responsavel_servico_id,
+        });
+        if (!permitido) {
+          const msg =
+            "Você só pode alterar o status de protocolos em que é o responsável.";
+          toast.error(msg);
+          throw new Error(msg);
+        }
+      }
+
+      let data: any = null;
+
+      const { data: directData, error } = await supabase
         .from("protocolos")
         .update(updates)
         .eq("id", id)
@@ -646,7 +680,41 @@ export function useProtocolos(cartorioId?: string) {
         .single();
 
       if (error) {
-        throw error;
+        // Trigger de status tenta INSERT em notificacoes para outro usuário
+        // (ex.: criador). RLS bloqueia com 42501 — contorna via service role.
+        const isNotificacoesRls =
+          error.code === "42501" ||
+          String(error.message || "")
+            .toLowerCase()
+            .includes("notificacoes");
+
+        if (!isNotificacoesRls) {
+          console.error("Erro ao atualizar protocolo:", {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code,
+          });
+          throw error;
+        }
+
+        console.warn(
+          "Update de protocolo bloqueado por RLS de notificações; usando API service role.",
+          { message: error.message, code: error.code }
+        );
+
+        let accessToken = session?.access_token;
+        if (!accessToken) {
+          const { data: sessData } = await supabase.auth.getSession();
+          accessToken = sessData.session?.access_token;
+        }
+        if (!accessToken) {
+          throw error;
+        }
+
+        data = await patchProtocoloUpdate(accessToken, id, updates);
+      } else {
+        data = directData;
       }
 
       // Registrar histórico para qualquer alteração
@@ -771,7 +839,10 @@ export function useProtocolos(cartorioId?: string) {
                 protocolo_id: id,
                 status_anterior: protocoloAtual.status,
                 novo_status: updates.status || protocoloAtual.status,
-                usuario_responsavel: (user as any)?.name || "Sistema",
+                usuario_responsavel:
+                  (user as any)?.user_metadata?.name ||
+                  user?.email?.split("@")[0] ||
+                  "Sistema",
                 observacao: updates.observacao || mudancas.join(", "),
               },
             ]);

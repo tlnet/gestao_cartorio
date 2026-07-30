@@ -51,15 +51,19 @@ import {
   AlertCircle,
   X,
   StickyNote,
-  Info,
+  Settings,
   Tag,
   Pencil,
   AlarmClock,
+  Plus,
+  Mail,
+  Trash2,
 } from "lucide-react";
 import {
   useChatwoot,
   type ChatMessage,
   type ChatConversation,
+  type ChatLabel,
   type ConversationStatus,
 } from "@/hooks/use-chatwoot";
 
@@ -69,6 +73,59 @@ function getInitials(name: string) {
     return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
   }
   return (name.substring(0, 2) || "?").toUpperCase();
+}
+
+function resolveLabelColor(
+  title: string,
+  labels: ChatLabel[],
+  fallback = "#9ca3af"
+): string {
+  const found = labels.find(
+    (l) => l.title.toLowerCase() === title.toLowerCase()
+  );
+  return found?.color?.trim() || fallback;
+}
+
+/** Texto legível sobre o fundo da etiqueta (claro → escuro, escuro → branco). */
+function contrastTextColor(hex: string): string {
+  const raw = hex.replace("#", "");
+  const full =
+    raw.length === 3
+      ? raw
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : raw;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return "#111827";
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.62 ? "#111827" : "#ffffff";
+}
+
+function LabelChip({
+  title,
+  color,
+  className,
+}: {
+  title: string;
+  color: string;
+  className?: string;
+}) {
+  const bg = color || "#9ca3af";
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium",
+        className
+      )}
+      style={{ backgroundColor: bg, color: contrastTextColor(bg) }}
+      title={title}
+    >
+      {title}
+    </span>
+  );
 }
 
 function formatTime(ms: number) {
@@ -153,6 +210,244 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   );
 }
 
+/**
+ * O Chatwoot só aceita títulos de etiqueta em minúsculas, sem espaços nem
+ * acentos. Normalizamos enquanto o usuário digita para evitar erro 422 da API.
+ */
+function normalizeLabelTitle(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9_-]/g, "");
+}
+
+/** Lista de etiquetas com checkbox + criação inline de uma nova etiqueta. */
+function LabelPicker({
+  labels,
+  selected,
+  onToggle,
+  onCreate,
+  onDelete,
+}: {
+  labels: ChatLabel[];
+  selected: string[];
+  onToggle: (title: string) => void;
+  onCreate: (payload: {
+    title: string;
+    color?: string;
+  }) => Promise<ChatLabel | null>;
+  onDelete: (label: ChatLabel) => Promise<void>;
+}) {
+  const [creating, setCreating] = useState(false);
+  const [title, setTitle] = useState("");
+  const [color, setColor] = useState("#1f93ff");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const confirmDelete = async (label: ChatLabel) => {
+    setDeletingId(label.id);
+    setErr(null);
+    try {
+      await onDelete(label);
+      setConfirmId(null);
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao excluir etiqueta.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const reset = () => {
+    setCreating(false);
+    setTitle("");
+    setErr(null);
+  };
+
+  const submit = async () => {
+    const t = normalizeLabelTitle(title);
+    if (!t || saving) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      const created = await onCreate({ title: t, color });
+      // Já aplica ao item atual: criar a etiqueta daqui pressupõe querer usá-la.
+      if (created?.title) onToggle(created.title);
+      reset();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao criar etiqueta.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Etiquetas ainda marcadas neste item mas que não existem mais na conta
+  // (excluídas por fora do painel, ou antes da limpeza automática existir).
+  // Sem isto não haveria como desmarcá-las pela interface.
+  const orphans = selected.filter(
+    (t) => !labels.some((l) => l.title === t)
+  );
+
+  return (
+    <div className="space-y-1">
+      {labels.length === 0 && orphans.length === 0 ? (
+        <p className="text-xs text-gray-500">
+          Nenhuma etiqueta cadastrada ainda.
+        </p>
+      ) : (
+        <div className="max-h-56 space-y-1 overflow-y-auto">
+          {orphans.map((t) => (
+            <div
+              key={`orphan-${t}`}
+              className="flex items-center gap-2 rounded-md bg-amber-50 p-1.5"
+            >
+              <input type="checkbox" checked onChange={() => onToggle(t)} />
+              <span className="min-w-0 flex-1 truncate text-xs text-amber-800">
+                {t}{" "}
+                <span className="text-amber-600">(etiqueta excluída)</span>
+              </span>
+            </div>
+          ))}
+
+          {labels.map((l) =>
+            confirmId === l.id ? (
+              <div
+                key={l.id}
+                className="flex items-center gap-1 rounded-md bg-red-50 p-1.5"
+              >
+                <span className="min-w-0 flex-1 truncate text-xs text-red-700">
+                  Excluir <strong>{l.title}</strong>?
+                </span>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => confirmDelete(l)}
+                  disabled={deletingId === l.id}
+                >
+                  {deletingId === l.id ? "..." : "Excluir"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-1.5 text-xs"
+                  onClick={() => setConfirmId(null)}
+                  disabled={deletingId === l.id}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            ) : (
+              <div
+                key={l.id}
+                className="group flex items-center gap-1 rounded-md pr-1"
+                style={
+                  selected.includes(l.title)
+                    ? {
+                        backgroundColor: `${l.color || "#9ca3af"}33`,
+                      }
+                    : undefined
+                }
+              >
+                {/* O <label> envolve só o checkbox e o nome: o botão de excluir
+                    ficaria dentro da área clicável e alternaria a etiqueta. */}
+                <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 p-1.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(l.title)}
+                    onChange={() => onToggle(l.title)}
+                  />
+                  <span
+                    className="inline-flex max-w-full items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium"
+                    style={{
+                      backgroundColor: l.color || "#9ca3af",
+                      color: contrastTextColor(l.color || "#9ca3af"),
+                    }}
+                  >
+                    {l.title}
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  title={`Excluir etiqueta "${l.title}"`}
+                  onClick={() => {
+                    setErr(null);
+                    setConfirmId(l.id);
+                  }}
+                  className="flex-shrink-0 rounded p-1 text-gray-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 focus:opacity-100 group-hover:opacity-100"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )
+          )}
+        </div>
+      )}
+
+      <div className="mt-2 border-t border-gray-100 pt-2">
+        {creating ? (
+          <div className="space-y-2">
+            <Input
+              autoFocus
+              value={title}
+              onChange={(e) => setTitle(normalizeLabelTitle(e.target.value))}
+              placeholder="nome-da-etiqueta"
+              className="h-8 text-sm"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submit();
+                }
+                if (e.key === "Escape") reset();
+              }}
+            />
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                className="h-8 w-8 flex-shrink-0 cursor-pointer rounded border border-gray-200 p-0"
+                title="Cor da etiqueta"
+              />
+              <Button
+                size="sm"
+                className="h-8 flex-1"
+                onClick={submit}
+                disabled={!title.trim() || saving}
+              >
+                {saving ? "Criando..." : "Criar"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8"
+                onClick={reset}
+                disabled={saving}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-full justify-start px-1 text-xs"
+            onClick={() => setCreating(true)}
+          >
+            <Plus className="mr-1 h-3 w-3" /> Nova etiqueta
+          </Button>
+        )}
+        {/* Fora do bloco de criação: também mostra erros de exclusão. */}
+        {err && <p className="mt-1 text-xs text-red-600">{err}</p>}
+      </div>
+    </div>
+  );
+}
+
 const STATUS_TABS: { value: ConversationStatus; label: string }[] = [
   { value: "open", label: "Abertas" },
   { value: "pending", label: "Pendentes" },
@@ -176,8 +471,14 @@ const ChatPage = () => {
     sending,
     changeConversationStatus,
     toggleMute,
+    markAsUnread,
     accountLabels,
     applyLabels,
+    createLabel,
+    deleteLabel,
+    contactLabels,
+    loadingContactLabels,
+    applyContactLabels,
     updateContact,
     error,
   } = useChatwoot();
@@ -202,6 +503,14 @@ const ChatPage = () => {
   }, [messages]);
 
   const selectedConversation = conversations.find((c) => c.id === selectedId);
+
+  // Se a etiqueta usada no filtro for excluída, o filtro esconderia todas as
+  // conversas — voltamos para "Todas".
+  useEffect(() => {
+    if (labelFilter && !accountLabels.some((l) => l.title === labelFilter)) {
+      setLabelFilter(null);
+    }
+  }, [accountLabels, labelFilter]);
 
   const filtered = useMemo(() => {
     return conversations.filter((c) => {
@@ -262,6 +571,15 @@ const ChatPage = () => {
     applyLabels(conv.id, next);
   };
 
+  const toggleContactLabel = (title: string) => {
+    const contactId = selectedConversation?.contactId;
+    if (!contactId) return;
+    const next = contactLabels.includes(title)
+      ? contactLabels.filter((l) => l !== title)
+      : [...contactLabels, title];
+    applyContactLabels(contactId, next);
+  };
+
   const snoozeOptions = [
     { label: "Adiar 1 hora", secs: () => Math.floor(Date.now() / 1000) + 3600 },
     {
@@ -285,7 +603,7 @@ const ChatPage = () => {
         <MainLayout title="Chat" subtitle="Atendimento integrado ao Chatwoot">
           <Card className="flex h-[calc(100vh-12rem)] overflow-hidden p-0">
             {/* Lista de conversas */}
-            <div className="flex w-80 flex-shrink-0 flex-col border-r border-gray-200">
+            <div className="flex w-80 min-w-0 flex-shrink-0 flex-col overflow-hidden border-r border-gray-200">
               <div className="space-y-2 border-b border-gray-200 p-3">
                 <div className="relative">
                   <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -364,44 +682,66 @@ const ChatPage = () => {
                     {filtered.map((c) => (
                       <button
                         key={c.id}
+                        type="button"
                         onClick={() => selectConversation(c.id)}
                         className={cn(
-                          "flex w-full items-center gap-3 border-b border-gray-100 p-3 text-left transition-colors hover:bg-gray-50",
-                          selectedId === c.id && "bg-blue-50 hover:bg-blue-50"
+                          "grid w-full grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3 border-b border-gray-100 px-3.5 py-3 text-left transition-colors hover:bg-gray-50",
+                          selectedId === c.id && "bg-blue-50 hover:bg-blue-50",
+                          c.unreadCount > 0 && "bg-green-50/60"
                         )}
                       >
-                        <Avatar className="h-10 w-10 flex-shrink-0">
+                        <Avatar className="h-10 w-10 shrink-0">
                           <AvatarImage src={c.thumbnail || undefined} />
                           <AvatarFallback className="bg-blue-100 text-blue-600">
                             {getInitials(c.name)}
                           </AvatarFallback>
                         </Avatar>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="flex items-center gap-1 truncate text-sm font-medium text-gray-900">
+
+                        <div className="min-w-0 overflow-hidden">
+                          <div className="flex items-center gap-2">
+                            <p
+                              className={cn(
+                                "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-gray-900",
+                                c.unreadCount > 0
+                                  ? "font-semibold"
+                                  : "font-medium"
+                              )}
+                              title={c.name}
+                            >
                               {c.muted && (
-                                <BellOff className="h-3 w-3 flex-shrink-0 text-gray-400" />
+                                <BellOff className="mr-1 inline h-3 w-3 shrink-0 align-[-2px] text-gray-400" />
                               )}
                               {c.name}
                             </p>
                             {c.unreadCount > 0 && (
-                              <Badge className="bg-green-500 text-white">
-                                {c.unreadCount}
+                              <Badge
+                                className="shrink-0 border-transparent bg-green-500 px-2 py-0.5 text-xs text-white hover:bg-green-500"
+                                title={`${c.unreadCount} mensagem(ns) não lida(s)`}
+                              >
+                                {c.unreadCount > 99 ? "99+" : c.unreadCount}
                               </Badge>
                             )}
                           </div>
-                          <p className="truncate text-xs text-gray-500">
+                          <p
+                            className={cn(
+                              "mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-xs",
+                              c.unreadCount > 0
+                                ? "font-medium text-gray-700"
+                                : "text-gray-500"
+                            )}
+                            title={c.lastMessage || undefined}
+                          >
                             {c.lastMessage || "Sem mensagens"}
                           </p>
                           {c.labels.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-1">
+                            <div className="mt-1 flex min-w-0 flex-wrap gap-1 overflow-hidden">
                               {c.labels.slice(0, 3).map((l) => (
-                                <span
+                                <LabelChip
                                   key={l}
-                                  className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600"
-                                >
-                                  {l}
-                                </span>
+                                  title={l}
+                                  color={resolveLabelColor(l, accountLabels)}
+                                  className="max-w-[9rem]"
+                                />
                               ))}
                             </div>
                           )}
@@ -463,7 +803,7 @@ const ChatPage = () => {
                       onClick={() => setShowContact((v) => !v)}
                       title="Detalhes do contato"
                     >
-                      <Info className="h-5 w-5 text-gray-500" />
+                      <Settings className="h-5 w-5 text-gray-500" />
                     </Button>
 
                     <DropdownMenu>
@@ -523,6 +863,14 @@ const ChatPage = () => {
                           </DropdownMenuItem>
                         ))}
                         <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() =>
+                            selectedId && markAsUnread(selectedId)
+                          }
+                        >
+                          <Mail className="mr-2 h-4 w-4 text-green-600" />
+                          Marcar como não lida
+                        </DropdownMenuItem>
                         {selectedConversation?.muted ? (
                           <DropdownMenuItem
                             onClick={() =>
@@ -728,11 +1076,11 @@ const ChatPage = () => {
                             Editar contato
                           </Button>
 
-                          {/* Etiquetas */}
+                          {/* Etiquetas da conversa */}
                           <div className="mt-5">
                             <div className="mb-2 flex items-center justify-between">
                               <p className="text-xs font-semibold uppercase text-gray-400">
-                                Etiquetas
+                                Etiquetas da conversa
                               </p>
                               <Popover>
                                 <PopoverTrigger asChild>
@@ -744,46 +1092,16 @@ const ChatPage = () => {
                                     <Tag className="mr-1 h-3 w-3" /> Gerenciar
                                   </Button>
                                 </PopoverTrigger>
-                                <PopoverContent className="w-56" align="end">
-                                  {accountLabels.length === 0 ? (
-                                    <p className="text-xs text-gray-500">
-                                      Nenhuma etiqueta cadastrada no Chatwoot.
-                                    </p>
-                                  ) : (
-                                    <div className="space-y-1">
-                                      {accountLabels.map((l) => {
-                                        const checked =
-                                          selectedConversation.labels.includes(
-                                            l.title
-                                          );
-                                        return (
-                                          <label
-                                            key={l.id}
-                                            className="flex cursor-pointer items-center gap-2 rounded p-1 text-sm hover:bg-gray-50"
-                                          >
-                                            <input
-                                              type="checkbox"
-                                              checked={checked}
-                                              onChange={() =>
-                                                toggleLabel(
-                                                  selectedConversation,
-                                                  l.title
-                                                )
-                                              }
-                                            />
-                                            <span
-                                              className="h-2.5 w-2.5 rounded-full"
-                                              style={{
-                                                backgroundColor:
-                                                  l.color || "#999",
-                                              }}
-                                            />
-                                            {l.title}
-                                          </label>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
+                                <PopoverContent className="w-64" align="end">
+                                  <LabelPicker
+                                    labels={accountLabels}
+                                    selected={selectedConversation.labels}
+                                    onToggle={(t) =>
+                                      toggleLabel(selectedConversation, t)
+                                    }
+                                    onCreate={createLabel}
+                                    onDelete={deleteLabel}
+                                  />
                                 </PopoverContent>
                               </Popover>
                             </div>
@@ -794,13 +1112,60 @@ const ChatPage = () => {
                             ) : (
                               <div className="flex flex-wrap gap-1">
                                 {selectedConversation.labels.map((l) => (
-                                  <Badge
+                                  <LabelChip
                                     key={l}
-                                    variant="secondary"
+                                    title={l}
+                                    color={resolveLabelColor(l, accountLabels)}
                                     className="text-xs"
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Etiquetas do contato */}
+                          <div className="mt-5">
+                            <div className="mb-2 flex items-center justify-between">
+                              <p className="text-xs font-semibold uppercase text-gray-400">
+                                Etiquetas do contato
+                              </p>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-2 text-xs"
+                                    disabled={!selectedConversation.contactId}
                                   >
-                                    {l}
-                                  </Badge>
+                                    <Tag className="mr-1 h-3 w-3" /> Gerenciar
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-64" align="end">
+                                  <LabelPicker
+                                    labels={accountLabels}
+                                    selected={contactLabels}
+                                    onToggle={toggleContactLabel}
+                                    onCreate={createLabel}
+                                    onDelete={deleteLabel}
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                            {loadingContactLabels ? (
+                              <Skeleton className="h-5 w-24" />
+                            ) : contactLabels.length === 0 ? (
+                              <p className="text-xs text-gray-400">
+                                Sem etiquetas.
+                              </p>
+                            ) : (
+                              <div className="flex flex-wrap gap-1">
+                                {contactLabels.map((l) => (
+                                  <LabelChip
+                                    key={l}
+                                    title={l}
+                                    color={resolveLabelColor(l, accountLabels)}
+                                    className="text-xs"
+                                  />
                                 ))}
                               </div>
                             )}

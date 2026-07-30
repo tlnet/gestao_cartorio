@@ -60,6 +60,7 @@ import { useServicos } from "@/hooks/use-servicos";
 import { LoadingAnimation } from "@/components/ui/loading-spinner";
 import { useLevontechConfig } from "@/hooks/use-levontech-config";
 import { useAuth } from "@/contexts/auth-context";
+import { canAlterarStatusProtocolo } from "@/lib/protocolo-permissoes";
 import { useUsuarios } from "@/hooks/use-supabase";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -186,7 +187,15 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   const { statusPersonalizados } = useStatusPersonalizados();
   const { servicos, loading: servicosLoading, createServico, fetchServicos } = useServicos();
   const { config: levontechConfig, loading: levontechLoading } = useLevontechConfig();
-  const { user } = useAuth();
+  const { user, userType, userRoles } = useAuth();
+  const podeAlterarStatus =
+    !isEditing ||
+    canAlterarStatusProtocolo({
+      userId: user?.id,
+      userType,
+      userRoles,
+      responsavelServicoId: initialData?.responsavelServicoId || null,
+    });
   const { usuarios: usuariosCartorio, loading: usuariosLoading } =
     useUsuarios(cartorioId);
 
@@ -1208,6 +1217,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
+                    disabled={!podeAlterarStatus}
                   >
                     <FormControl>
                       <SelectTrigger>
@@ -1222,6 +1232,12 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                       ))}
                     </SelectContent>
                   </Select>
+                  {!podeAlterarStatus && (
+                    <p className="text-xs text-muted-foreground">
+                      Somente o responsável (ou um administrador) pode alterar o
+                      status.
+                    </p>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}

@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
-import { useProtocolos } from "@/hooks/use-supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
 import {
@@ -19,56 +18,74 @@ import {
   normalizeStatusKey,
   resolveStatusDotColor,
 } from "@/lib/status-resolve";
+import { canAlterarStatusProtocolo } from "@/lib/protocolo-permissoes";
 
 interface StatusSelectorProps {
   protocoloId: string;
   currentStatus: string;
+  responsavelServicoId?: string | null;
   onStatusChange?: (newStatus: string) => void;
+  updateProtocoloFn: (id: string, updates: any) => Promise<void>;
   className?: string;
 }
 
 const StatusSelector: React.FC<StatusSelectorProps> = ({
   protocoloId,
   currentStatus,
+  responsavelServicoId,
   onStatusChange,
+  updateProtocoloFn,
   className = "",
 }) => {
+  const { user, userType, userRoles } = useAuth();
   const { statusPersonalizados, loading } = useStatusPersonalizados();
-  const { updateProtocolo } = useProtocolos();
-  const { user } = useAuth();
   const [isUpdating, setIsUpdating] = useState(false);
+
+  const podeAlterar = canAlterarStatusProtocolo({
+    userId: user?.id,
+    userType,
+    userRoles,
+    responsavelServicoId,
+  });
 
   const handleStatusChange = async (newStatus: string) => {
     if (newStatus === currentStatus) return;
 
+    if (!podeAlterar) {
+      toast.error(
+        "Você só pode alterar o status de protocolos em que é o responsável."
+      );
+      return;
+    }
+
     try {
       setIsUpdating(true);
 
-      // Atualizar o estado local imediatamente para feedback visual
       onStatusChange?.(newStatus);
 
-      // Preparar dados para atualização
       const updateData: any = {
         status: newStatus,
         observacao: `Status alterado de "${currentStatus}" para "${newStatus}"`,
       };
 
-      // Se o novo status concluir o protocolo (padrão "Concluído" ou
-      // personalizado marcado como de conclusão), definir data_conclusao
       if (isStatusConclusao(newStatus, statusPersonalizados)) {
         updateData.data_conclusao = new Date().toISOString();
       } else if (isStatusConclusao(currentStatus ?? "", statusPersonalizados)) {
-        // Protocolo reaberto: limpa a data de conclusão anterior
         updateData.data_conclusao = null;
       }
 
-      await updateProtocolo(protocoloId, updateData);
-
-      // Não mostrar toast aqui pois o hook já mostra
-    } catch (error) {
-      console.error("Erro ao atualizar status:", error);
-      toast.error("Erro ao atualizar status do protocolo");
-      // Reverter o estado local em caso de erro
+      await updateProtocoloFn(protocoloId, updateData);
+    } catch (error: any) {
+      console.error("Erro ao atualizar status:", {
+        message: error?.message,
+        details: error?.details,
+        hint: error?.hint,
+        code: error?.code,
+      });
+      toast.error(
+        "Erro ao atualizar status do protocolo" +
+          (error?.message ? `: ${error.message}` : "")
+      );
       onStatusChange?.(currentStatus);
     } finally {
       setIsUpdating(false);
@@ -111,9 +128,16 @@ const StatusSelector: React.FC<StatusSelectorProps> = ({
     );
   }
 
-  if (statusPersonalizados.length === 0) {
+  if (statusPersonalizados.length === 0 || !podeAlterar) {
     return (
-      <div className={`flex items-center gap-2 ${className}`}>
+      <div
+        className={`flex items-center gap-2 ${className}`}
+        title={
+          !podeAlterar
+            ? "Somente o responsável (ou um administrador) pode alterar o status"
+            : undefined
+        }
+      >
         <div
           className="h-2.5 w-2.5 shrink-0 rounded-full"
           style={{ backgroundColor: triggerDotColor }}

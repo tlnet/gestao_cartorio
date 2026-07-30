@@ -127,6 +127,8 @@ export function useChatwoot() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [accountLabels, setAccountLabels] = useState<ChatLabel[]>([]);
+  const [contactLabels, setContactLabels] = useState<string[]>([]);
+  const [loadingContactLabels, setLoadingContactLabels] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const selectedIdRef = useRef<number | null>(null);
@@ -374,6 +376,42 @@ export function useChatwoot() {
     [accessToken, authHeaders]
   );
 
+  const markAsUnread = useCallback(
+    async (conversationId: number) => {
+      if (!accessToken) return;
+      try {
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === conversationId
+              ? { ...c, unreadCount: Math.max(c.unreadCount, 1) }
+              : c
+          )
+        );
+
+        const res = await fetch(
+          `/api/chatwoot/conversations/${conversationId}/unread`,
+          {
+            method: "POST",
+            headers: authHeaders(),
+          }
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.error || "Erro ao marcar como não lida.");
+        }
+
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("chatwoot:unread-refresh"));
+        }
+
+        loadConversations({ status: statusFilterRef.current, page: 1 });
+      } catch (e: any) {
+        setError(e?.message || "Erro ao marcar conversa como não lida.");
+      }
+    },
+    [accessToken, authHeaders, loadConversations]
+  );
+
   // Aplicar etiquetas a uma conversa.
   const applyLabels = useCallback(
     async (conversationId: number, labels: string[]) => {
@@ -397,6 +435,95 @@ export function useChatwoot() {
         );
       } catch (e: any) {
         setError(e?.message || "Erro ao salvar etiquetas.");
+        throw e;
+      }
+    },
+    [accessToken, authHeaders]
+  );
+
+  // Cria uma etiqueta na conta (exige token de admin no Chatwoot).
+  const createLabel = useCallback(
+    async (payload: {
+      title: string;
+      color?: string;
+      description?: string;
+    }): Promise<ChatLabel | null> => {
+      if (!accessToken) return null;
+      try {
+        const res = await fetch("/api/chatwoot/labels", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || "Erro ao criar etiqueta.");
+        const label = data.label as ChatLabel;
+        setAccountLabels((prev) =>
+          prev.some((l) => l.id === label.id) ? prev : [...prev, label]
+        );
+        return label;
+      } catch (e: any) {
+        setError(e?.message || "Erro ao criar etiqueta.");
+        throw e;
+      }
+    },
+    [accessToken, authHeaders]
+  );
+
+  // Exclui uma etiqueta da conta (exige token de admin no Chatwoot).
+  const deleteLabel = useCallback(
+    async (label: ChatLabel) => {
+      if (!accessToken) return;
+      try {
+        const res = await fetch(`/api/chatwoot/labels/${label.id}`, {
+          method: "DELETE",
+          headers: authHeaders(),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || "Erro ao excluir etiqueta.");
+
+        setAccountLabels((prev) => prev.filter((l) => l.id !== label.id));
+        // A rota já desvinculou a etiqueta no Chatwoot antes de excluí-la;
+        // aqui só espelhamos isso na UI, sem recarregar tudo.
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.labels.includes(label.title)
+              ? { ...c, labels: c.labels.filter((t) => t !== label.title) }
+              : c
+          )
+        );
+        setContactLabels((prev) => prev.filter((t) => t !== label.title));
+
+        if (data?.unlinked?.contactSweepFailed) {
+          setError(
+            `Etiqueta "${label.title}" excluída, mas não foi possível removê-la ` +
+              `automaticamente dos contatos. Verifique no Chatwoot.`
+          );
+        }
+      } catch (e: any) {
+        setError(e?.message || "Erro ao excluir etiqueta.");
+        throw e;
+      }
+    },
+    [accessToken, authHeaders]
+  );
+
+  // Aplicar etiquetas a um contato (lista separada da conversa).
+  const applyContactLabels = useCallback(
+    async (contactId: number, labels: string[]) => {
+      if (!accessToken) return;
+      try {
+        const res = await fetch(`/api/chatwoot/contacts/${contactId}/labels`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ labels }),
+        });
+        const data = await res.json();
+        if (!res.ok)
+          throw new Error(data?.error || "Erro ao salvar etiquetas do contato.");
+        setContactLabels((data.labels as string[]) ?? labels);
+      } catch (e: any) {
+        setError(e?.message || "Erro ao salvar etiquetas do contato.");
         throw e;
       }
     },
@@ -460,6 +587,36 @@ export function useChatwoot() {
       })
       .catch(() => {});
   }, [accessToken, authHeaders]);
+
+  // Etiquetas do contato da conversa selecionada.
+  const selectedContactId =
+    conversations.find((c) => c.id === selectedId)?.contactId ?? null;
+
+  useEffect(() => {
+    if (!accessToken || !selectedContactId) {
+      setContactLabels([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingContactLabels(true);
+    fetch(`/api/chatwoot/contacts/${selectedContactId}/labels`, {
+      headers: authHeaders(),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        setContactLabels(Array.isArray(d?.labels) ? (d.labels as string[]) : []);
+      })
+      .catch(() => {
+        if (!cancelled) setContactLabels([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingContactLabels(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, selectedContactId, authHeaders]);
 
   // Realtime: novas mensagens do cartório.
   useEffect(() => {
@@ -528,8 +685,14 @@ export function useChatwoot() {
     sending,
     changeConversationStatus,
     toggleMute,
+    markAsUnread,
     accountLabels,
     applyLabels,
+    createLabel,
+    deleteLabel,
+    contactLabels,
+    loadingContactLabels,
+    applyContactLabels,
     updateContact,
     error,
     reloadConversations: () =>
