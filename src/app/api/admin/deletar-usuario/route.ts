@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/auth-helpers";
+import { registrarLogServidor } from "@/lib/system-log-server";
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -80,6 +81,27 @@ export async function DELETE(request: NextRequest) {
       // Não reverte o delete do banco — auth pode já não ter o registro
       console.error("[DELETAR-USUARIO] Erro ao remover do Auth:", authError.message);
     }
+
+    await registrarLogServidor(
+      admin,
+      {
+        acao: "usuario.excluido",
+        categoria: "usuario",
+        descricao: `Usuário "${usuario.name || usuario.email}" excluído`,
+        usuarioId: authResult.id,
+        usuarioNome: authResult.profile?.name ?? null,
+        usuarioEmail: authResult.email,
+        usuarioPerfil: authResult.userRoles.join(", "),
+        cartorioId: authResult.profile?.cartorio_id ?? null,
+        entidade: "users",
+        entidadeId: userId,
+        metadata: {
+          alvo: { id: userId, email: usuario.email, roles },
+          removido_do_auth: !authError,
+        },
+      },
+      request
+    );
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error: any) {

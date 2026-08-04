@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { putCartorioUpdate } from "@/lib/admin-cartorio-api";
 import { patchProtocoloUpdate } from "@/lib/protocolo-update-api";
 import { canAlterarStatusProtocolo } from "@/lib/protocolo-permissoes";
+import { registrarLog } from "@/lib/system-log";
 
 // Dados mockados para evitar chamadas de API durante o build
 const mockCartorios = [
@@ -126,6 +127,14 @@ export function useCartorios(cartorioId?: string) {
       }
 
       setCartorios((prev) => [data, ...prev]);
+      registrarLog({
+        acao: "cartorio.criado",
+        categoria: "cartorio",
+        descricao: `Cartório "${cartorio?.nome ?? ""}" criado`,
+        entidade: "cartorios",
+        entidadeId: (data as any)?.id ?? null,
+        metadata: { cnpj: cartorio?.cnpj ?? null },
+      });
       toast.success("Cartório criado com sucesso!");
       return data;
     } catch (error: any) {
@@ -160,7 +169,15 @@ export function useCartorios(cartorioId?: string) {
         throw error;
       }
 
+      const removido = cartorios.find((c) => c.id === id);
       setCartorios((prev) => prev.filter((c) => c.id !== id));
+      registrarLog({
+        acao: "cartorio.excluido",
+        categoria: "cartorio",
+        descricao: `Cartório "${removido?.nome ?? id}" removido`,
+        entidade: "cartorios",
+        entidadeId: id,
+      });
       toast.success("Cartório removido com sucesso!");
     } catch (error: any) {
       toast.error("Erro ao remover cartório: " + error.message);
@@ -291,6 +308,21 @@ export function useProtocolos(cartorioId?: string) {
       console.log("Protocolo criado com sucesso:", data);
       setProtocolos((prev) => [data, ...prev]);
 
+      registrarLog({
+        acao: "protocolo.criado",
+        categoria: "protocolo",
+        descricao: `Protocolo ${protocolo.protocolo} criado para ${protocolo.solicitante}`,
+        entidade: "protocolos",
+        entidadeId: (data as any)?.id ?? null,
+        cartorioId: protocolo.cartorio_id ?? null,
+        metadata: {
+          protocolo: protocolo.protocolo,
+          demanda: protocolo.demanda,
+          status: protocolo.status,
+          servicos: protocolo.servicos,
+        },
+      });
+
       // Verificar se algum serviço tem vencimento nos próximos 2 dias e disparar webhook
       try {
         // Buscar dados do cartório (incluindo ZDG e WhatsApp)
@@ -328,11 +360,22 @@ export function useProtocolos(cartorioId?: string) {
 
               const hojeTimestamp = hoje.getTime();
               const proximos2DiasTimestamp = proximos2Dias.getTime();
-              const dataCriacaoProtocolo = new Date(data.created_at);
+              // Prazo condicionado a status: a contagem vale a partir de
+              // prazo_iniciado_em; sem ele (e sem prazo definido) não há
+              // vencimento a notificar ainda.
+              const prazoNaoIniciado =
+                !data.prazo_iniciado_em && !data.prazo_execucao;
+              const dataCriacaoProtocolo = new Date(
+                data.prazo_iniciado_em || data.created_at
+              );
               dataCriacaoProtocolo.setHours(0, 0, 0, 0);
 
               // Processar cada serviço do protocolo
-              if (protocolo.servicos && Array.isArray(protocolo.servicos)) {
+              if (
+                !prazoNaoIniciado &&
+                protocolo.servicos &&
+                Array.isArray(protocolo.servicos)
+              ) {
                 for (const nomeServico of protocolo.servicos) {
                   const servico = servicosMap.get(nomeServico.toLowerCase().trim());
 
@@ -717,10 +760,13 @@ export function useProtocolos(cartorioId?: string) {
         data = directData;
       }
 
+      // Auditoria: guarda o resumo das mudanças para o log do sistema
+      const mudancasAuditoria: string[] = [];
+
       // Registrar histórico para qualquer alteração
       if (protocoloAtual) {
         try {
-          const mudancas = [];
+          const mudancas = mudancasAuditoria;
 
           // Verificar mudanças de status
           if (updates.status && protocoloAtual.status !== updates.status) {
@@ -832,6 +878,10 @@ export function useProtocolos(cartorioId?: string) {
             mudancas.push(`Prazo de execução alterado`);
           }
 
+          if (updates.prazo_iniciado_em && !protocoloAtual.prazo_iniciado_em) {
+            mudancas.push(`Contagem do prazo iniciada`);
+          }
+
           // Se houve mudanças, registrar no histórico
           if (mudancas.length > 0) {
             await supabase.from("historico_protocolos").insert([
@@ -854,6 +904,35 @@ export function useProtocolos(cartorioId?: string) {
       }
 
       setProtocolos((prev) => prev.map((p) => (p.id === id ? data : p)));
+
+      const houveMudancaStatus =
+        updates.status && protocoloAtual?.status !== updates.status;
+      registrarLog({
+        acao: houveMudancaStatus
+          ? "protocolo.status_alterado"
+          : "protocolo.atualizado",
+        categoria: "protocolo",
+        descricao: houveMudancaStatus
+          ? `Status do protocolo ${
+              protocoloAtual?.protocolo ?? id
+            } alterado de "${protocoloAtual?.status ?? "—"}" para "${
+              updates.status
+            }"`
+          : `Protocolo ${protocoloAtual?.protocolo ?? id} atualizado${
+              mudancasAuditoria.length
+                ? `: ${mudancasAuditoria.join(", ")}`
+                : ""
+            }`,
+        entidade: "protocolos",
+        entidadeId: id,
+        cartorioId: protocoloAtual?.cartorio_id ?? (data as any)?.cartorio_id ?? null,
+        metadata: {
+          protocolo: protocoloAtual?.protocolo ?? null,
+          mudancas: mudancasAuditoria,
+          campos_alterados: Object.keys(updates || {}),
+        },
+      });
+
       toast.success("Protocolo atualizado com sucesso!");
     } catch (error: any) {
       toast.error("Erro ao atualizar protocolo: " + error.message);
@@ -869,7 +948,19 @@ export function useProtocolos(cartorioId?: string) {
         throw error;
       }
 
+      const removido = protocolos.find((p) => p.id === id);
       setProtocolos((prev) => prev.filter((p) => p.id !== id));
+      registrarLog({
+        acao: "protocolo.excluido",
+        categoria: "protocolo",
+        descricao: `Protocolo ${removido?.protocolo ?? id} removido${
+          removido?.solicitante ? ` (${removido.solicitante})` : ""
+        }`,
+        entidade: "protocolos",
+        entidadeId: id,
+        cartorioId: removido?.cartorio_id ?? null,
+        metadata: { protocolo: removido?.protocolo ?? null },
+      });
       toast.success("Protocolo removido com sucesso!");
     } catch (error: any) {
       toast.error("Erro ao remover protocolo: " + error.message);
@@ -1046,6 +1137,15 @@ export function useUsuarios(cartorioId?: string) {
       }
 
       setUsuarios((prev) => [data, ...prev]);
+      registrarLog({
+        acao: "usuario.criado",
+        categoria: "usuario",
+        descricao: `Usuário "${cleanUsuarioData.name}" (${cleanUsuarioData.email}) criado`,
+        entidade: "users",
+        entidadeId: (data as any)?.id ?? null,
+        cartorioId: cleanUsuarioData.cartorio_id ?? null,
+        metadata: { roles: cleanUsuarioData.roles },
+      });
       toast.success("Usuário criado com sucesso!");
       return data;
     } catch (error: any) {

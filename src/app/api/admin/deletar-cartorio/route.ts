@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/auth-helpers";
+import { registrarLogServidor } from "@/lib/system-log-server";
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -69,6 +70,26 @@ export async function DELETE(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    await registrarLogServidor(
+      admin,
+      {
+        acao: "cartorio.excluido",
+        categoria: "cartorio",
+        descricao: `Cartório "${cartorio.nome}" removido junto com ${
+          usuariosVinculados?.length ?? 0
+        } usuário(s) vinculado(s)`,
+        usuarioId: authResult.id,
+        usuarioNome: authResult.profile?.name ?? null,
+        usuarioEmail: authResult.email,
+        usuarioPerfil: authResult.userRoles.join(", "),
+        cartorioNome: cartorio.nome,
+        entidade: "cartorios",
+        entidadeId: cartorioId,
+        metadata: { usuarios_removidos: usuariosVinculados?.length ?? 0 },
+      },
+      request
+    );
 
     return NextResponse.json(
       {

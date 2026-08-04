@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/auth-helpers";
+import { registrarLogServidor } from "@/lib/system-log-server";
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -142,6 +143,28 @@ export async function PUT(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    await registrarLogServidor(
+      admin,
+      {
+        acao: "usuario.atualizado",
+        categoria: "usuario",
+        descricao: `Usuário "${usuario?.name || target.email}" atualizado (${Object.keys(dbUpdates).join(", ")})`,
+        usuarioId: authResult.id,
+        usuarioNome: authResult.profile?.name ?? null,
+        usuarioEmail: authResult.email,
+        usuarioPerfil: authResult.userRoles.join(", "),
+        cartorioId: authResult.profile?.cartorio_id ?? null,
+        entidade: "users",
+        entidadeId: id,
+        metadata: {
+          alvo: { id, email: target.email },
+          campos_alterados: Object.keys(dbUpdates),
+          email_alterado: newEmail !== oldEmail,
+        },
+      },
+      request
+    );
 
     return NextResponse.json({ usuario }, { status: 200 });
   } catch (err: unknown) {

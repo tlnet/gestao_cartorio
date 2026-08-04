@@ -26,6 +26,16 @@ export interface ChatwootContact {
   identifier?: string | null;
   additional_attributes?: Record<string, unknown> | null;
   custom_attributes?: Record<string, unknown> | null;
+  contact_inboxes?: Array<{
+    source_id?: string;
+    inbox?: { id?: number };
+  }> | null;
+}
+
+export interface ChatwootInbox {
+  id: number;
+  name: string;
+  channel_type?: string | null;
 }
 
 export interface ChatwootMessage {
@@ -37,6 +47,9 @@ export interface ChatwootMessage {
   status?: string | null; // sent, delivered, read, failed (outgoing)
   sender?: { name?: string | null } | null;
   attachments?: Array<{ data_url?: string; file_type?: string }> | null;
+  // O Chatwoot grava o motivo da falha de entrega em
+  // content_attributes.external_error (não consta na doc pública da API).
+  content_attributes?: Record<string, unknown> | null;
 }
 
 export interface ChatwootConversation {
@@ -450,6 +463,216 @@ export async function updateContact(
     { method: "PUT", body: JSON.stringify(payload) }
   );
   return (data?.payload ?? {}) as ChatwootContact;
+}
+
+/**
+ * Normaliza um telefone para o formato E.164 exigido pelo Chatwoot.
+ * Assume Brasil quando o número vem sem DDI. Retorna null se não der para
+ * montar um número plausível (ex.: faltando DDD).
+ */
+export function normalizePhoneBR(input: string): string | null {
+  const d = (input || "").replace(/\D/g, "");
+  if (!d) return null;
+  if (d.startsWith("55") && d.length >= 12) return `+${d}`;
+  if (d.length === 10 || d.length === 11) return `+55${d}`; // DDD + número
+  if (d.length >= 12) return `+${d}`; // já tem outro DDI
+  return null;
+}
+
+/** Inboxes da conta. */
+export async function listInboxes(
+  config: ChatwootConfig
+): Promise<ChatwootInbox[]> {
+  const data = await chatwootFetch<{ payload?: ChatwootInbox[] }>(
+    config,
+    `/inboxes`
+  );
+  return data?.payload ?? [];
+}
+
+/**
+ * Descobre em qual inbox criar contatos/conversas.
+ * Usa a configurada no cartório; se não houver, só assume automaticamente
+ * quando existe uma única inbox — com várias, escolher seria chutar de qual
+ * número a mensagem sairia.
+ */
+export async function resolveInboxId(
+  config: ChatwootConfig
+): Promise<number> {
+  if (config.inboxId) return Number(config.inboxId);
+
+  const inboxes = await listInboxes(config);
+  if (inboxes.length === 1) return inboxes[0].id;
+  if (inboxes.length === 0) {
+    throw new Error("Nenhuma inbox encontrada no Chatwoot deste cartório.");
+  }
+  throw new Error(
+    "Há mais de uma inbox no Chatwoot. Defina a inbox padrão em Configurações."
+  );
+}
+
+/** Procura um contato já existente pelo telefone (E.164). */
+export async function findContactByPhone(
+  config: ChatwootConfig,
+  phone: string
+): Promise<ChatwootContact | null> {
+  // Filtro estruturado: caminho preferido.
+  try {
+    const data = await chatwootFetch<{ payload?: ChatwootContact[] }>(
+      config,
+      `/contacts/filter`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          payload: [
+            {
+              attribute_key: "phone_number",
+              filter_operator: "equal_to",
+              values: [phone],
+              query_operator: null,
+            },
+          ],
+        }),
+      }
+    );
+    const hit = (data?.payload ?? []).find((c) => c.phone_number === phone);
+    if (hit) return hit;
+  } catch {
+    // cai para a busca textual
+  }
+
+  try {
+    const data = await chatwootFetch<{ payload?: ChatwootContact[] }>(
+      config,
+      `/contacts/search?q=${encodeURIComponent(phone)}`
+    );
+    return (data?.payload ?? []).find((c) => c.phone_number === phone) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Cria um contato na inbox informada. */
+export async function createContact(
+  config: ChatwootConfig,
+  payload: {
+    inboxId: number;
+    name: string;
+    phone: string;
+    email?: string | null;
+  }
+): Promise<ChatwootContact> {
+  const body: Record<string, unknown> = {
+    inbox_id: payload.inboxId,
+    name: payload.name,
+    phone_number: payload.phone,
+  };
+  if (payload.email) body.email = payload.email;
+
+  const data = await chatwootFetch<{
+    payload?: { contact?: ChatwootContact } & ChatwootContact;
+  }>(config, `/contacts`, { method: "POST", body: JSON.stringify(body) });
+
+  // Dependendo da versão vem como payload.contact ou direto em payload.
+  const contact = (data?.payload?.contact ?? data?.payload) as
+    | ChatwootContact
+    | undefined;
+  if (!contact?.id) throw new Error("Chatwoot não retornou o contato criado.");
+  return contact;
+}
+
+/**
+ * Cria o vínculo contato↔inbox, devolvendo o source_id.
+ *
+ * O source_id importa: em inbox do tipo API (que é como a Uazapi cria a inbox
+ * do WhatsApp), o Chatwoot gera um UUID aleatório quando não recebe um valor.
+ * Esse UUID não corresponde a nenhum número, então a ponte não consegue
+ * entregar a mensagem e ela volta como "failed". Por isso passamos o telefone.
+ */
+export async function createContactInbox(
+  config: ChatwootConfig,
+  contactId: number | string,
+  inboxId: number,
+  sourceId?: string
+): Promise<string> {
+  const body: Record<string, unknown> = { inbox_id: inboxId };
+  if (sourceId) body.source_id = sourceId;
+
+  const data = await chatwootFetch<{
+    source_id?: string;
+    payload?: { source_id?: string };
+  }>(config, `/contacts/${contactId}/contact_inboxes`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  const result = data?.source_id ?? data?.payload?.source_id ?? sourceId;
+  if (!result) throw new Error("Chatwoot não retornou o source_id do contato.");
+  return result;
+}
+
+/** Conversas já existentes de um contato. */
+export async function getContactConversations(
+  config: ChatwootConfig,
+  contactId: number | string
+): Promise<ChatwootConversation[]> {
+  const data = await chatwootFetch<{ payload?: ChatwootConversation[] }>(
+    config,
+    `/contacts/${contactId}/conversations`
+  );
+  return data?.payload ?? [];
+}
+
+/** Abre uma nova conversa para um contato. Requer o source_id do contact_inbox. */
+export async function createConversation(
+  config: ChatwootConfig,
+  payload: { sourceId: string; inboxId: number; contactId: number }
+): Promise<number> {
+  const data = await chatwootFetch<{ id?: number; payload?: { id?: number } }>(
+    config,
+    `/conversations`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        source_id: payload.sourceId,
+        inbox_id: payload.inboxId,
+        contact_id: payload.contactId,
+        status: "open",
+      }),
+    }
+  );
+  const id = data?.id ?? data?.payload?.id;
+  if (!id) throw new Error("Chatwoot não retornou a conversa criada.");
+  return id;
+}
+
+/**
+ * Exclui um contato da conta. O Chatwoot remove junto as conversas e mensagens
+ * dele — não há endpoint para apagar conversa isolada.
+ */
+export async function deleteContact(
+  config: ChatwootConfig,
+  contactId: number | string
+): Promise<void> {
+  const url = `${config.baseUrl}/api/v1/accounts/${config.accountId}/contacts/${contactId}`;
+  const headers = {
+    "Content-Type": "application/json",
+    api_access_token: config.token,
+  };
+
+  const res = await fetch(url, { method: "DELETE", headers, cache: "no-store" });
+  if (res.ok) return;
+
+  const text = await res.text().catch(() => "");
+
+  // O Chatwoot apaga o contato de forma assíncrona e, em algumas versões,
+  // ainda devolve 500 ao renderizar a resposta — mesmo tendo excluído.
+  // Confirmamos o estado real antes de reportar erro ao usuário.
+  const check = await fetch(url, { headers, cache: "no-store" }).catch(
+    () => null
+  );
+  if (check?.status === 404) return;
+
+  throw new Error(`Chatwoot API ${res.status}: ${text || res.statusText}`);
 }
 
 /** Histórico de mensagens de uma conversa (ordem cronológica). */

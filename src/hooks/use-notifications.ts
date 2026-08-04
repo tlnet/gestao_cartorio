@@ -3,7 +3,10 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
-import { isStatusConclusao } from "@/lib/status-resolve";
+import {
+  hasStatusInicioPrazo,
+  isStatusConclusao,
+} from "@/lib/status-resolve";
 import { debugLoading } from "@/lib/debug-loading";
 import { CATEGORIA_LABELS } from "@/types";
 
@@ -112,7 +115,10 @@ export const useNotifications = () => {
       let list = (data || []) as unknown as Notificacao[];
       if (roles.includes("financeiro")) {
         list = list.filter((n) => n.tipo === "conta_pagar");
-      } else if (roles.includes("atendente") && !roles.includes("admin")) {
+      } else if (
+        (roles.includes("atendente") || roles.includes("supervisor")) &&
+        !roles.includes("admin")
+      ) {
         list = list.filter((n) => n.tipo !== "conta_pagar");
       }
 
@@ -707,7 +713,7 @@ export const useNotifications = () => {
 
       let protocolosQuery = supabase
         .from("protocolos")
-        .select("id, protocolo, solicitante, prazo_execucao, status, servicos, created_at, demanda, telefone, email")
+        .select("id, protocolo, solicitante, prazo_execucao, prazo_iniciado_em, status, servicos, created_at, demanda, telefone, email")
         .eq("cartorio_id", userData.cartorio_id)
         .neq("status", "Concluído")
         .not("servicos", "is", null);
@@ -730,8 +736,12 @@ export const useNotifications = () => {
 
       // A consulta exclui apenas o status padrão "Concluído"; aqui descartamos
       // também os protocolos em status personalizado marcado como de conclusão
+      // e os que ainda não tiveram a contagem do prazo iniciada.
+      const usaStatusInicioPrazo = hasStatusInicioPrazo(statusPersonalizados);
       const protocolosAbertos = (protocolos as any[]).filter(
-        (p) => !isStatusConclusao(p.status, statusPersonalizados)
+        (p) =>
+          !isStatusConclusao(p.status, statusPersonalizados) &&
+          !(usaStatusInicioPrazo && !p.prazo_iniciado_em)
       );
 
       if (protocolosAbertos.length === 0) {
@@ -762,7 +772,11 @@ export const useNotifications = () => {
       // Criar notificações para protocolos próximos do vencimento
       for (const protocolo of protocolosAbertos) {
         try {
-          const dataCriacaoProtocolo = new Date(protocolo.created_at);
+          // A contagem vale a partir do início registrado; sem a regra de
+          // status de início de prazo, continua valendo a data de abertura.
+          const dataCriacaoProtocolo = new Date(
+            protocolo.prazo_iniciado_em || protocolo.created_at
+          );
           dataCriacaoProtocolo.setHours(0, 0, 0, 0);
           const hojeTimestamp = hoje.getTime();
 

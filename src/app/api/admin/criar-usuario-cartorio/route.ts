@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/auth-helpers";
+import { registrarLogServidor } from "@/lib/system-log-server";
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -10,7 +11,7 @@ function getAdminClient() {
   });
 }
 
-const ROLES_VALIDOS = ["admin", "financeiro", "atendente"];
+const ROLES_VALIDOS = ["admin", "supervisor", "financeiro", "atendente"];
 
 export async function POST(request: NextRequest) {
   try {
@@ -110,6 +111,25 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    await registrarLogServidor(
+      admin,
+      {
+        acao: "usuario.criado",
+        categoria: "usuario",
+        descricao: `Usuário "${name}" (${email}) criado no cartório ${cartorio.nome} com perfil ${role}`,
+        usuarioId: authResult.id,
+        usuarioNome: authResult.profile?.name ?? null,
+        usuarioEmail: authResult.email,
+        usuarioPerfil: authResult.userRoles.join(", "),
+        cartorioId: cartorio_id,
+        cartorioNome: cartorio.nome,
+        entidade: "users",
+        entidadeId: authUser.id,
+        metadata: { alvo: { id: authUser.id, email }, role },
+      },
+      request
+    );
 
     return NextResponse.json(
       {

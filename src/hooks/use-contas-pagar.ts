@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
 import { debugLoading } from "@/lib/debug-loading";
+import { registrarLog } from "@/lib/system-log";
 import type {
   ContaPagar,
   StatusConta,
@@ -560,6 +561,18 @@ export const useContasPagar = (cartorioId?: string) => {
         }
       }
 
+      registrarLog({
+        acao: "conta.criada",
+        categoria: "conta",
+        descricao: `Conta a pagar "${contaData.descricao}" criada`,
+        entidade: "contas_pagar",
+        entidadeId: (novaConta as any)?.id ?? null,
+        cartorioId: (novaConta as any)?.cartorioId ?? null,
+        metadata: {
+          valor: (contaData as any)?.valor ?? null,
+          fornecedor: (contaData as any)?.fornecedor ?? null,
+        },
+      });
       toast.success("Conta criada com sucesso!");
       return novaConta;
     } catch (err) {
@@ -633,6 +646,15 @@ export const useContasPagar = (cartorioId?: string) => {
       );
       calcularResumo(novasContas);
 
+      registrarLog({
+        acao: "conta.atualizada",
+        categoria: "conta",
+        descricao: `Conta a pagar "${contaAtualizada.descricao}" atualizada`,
+        entidade: "contas_pagar",
+        entidadeId: id,
+        cartorioId: (contaAtualizada as any).cartorioId ?? null,
+        metadata: { campos_alterados: Object.keys(updates || {}) },
+      });
       toast.success("Conta atualizada com sucesso!");
       return contaAtualizada;
     } catch (err) {
@@ -670,6 +692,18 @@ export const useContasPagar = (cartorioId?: string) => {
       );
       calcularResumo(novasContas);
 
+      registrarLog({
+        acao: "conta.paga",
+        categoria: "conta",
+        descricao: `Conta "${contaAtualizada.descricao}" marcada como paga`,
+        entidade: "contas_pagar",
+        entidadeId: id,
+        cartorioId: (contaAtualizada as any).cartorioId ?? null,
+        metadata: {
+          valor: (contaAtualizada as any).valor ?? null,
+          data_pagamento: formatDateForDB(dataPagamento || new Date()),
+        },
+      });
       toast.success("Conta marcada como paga!");
       return contaAtualizada;
     } catch (err) {
@@ -691,9 +725,18 @@ export const useContasPagar = (cartorioId?: string) => {
 
       if (error) throw error;
 
+      const removida = contas.find((conta) => conta.id === id);
       setContas((prev) => prev.filter((conta) => conta.id !== id));
       calcularResumo(contas.filter((conta) => conta.id !== id));
 
+      registrarLog({
+        acao: "conta.excluida",
+        categoria: "conta",
+        descricao: `Conta a pagar "${removida?.descricao ?? id}" excluída`,
+        entidade: "contas_pagar",
+        entidadeId: id,
+        cartorioId: (removida as any)?.cartorioId ?? null,
+      });
       toast.success("Conta excluída com sucesso!");
     } catch (err) {
       const errorMessage =

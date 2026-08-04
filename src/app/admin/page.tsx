@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import Link from "next/link";
 import MainLayout from "@/components/layout/main-layout";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useCartorios, useUsuarios } from "@/hooks/use-supabase";
@@ -48,6 +49,7 @@ import {
   EyeOff,
   Pencil,
   Plus,
+  ScrollText,
   ShieldCheck,
   Trash2,
   UserPlus,
@@ -237,6 +239,7 @@ export default function AdminPage() {
     switch (role) {
       case "admin_geral": return "Super Adm";
       case "admin":       return "Administrador";
+      case "supervisor":  return "Supervisor";
       case "financeiro":  return "Financeiro";
       case "atendente":   return "Atendente";
       default:            return role;
@@ -247,6 +250,7 @@ export default function AdminPage() {
     switch (role) {
       case "admin_geral": return "bg-red-100 text-red-800";
       case "admin":       return "bg-purple-100 text-purple-800";
+      case "supervisor":  return "bg-blue-100 text-blue-800";
       case "financeiro":  return "bg-amber-100 text-amber-800";
       case "atendente":   return "bg-green-100 text-green-800";
       default:            return "bg-gray-100 text-gray-800";
@@ -664,6 +668,15 @@ export default function AdminPage() {
         subtitle="Visão completa dos cartórios e gerenciamento global do sistema"
       >
         <div className="space-y-6">
+
+          <div className="flex justify-end">
+            <Link href="/admin/logs">
+              <Button variant="outline" size="sm">
+                <ScrollText className="mr-2 h-4 w-4" />
+                Logs do Sistema
+              </Button>
+            </Link>
+          </div>
 
           {/* KPIs */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1445,6 +1458,7 @@ export default function AdminPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="admin">Administrador</SelectItem>
+                    <SelectItem value="supervisor">Supervisor</SelectItem>
                     <SelectItem value="financeiro">Financeiro</SelectItem>
                     <SelectItem value="atendente">Atendente</SelectItem>
                   </SelectContent>
@@ -1568,7 +1582,7 @@ export default function AdminPage() {
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-4">
-                    {(["admin", "atendente", "financeiro"] as const).map((r) => (
+                    {(["admin", "supervisor", "atendente", "financeiro"] as const).map((r) => (
                       <div key={r} className="flex items-center space-x-2">
                         <Checkbox
                           id={`edit-role-${r}`}

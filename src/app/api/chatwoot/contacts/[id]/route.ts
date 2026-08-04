@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveCartorioFromRequest } from "@/lib/chatwoot-auth";
-import { getChatwootConfig, getContact, updateContact } from "@/lib/chatwoot";
+import {
+  getChatwootConfig,
+  getContact,
+  updateContact,
+  deleteContact,
+} from "@/lib/chatwoot";
 
 /** GET /api/chatwoot/contacts/{id} -> detalhes do contato */
 export async function GET(
@@ -53,6 +58,30 @@ export async function PUT(
   } catch (e: any) {
     return NextResponse.json(
       { error: e?.message || "Erro ao atualizar contato." },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/chatwoot/contacts/{id}
+ * Remove o contato e, junto com ele, suas conversas e mensagens.
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const auth = await resolveCartorioFromRequest(request);
+    if (auth instanceof NextResponse) return auth;
+
+    const { id } = await params;
+    const config = await getChatwootConfig(auth.cartorioId);
+    await deleteContact(config, id);
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: e?.message || "Erro ao excluir contato." },
       { status: 500 }
     );
   }

@@ -63,6 +63,35 @@ export function isStatusConclusao(
   return findStatusPersonalizadoMatch(status, list)?.is_conclusao === true;
 }
 
+/**
+ * Indica se o status dá início à contagem do prazo do protocolo.
+ *
+ * Só personalizados marcados com `is_inicio_prazo` na tela de configurações
+ * disparam a contagem — não há status padrão com esse papel.
+ */
+export function isStatusInicioPrazo(
+  status: string,
+  list: StatusPersonalizado[]
+): boolean {
+  if (!status?.trim()) return false;
+  return findStatusPersonalizadoMatch(status, list)?.is_inicio_prazo === true;
+}
+
+/** Nomes dos status que iniciam a contagem do prazo (ordem do cartório). */
+export function getStatusInicioPrazoNomes(
+  list: StatusPersonalizado[]
+): string[] {
+  return list.filter((s) => s.is_inicio_prazo === true).map((s) => s.nome);
+}
+
+/**
+ * O cartório usa prazo condicionado a status? Quando nenhum status é marcado,
+ * o prazo segue contando a partir da data de abertura (comportamento antigo).
+ */
+export function hasStatusInicioPrazo(list: StatusPersonalizado[]): boolean {
+  return list.some((s) => s.is_inicio_prazo === true);
+}
+
 /** Cor do indicador (sempre valor CSS válido para style.backgroundColor). */
 export function resolveStatusDotColor(
   status: string,

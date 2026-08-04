@@ -7,6 +7,7 @@ import {
   isAdmin as checkIsAdmin,
   isSuperAdmin as checkIsSuperAdmin,
   isAtendente as checkIsAtendente,
+  isSupervisor as checkIsSupervisor,
   isFinanceiro as checkIsFinanceiro,
   getPermissoes
 } from "@/types";
@@ -58,6 +59,11 @@ export function usePermissions() {
   const isAtendente = userRoles?.includes("atendente") ?? checkIsAtendente(userType);
 
   /**
+   * Verifica se o usuário tem o role supervisor
+   */
+  const isSupervisor = userRoles?.includes("supervisor") ?? checkIsSupervisor(userType);
+
+  /**
    * Verifica se o usuário tem o role financeiro
    */
   const isFinanceiro = userRoles?.includes("financeiro") ?? checkIsFinanceiro(userType);
@@ -90,6 +96,8 @@ export function usePermissions() {
     isSuperAdmin,
     /** Verifica se é atendente */
     isAtendente,
+    /** Verifica se é supervisor */
+    isSupervisor,
     /** Verifica se é financeiro */
     isFinanceiro,
     /** Verifica se tem uma permissão específica */

@@ -1,7 +1,7 @@
 import { isAdmin, type TipoUsuario } from "@/types";
 
 /**
- * Admin / Super Adm podem alterar status de qualquer protocolo.
+ * Admin / Super Adm / Supervisor podem alterar status de qualquer protocolo.
  * Demais usuários (ex.: atendente) só se forem o responsável pelo serviço.
  */
 export function canAlterarStatusProtocolo(params: {
@@ -19,7 +19,11 @@ export function canAlterarStatusProtocolo(params: {
         ? [userType]
         : [];
 
-  if (roles.some((r) => isAdmin(r)) || isAdmin(userType)) {
+  if (
+    roles.some((r) => isAdmin(r) || r === "supervisor") ||
+    isAdmin(userType) ||
+    userType === "supervisor"
+  ) {
     return true;
   }
 

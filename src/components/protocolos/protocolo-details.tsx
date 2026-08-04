@@ -44,6 +44,10 @@ import { ptBR } from "date-fns/locale";
 import { useHistoricoProtocolos } from "@/hooks/use-historico-protocolos";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
 import { isStatusConclusao } from "@/lib/status-resolve";
+import {
+  descreverAguardandoInicioPrazo,
+  resolvePrazoProtocolo,
+} from "@/lib/prazo-protocolo";
 import AddCommentForm from "./add-comment-form";
 import HistoricoFallback from "./historico-fallback";
 import { ProtocoloDocumentosDialog } from "./protocolo-documentos-dialog";
@@ -76,6 +80,8 @@ interface ProtocoloDetailsProps {
     email?: string;
     status: string;
     prazoExecucao: string;
+    /** Data em que a contagem do prazo passou a valer (null = ainda não iniciada) */
+    prazoIniciadoEm?: string | null;
     observacao?: string;
     cartorio_id?: string;
   };
@@ -99,6 +105,31 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
   } = useHistoricoProtocolos(protocolo.id);
 
   const { statusPersonalizados } = useStatusPersonalizados();
+
+  // Prazo condicionado a status: enquanto o status de início não chega, o
+  // protocolo não tem prazo válido para exibir.
+  const prazoInfo = React.useMemo(() => {
+    const info = resolvePrazoProtocolo(
+      {
+        status: protocolo.status,
+        created_at: protocolo.dataAbertura,
+        prazo_iniciado_em: protocolo.prazoIniciadoEm,
+        prazo_execucao: protocolo.prazoExecucao,
+      },
+      statusPersonalizados
+    );
+    return {
+      statusInicioNomes: info.statusInicioNomes,
+      aguardandoInicio: !protocolo.prazoExecucao && !info.iniciado,
+      iniciadoEm: protocolo.prazoIniciadoEm || null,
+    };
+  }, [
+    protocolo.status,
+    protocolo.dataAbertura,
+    protocolo.prazoIniciadoEm,
+    protocolo.prazoExecucao,
+    statusPersonalizados,
+  ]);
 
   const [notificarOpen, setNotificarOpen] = React.useState(false);
 
@@ -393,7 +424,15 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
 
       // Prazo de execução
       doc.text("Prazo de Execucao:", 20, yPosition);
-      doc.text(formatDateForDisplay(protocolo.prazoExecucao), 50, yPosition);
+      doc.text(
+        prazoInfo.aguardandoInicio
+          ? removerAcentos(
+              descreverAguardandoInicioPrazo(prazoInfo.statusInicioNomes)
+            )
+          : formatDateForDisplay(protocolo.prazoExecucao),
+        50,
+        yPosition
+      );
       yPosition += 8;
 
       // Observações
@@ -718,8 +757,18 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
                     </label>
                     <p className="text-sm flex items-center gap-1">
                       <Clock className="h-4 w-4" />
-                      {formatDateForDisplay(protocolo.prazoExecucao)}
+                      {prazoInfo.aguardandoInicio
+                        ? descreverAguardandoInicioPrazo(
+                            prazoInfo.statusInicioNomes
+                          )
+                        : formatDateForDisplay(protocolo.prazoExecucao)}
                     </p>
+                    {prazoInfo.iniciadoEm && (
+                      <p className="text-xs text-gray-500">
+                        Contagem iniciada em{" "}
+                        {formatDateForDisplay(prazoInfo.iniciadoEm)}
+                      </p>
+                    )}
                   </div>
                 </div>
 

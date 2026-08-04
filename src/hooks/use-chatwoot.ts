@@ -37,6 +37,8 @@ export interface ChatMessage {
   senderName: string | null;
   createdAt: number; // epoch ms
   attachments: ChatAttachment[] | null;
+  /** Motivo da falha de entrega, quando status === "failed". */
+  errorMessage: string | null;
 }
 
 export interface ChatLabel {
@@ -74,6 +76,7 @@ interface RawMessage {
   status?: string | null;
   sender?: { name?: string | null } | null;
   attachments?: ChatAttachment[] | null;
+  content_attributes?: Record<string, unknown> | null;
 }
 
 function normalizeConversation(c: RawConversation): ChatConversation {
@@ -97,6 +100,13 @@ function normalizeConversation(c: RawConversation): ChatConversation {
   };
 }
 
+/** Extrai o motivo da falha que o Chatwoot guarda em content_attributes. */
+function extractError(attrs: Record<string, unknown> | null | undefined) {
+  const raw = attrs?.external_error;
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
+  return null;
+}
+
 function normalizeApiMessage(m: RawMessage): ChatMessage {
   return {
     id: m.id,
@@ -107,6 +117,7 @@ function normalizeApiMessage(m: RawMessage): ChatMessage {
     senderName: m.sender?.name ?? null,
     createdAt: (m.created_at || 0) * 1000,
     attachments: m.attachments ?? null,
+    errorMessage: extractError(m.content_attributes),
   };
 }
 
@@ -530,6 +541,83 @@ export function useChatwoot() {
     [accessToken, authHeaders]
   );
 
+  // Inicia conversa com um número novo: a mensagem sai pela Uazapi e a
+  // conversa aparece no Chatwoot em seguida.
+  const startConversation = useCallback(
+    async (payload: {
+      name: string;
+      phone: string;
+      message: string;
+      email?: string;
+    }) => {
+      if (!accessToken) return null;
+      try {
+        const res = await fetch("/api/chatwoot/contacts", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || "Erro ao iniciar conversa.");
+
+        // A conversa pode nascer "open" ou ser uma já existente em outro
+        // status: alinhamos a aba para que ela apareça na lista.
+        const status: ConversationStatus =
+          data.status === "resolved" || data.status === "pending"
+            ? data.status
+            : "open";
+        setStatusFilter(status);
+        statusFilterRef.current = status;
+        await loadConversations({ status, page: 1 });
+
+        // conversationId pode vir null: a mensagem foi enviada, mas o Chatwoot
+        // ainda não registrou a conversa. A lista já foi recarregada.
+        if (data.conversationId) {
+          selectConversation(data.conversationId as number);
+        }
+
+        return data as {
+          sent: boolean;
+          phone: string;
+          contactId: number | null;
+          conversationId: number | null;
+        };
+      } catch (e: any) {
+        setError(e?.message || "Erro ao iniciar conversa.");
+        throw e;
+      }
+    },
+    [accessToken, authHeaders, loadConversations, selectConversation]
+  );
+
+  // Exclui o contato — e com ele as conversas e mensagens no Chatwoot.
+  const deleteContact = useCallback(
+    async (contactId: number) => {
+      if (!accessToken) return;
+      try {
+        const res = await fetch(`/api/chatwoot/contacts/${contactId}`, {
+          method: "DELETE",
+          headers: authHeaders(),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || "Erro ao excluir contato.");
+
+        setSelectedId(null);
+        setMessages([]);
+        setConversations((prev) =>
+          prev.filter((c) => c.contactId !== contactId)
+        );
+        // Confirma contra o servidor: o Chatwoot apaga as conversas de forma
+        // assíncrona, então a lista local pode não refletir tudo.
+        await loadConversations({ status: statusFilterRef.current, page: 1 });
+      } catch (e: any) {
+        setError(e?.message || "Erro ao excluir contato.");
+        throw e;
+      }
+    },
+    [accessToken, authHeaders, loadConversations]
+  );
+
   // Atualizar dados do contato.
   const updateContact = useCallback(
     async (
@@ -652,6 +740,7 @@ export function useChatwoot() {
               senderName: row.sender_name,
               createdAt: new Date(row.created_at).getTime(),
               attachments: row.attachments,
+              errorMessage: null,
             };
             setMessages((prev) =>
               prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]
@@ -693,6 +782,8 @@ export function useChatwoot() {
     contactLabels,
     loadingContactLabels,
     applyContactLabels,
+    startConversation,
+    deleteContact,
     updateContact,
     error,
     reloadConversations: () =>

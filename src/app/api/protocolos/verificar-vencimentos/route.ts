@@ -35,10 +35,20 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      // Status que dão início à contagem do prazo (configuráveis por cartório)
+      const { data: statusCartorio } = await supabase
+        .from("status_personalizados")
+        .select("nome, is_inicio_prazo")
+        .eq("cartorio_id", cartorio.id);
+
+      const usaStatusInicioPrazo = (statusCartorio || []).some(
+        (s: any) => s.is_inicio_prazo === true
+      );
+
       // Buscar protocolos não concluídos do cartório
       const { data: protocolos, error: protocolosError } = await supabase
         .from("protocolos")
-        .select("id, protocolo, demanda, solicitante, cpf_cnpj, telefone, email, servicos, status, prazo_execucao, created_at, cartorio_id")
+        .select("id, protocolo, demanda, solicitante, cpf_cnpj, telefone, email, servicos, status, prazo_execucao, prazo_iniciado_em, created_at, cartorio_id")
         .eq("cartorio_id", cartorio.id)
         .neq("status", "Concluído")
         .not("servicos", "is", null);
@@ -75,7 +85,16 @@ export async function POST(request: NextRequest) {
 
       // Processar cada protocolo
       for (const protocolo of protocolos) {
-        const dataCriacaoProtocolo = new Date(protocolo.created_at);
+        // Prazo condicionado a status: enquanto a contagem não começa, o
+        // protocolo não tem vencimento a notificar.
+        if (usaStatusInicioPrazo && !protocolo.prazo_iniciado_em) {
+          continue;
+        }
+
+        // A contagem vale a partir do início registrado; sem a regra, da abertura.
+        const dataCriacaoProtocolo = new Date(
+          protocolo.prazo_iniciado_em || protocolo.created_at
+        );
         dataCriacaoProtocolo.setHours(0, 0, 0, 0);
 
         // Verificar notificação do prazo de execução do protocolo (se definido)

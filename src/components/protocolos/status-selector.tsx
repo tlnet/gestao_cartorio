@@ -15,15 +15,24 @@ import { toast } from "sonner";
 import {
   buildStatusSelectOptions,
   isStatusConclusao,
+  isStatusInicioPrazo,
   normalizeStatusKey,
   resolveStatusDotColor,
 } from "@/lib/status-resolve";
 import { canAlterarStatusProtocolo } from "@/lib/protocolo-permissoes";
+import { calcularPrazoExecucaoPorServicos } from "@/lib/prazo-protocolo";
+import { formatDateForDatabase } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 
 interface StatusSelectorProps {
   protocoloId: string;
   currentStatus: string;
   responsavelServicoId?: string | null;
+  /** Serviços do protocolo — usados para recalcular o prazo ao iniciar a contagem */
+  servicos?: string[] | null;
+  /** Data em que a contagem do prazo já começou (null = ainda não iniciada) */
+  prazoIniciadoEm?: string | null;
+  cartorioId?: string | null;
   onStatusChange?: (newStatus: string) => void;
   updateProtocoloFn: (id: string, updates: any) => Promise<void>;
   className?: string;
@@ -33,6 +42,9 @@ const StatusSelector: React.FC<StatusSelectorProps> = ({
   protocoloId,
   currentStatus,
   responsavelServicoId,
+  servicos,
+  prazoIniciadoEm,
+  cartorioId,
   onStatusChange,
   updateProtocoloFn,
   className = "",
@@ -47,6 +59,30 @@ const StatusSelector: React.FC<StatusSelectorProps> = ({
     userRoles,
     responsavelServicoId,
   });
+
+  /**
+   * Busca o catálogo de serviços só quando o prazo realmente vai começar —
+   * evita uma query por linha da tabela de protocolos.
+   */
+  const calcularPrazoAoIniciar = async (inicio: Date): Promise<Date | null> => {
+    const nomes = (servicos || []).filter(Boolean);
+    if (nomes.length === 0) return null;
+
+    let query = supabase
+      .from("servicos")
+      .select("nome, prazo_execucao")
+      .eq("ativo", true);
+
+    if (cartorioId) query = query.eq("cartorio_id", cartorioId);
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn("Não foi possível recalcular o prazo de execução:", error);
+      return null;
+    }
+
+    return calcularPrazoExecucaoPorServicos(inicio, nomes, data || []);
+  };
 
   const handleStatusChange = async (newStatus: string) => {
     if (newStatus === currentStatus) return;
@@ -72,6 +108,22 @@ const StatusSelector: React.FC<StatusSelectorProps> = ({
         updateData.data_conclusao = new Date().toISOString();
       } else if (isStatusConclusao(currentStatus ?? "", statusPersonalizados)) {
         updateData.data_conclusao = null;
+      }
+
+      // Prazo condicionado a status: a contagem começa agora e o prazo de
+      // execução passa a valer a partir desta data. Uma vez iniciada, não é
+      // reiniciada por mudanças de status posteriores.
+      if (
+        !prazoIniciadoEm &&
+        isStatusInicioPrazo(newStatus, statusPersonalizados)
+      ) {
+        const inicio = new Date();
+        updateData.prazo_iniciado_em = inicio.toISOString();
+
+        const novoPrazo = await calcularPrazoAoIniciar(inicio);
+        if (novoPrazo) {
+          updateData.prazo_execucao = formatDateForDatabase(novoPrazo);
+        }
       }
 
       await updateProtocoloFn(protocoloId, updateData);

@@ -234,6 +234,27 @@ export async function setChatwootConfig(
   };
 }
 
+/**
+ * Envia uma mensagem de texto pela instância do cartório.
+ *
+ * Usado para iniciar conversa com quem nunca escreveu: enviando por aqui, a
+ * própria Uazapi cria o contato e a conversa no Chatwoot pelo caminho normal
+ * dela, sem depender de montarmos o source_id no formato certo.
+ *
+ * @param number Telefone só com dígitos, incluindo DDI (ex.: 5541999592575).
+ */
+export async function sendText(
+  token: string,
+  number: string,
+  text: string
+): Promise<void> {
+  await uazapiFetch("/send/text", {
+    method: "POST",
+    token,
+    body: { number, text },
+  });
+}
+
 /** Desabilita a integração com o Chatwoot. */
 export async function disableChatwootConfig(token: string): Promise<void> {
   await uazapiFetch("/chatwoot/config", {

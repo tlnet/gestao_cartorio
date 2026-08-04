@@ -55,6 +55,7 @@ import {
   XCircle,
   AlertCircle,
   Tag,
+  Timer,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useN8NConfig } from "@/hooks/use-n8n-config";
@@ -397,6 +398,7 @@ const Configuracoes = () => {
     cor: "#3b82f6",
     ordem: 1,
     is_conclusao: false,
+    is_inicio_prazo: false,
   });
 
   const [servicoForm, setServicoForm] = useState({
@@ -541,6 +543,7 @@ const Configuracoes = () => {
         cor: statusForm.cor,
         ordem: statusForm.ordem,
         is_conclusao: statusForm.is_conclusao,
+        is_inicio_prazo: statusForm.is_inicio_prazo,
       });
 
       setStatusForm({
@@ -548,6 +551,7 @@ const Configuracoes = () => {
         cor: "#3b82f6",
         ordem: statusPersonalizados.length + 1,
         is_conclusao: false,
+        is_inicio_prazo: false,
       });
       setShowStatusDialog(false);
     } catch (error) {
@@ -569,10 +573,17 @@ const Configuracoes = () => {
         cor: statusForm.cor,
         ordem: statusForm.ordem,
         is_conclusao: statusForm.is_conclusao,
+        is_inicio_prazo: statusForm.is_inicio_prazo,
       });
 
       setEditingStatus(null);
-      setStatusForm({ nome: "", cor: "#3b82f6", ordem: 1, is_conclusao: false });
+      setStatusForm({
+        nome: "",
+        cor: "#3b82f6",
+        ordem: 1,
+        is_conclusao: false,
+        is_inicio_prazo: false,
+      });
       setShowEditStatusDialog(false);
     } catch (error) {
       // Erro já tratado no hook
@@ -714,6 +725,7 @@ const Configuracoes = () => {
       cor: status.cor,
       ordem: status.ordem,
       is_conclusao: status.is_conclusao === true,
+      is_inicio_prazo: status.is_inicio_prazo === true,
     });
     setShowEditStatusDialog(true);
   };
@@ -1427,6 +1439,29 @@ const Configuracoes = () => {
                           Concluídos.
                         </p>
                       </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="flex items-center space-x-2">
+                          <Switch
+                            id="inicioPrazoStatus"
+                            checked={statusForm.is_inicio_prazo}
+                            onCheckedChange={(checked) =>
+                              setStatusForm((prev) => ({
+                                ...prev,
+                                is_inicio_prazo: checked,
+                              }))
+                            }
+                          />
+                          <Label htmlFor="inicioPrazoStatus">
+                            Status de início de prazo
+                          </Label>
+                        </div>
+                        <p className="text-sm text-gray-500 mt-2">
+                          Ao ativar, a contagem do prazo dos protocolos só
+                          começa quando eles recebem este status (ex.:
+                          &quot;Orçamento Pago&quot;). Até lá o protocolo fica
+                          como &quot;Prazo não iniciado&quot;.
+                        </p>
+                      </div>
                       <Button className="w-full" onClick={handleAddStatus}>
                         Adicionar Status
                       </Button>
@@ -1448,6 +1483,7 @@ const Configuracoes = () => {
                     <TableHead>Cor</TableHead>
                     <TableHead>Preview</TableHead>
                     <TableHead>Conclusão</TableHead>
+                    <TableHead>Início do prazo</TableHead>
                     <TableHead>Ações</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1471,6 +1507,9 @@ const Configuracoes = () => {
                           <Skeleton className="h-6 w-16" />
                         </TableCell>
                         <TableCell>
+                          <Skeleton className="h-6 w-16" />
+                        </TableCell>
+                        <TableCell>
                           <Skeleton className="h-8 w-16" />
                         </TableCell>
                       </TableRow>
@@ -1478,7 +1517,7 @@ const Configuracoes = () => {
                   ) : statusPersonalizados.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={6}
+                        colSpan={7}
                         className="text-center py-8 text-gray-500"
                       >
                         <div className="flex flex-col items-center gap-2">
@@ -1515,6 +1554,16 @@ const Configuracoes = () => {
                               <Badge className="bg-green-100 text-green-800 border-green-200">
                                 <CheckCircle className="mr-1 h-3 w-3" />
                                 Conclui
+                              </Badge>
+                            ) : (
+                              <span className="text-sm text-gray-400">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {status.is_inicio_prazo ? (
+                              <Badge className="bg-blue-100 text-blue-800 border-blue-200">
+                                <Timer className="mr-1 h-3 w-3" />
+                                Inicia prazo
                               </Badge>
                             ) : (
                               <span className="text-sm text-gray-400">—</span>
@@ -2810,6 +2859,28 @@ const Configuracoes = () => {
                 <p className="text-sm text-gray-500 mt-2">
                   Ao ativar, os protocolos que receberem este status são
                   tratados como concluídos e vão para a aba de Concluídos.
+                </p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="editInicioPrazoStatus"
+                    checked={statusForm.is_inicio_prazo}
+                    onCheckedChange={(checked) =>
+                      setStatusForm((prev) => ({
+                        ...prev,
+                        is_inicio_prazo: checked,
+                      }))
+                    }
+                  />
+                  <Label htmlFor="editInicioPrazoStatus">
+                    Status de início de prazo
+                  </Label>
+                </div>
+                <p className="text-sm text-gray-500 mt-2">
+                  Ao ativar, a contagem do prazo dos protocolos só começa quando
+                  eles recebem este status (ex.: &quot;Orçamento Pago&quot;).
+                  Até lá o protocolo fica como &quot;Prazo não iniciado&quot;.
                 </p>
               </div>
               <Button className="w-full" onClick={handleEditStatus}>

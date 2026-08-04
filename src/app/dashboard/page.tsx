@@ -231,6 +231,7 @@ const Dashboard = () => {
       status: protocolo.status,
       dataAbertura: protocolo.created_at,
       prazoExecucao: protocolo.prazo_execucao,
+      prazoIniciadoEm: protocolo.prazo_iniciado_em ?? null,
       observacao: protocolo.observacao || "Sem observações",
       apresentante: protocolo.apresentante || "",
       responsavel_servico_id: protocolo.responsavel_servico_id ?? null,
@@ -273,6 +274,7 @@ const Dashboard = () => {
       dataAbertura,
       responsavelServicoId: protocolo.responsavel_servico_id || "",
       entidadeId: protocolo.entidade_id || "",
+      prazo_iniciado_em: protocolo.prazoIniciadoEm ?? null,
     };
     setEditingProtocolo(protocoloEditavel);
     setShowProtocoloForm(true);
@@ -762,6 +764,9 @@ const Dashboard = () => {
                           observacao: data.observacao,
                           prazo_execucao: (data as any).prazoExecucao
                             ? formatDateForDatabase((data as any).prazoExecucao)
+                            : null,
+                          prazo_iniciado_em: (data as any).prazoIniciadoEm
+                            ? (data as any).prazoIniciadoEm.toISOString()
                             : null,
                           ...(data.dataAbertura
                             ? {

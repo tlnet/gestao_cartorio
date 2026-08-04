@@ -13,6 +13,8 @@ export interface Protocolo {
   email?: string;
   observacao?: string;
   prazoExecucao?: Date;
+  /** Data em que a contagem do prazo passou a valer (null enquanto não iniciada) */
+  prazoIniciadoEm?: Date | null;
   cartorioId: string;
   criadoPor: string;
   atualizadoEm: Date;
@@ -36,10 +38,11 @@ export interface HistoricoProtocolo {
  * Tipos de usuário disponíveis no sistema.
  * - admin_geral: Acesso global ao sistema (todos os cartórios e painel /admin)
  * - admin: Acesso total ao sistema no contexto do cartório
+ * - supervisor: Mesmas funções de atendente, com poder de alterar status de qualquer protocolo
  * - atendente: Acesso limitado às funcionalidades operacionais
  * - financeiro: Acesso apenas a Contas a Pagar e Notificações (apenas de contas a pagar)
  */
-export type TipoUsuario = "admin_geral" | "admin" | "atendente" | "financeiro";
+export type TipoUsuario = "admin_geral" | "admin" | "supervisor" | "atendente" | "financeiro";
 
 /**
  * Rotas protegidas do sistema que requerem permissões específicas
@@ -76,10 +79,8 @@ export const PERMISSOES_POR_TIPO: Record<TipoUsuario, PermissoesUsuario> = {
     podeAcessarConfiguracoes: true,
     podeModificarConfiguracoes: true,
     podeGerenciarPermissoes: true,
-    rotasPermitidas: [
-      "/admin",
-      "/chat",
-    ],
+    // Perfil dedicado ao painel administrativo (inclui /admin/logs por prefixo).
+    rotasPermitidas: ["/admin"],
     rotasBloqueadas: [],
   },
   admin: {
@@ -101,6 +102,23 @@ export const PERMISSOES_POR_TIPO: Record<TipoUsuario, PermissoesUsuario> = {
       "/configuracoes",
     ],
     rotasBloqueadas: [],
+  },
+  supervisor: {
+    podeGerenciarUsuarios: false,
+    podeAcessarConfiguracoes: false,
+    podeModificarConfiguracoes: false,
+    podeGerenciarPermissoes: false,
+    rotasPermitidas: [
+      "/dashboard",
+      "/protocolos",
+      "/chat",
+      "/relatorios",
+      "/ia",
+      "/cnib",
+      "/notificacoes",
+      "/perfil",
+    ],
+    rotasBloqueadas: ["/usuarios", "/configuracoes", "/contas"],
   },
   atendente: {
     podeGerenciarUsuarios: false,
@@ -141,6 +159,13 @@ export function isAdmin(tipo: TipoUsuario | null | undefined): boolean {
  */
 export function isSuperAdmin(tipo: TipoUsuario | null | undefined): boolean {
   return tipo === "admin_geral";
+}
+
+/**
+ * Type guard: verifica se o usuário é supervisor
+ */
+export function isSupervisor(tipo: TipoUsuario | null | undefined): boolean {
+  return tipo === "supervisor";
 }
 
 /**
@@ -214,8 +239,9 @@ export function getPermissoesForRoles(roles: TipoUsuario[] | null | undefined): 
 
 /** Ordem de prioridade para exibição do "tipo principal" (maior = mais importante) */
 const ORDEM_TIPO_PRIORIDADE: Record<TipoUsuario, number> = {
-  admin_geral: 4,
-  admin: 3,
+  admin_geral: 5,
+  admin: 4,
+  supervisor: 3,
   financeiro: 2,
   atendente: 1,
 };
@@ -237,12 +263,12 @@ export function normalizarRoles(role: string | null | undefined, roles: string[]
   if (roles?.length) {
     return roles.filter(
       (r): r is TipoUsuario =>
-        r === "admin_geral" || r === "admin" || r === "atendente" || r === "financeiro"
+        r === "admin_geral" || r === "admin" || r === "supervisor" || r === "atendente" || r === "financeiro"
     );
   }
   if (
     role &&
-    (role === "admin_geral" || role === "admin" || role === "atendente" || role === "financeiro")
+    (role === "admin_geral" || role === "admin" || role === "supervisor" || role === "atendente" || role === "financeiro")
   ) {
     return [role];
   }

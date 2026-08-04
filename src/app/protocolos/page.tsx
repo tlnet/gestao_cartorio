@@ -27,6 +27,10 @@ import {
 } from "@/lib/utils";
 import { isStatusConclusao } from "@/lib/status-resolve";
 import {
+  descreverAguardandoInicioPrazo,
+  resolvePrazoProtocolo,
+} from "@/lib/prazo-protocolo";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -76,6 +80,7 @@ import {
   Trash2,
   X,
   MessageCircle,
+  Timer,
 } from "lucide-react";
 
 const ProtocolosContent = () => {
@@ -205,6 +210,14 @@ const ProtocolosContent = () => {
         return "bg-gray-100 text-gray-800";
     }
   };
+
+  /**
+   * Prazo represado: o cartório usa status de início de prazo e este protocolo
+   * ainda não recebeu nenhum deles — a contagem não vale.
+   */
+  const prazoAguardandoInicio = (protocolo: any) =>
+    !protocolo.prazo_execucao &&
+    !resolvePrazoProtocolo(protocolo, statusPersonalizados).iniciado;
 
   const isPrazoVencendo = (prazo: string) => {
     if (!prazo) return false;
@@ -423,6 +436,9 @@ const ProtocolosContent = () => {
         observacao: data.observacao || null,
         prazo_execucao: data.prazoExecucao
           ? formatDateForDatabase(data.prazoExecucao)
+          : null,
+        prazo_iniciado_em: data.prazoIniciadoEm
+          ? data.prazoIniciadoEm.toISOString()
           : null,
         ...(data.dataAbertura
           ? {
@@ -931,21 +947,40 @@ const ProtocolosContent = () => {
                         {formatDateForDisplay(protocolo.created_at)}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center space-x-2">
-                          <span>
-                            {formatDateForDisplay(protocolo.prazo_execucao)}
-                          </span>
-                          {protocolo.prazo_execucao &&
-                            isPrazoVencendo(protocolo.prazo_execucao) && (
-                              <Clock className="h-4 w-4 text-red-500" />
+                        {prazoAguardandoInicio(protocolo) ? (
+                          <Badge
+                            variant="outline"
+                            className="text-xs text-gray-600"
+                            title={descreverAguardandoInicioPrazo(
+                              resolvePrazoProtocolo(
+                                protocolo,
+                                statusPersonalizados
+                              ).statusInicioNomes
                             )}
-                        </div>
+                          >
+                            <Timer className="mr-1 h-3 w-3" />
+                            Não iniciado
+                          </Badge>
+                        ) : (
+                          <div className="flex items-center space-x-2">
+                            <span>
+                              {formatDateForDisplay(protocolo.prazo_execucao)}
+                            </span>
+                            {protocolo.prazo_execucao &&
+                              isPrazoVencendo(protocolo.prazo_execucao) && (
+                                <Clock className="h-4 w-4 text-red-500" />
+                              )}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <StatusSelector
                           protocoloId={protocolo.id}
                           currentStatus={protocolo.status}
                           responsavelServicoId={protocolo.responsavel_servico_id}
+                          servicos={protocolo.servicos}
+                          prazoIniciadoEm={protocolo.prazo_iniciado_em}
+                          cartorioId={protocolo.cartorio_id}
                           updateProtocoloFn={updateProtocolo}
                           onStatusChange={(newStatus) => {
                             handleStatusChange(protocolo.id, newStatus);
@@ -1175,6 +1210,9 @@ const ProtocolosContent = () => {
                               responsavelServicoId={
                                 protocolo.responsavel_servico_id
                               }
+                              servicos={protocolo.servicos}
+                              prazoIniciadoEm={protocolo.prazo_iniciado_em}
+                              cartorioId={protocolo.cartorio_id}
                               updateProtocoloFn={updateProtocolo}
                               onStatusChange={(newStatus) => {
                                 handleStatusChange(protocolo.id, newStatus);
@@ -1287,8 +1325,8 @@ const ProtocolosContent = () => {
               ...selectedProtocolo,
               cpfCnpj: selectedProtocolo.cpf_cnpj,
               dataAbertura: selectedProtocolo.created_at,
-              prazoExecucao:
-                selectedProtocolo.prazo_execucao || new Date().toISOString(),
+              prazoExecucao: selectedProtocolo.prazo_execucao || "",
+              prazoIniciadoEm: selectedProtocolo.prazo_iniciado_em || null,
             }}
           />
         )}

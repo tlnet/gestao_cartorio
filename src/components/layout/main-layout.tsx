@@ -12,7 +12,7 @@ interface MainLayoutProps {
   children: React.ReactNode;
   title: string;
   subtitle?: string;
-  userType?: "admin_geral" | "admin" | "atendente" | "financeiro";
+  userType?: "admin_geral" | "admin" | "supervisor" | "atendente" | "financeiro";
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({

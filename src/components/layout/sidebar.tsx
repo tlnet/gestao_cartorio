@@ -20,6 +20,7 @@ import {
   FileSearch,
   ShieldCheck,
   MessageSquare,
+  ScrollText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -34,7 +35,7 @@ import { useEffect, useState } from "react";
 import { useCartorioValidation } from "@/hooks/use-cartorio-validation";
 
 interface SidebarProps {
-  userType?: "admin_geral" | "admin" | "atendente" | "financeiro";
+  userType?: "admin_geral" | "admin" | "supervisor" | "atendente" | "financeiro";
 }
 
 const Sidebar: React.FC<SidebarProps> = () => {
@@ -160,6 +161,11 @@ const Sidebar: React.FC<SidebarProps> = () => {
       href: "/admin",
       icon: ShieldCheck,
     },
+    {
+      title: "Logs do Sistema",
+      href: "/admin/logs",
+      icon: ScrollText,
+    },
   ];
 
   const filteredMenuItems = permissionsReady
@@ -181,6 +187,8 @@ const Sidebar: React.FC<SidebarProps> = () => {
         return "Super Adm";
       case "admin":
         return "Administrador";
+      case "supervisor":
+        return "Supervisor";
       case "atendente":
         return "Atendente";
       case "financeiro":
@@ -196,6 +204,8 @@ const Sidebar: React.FC<SidebarProps> = () => {
         return "bg-red-100 text-red-800";
       case "admin":
         return "bg-purple-100 text-purple-800";
+      case "supervisor":
+        return "bg-blue-100 text-blue-800";
       case "atendente":
         return "bg-green-100 text-green-800";
       case "financeiro":

@@ -57,6 +57,7 @@ import {
   User,
   Crown,
   Receipt,
+  ShieldCheck,
   Loader2,
   CheckCircle,
   Copy,
@@ -85,7 +86,7 @@ const usuarioSchema = z.object({
     .string()
     .min(1, "Telefone é obrigatório")
     .refine((value) => isValidPhone(value), "Telefone inválido"),
-  roles: z.array(z.enum(["admin", "atendente", "financeiro"])).min(1, "Selecione ao menos uma permissão"),
+  roles: z.array(z.enum(["admin", "supervisor", "atendente", "financeiro"])).min(1, "Selecione ao menos uma permissão"),
   cartorio_id: z.string().optional(),
   ativo: z.boolean().default(true),
 });
@@ -132,6 +133,7 @@ const GestaoUsuarios = () => {
   const tipoOptions = [
     { value: "todos", label: "Todos os Tipos" },
     { value: "admin", label: "Administrador" },
+    { value: "supervisor", label: "Supervisor" },
     { value: "atendente", label: "Atendente" },
     { value: "financeiro", label: "Financeiro" },
   ];
@@ -146,6 +148,8 @@ const GestaoUsuarios = () => {
     switch (tipo) {
       case "admin":
         return <Crown className="h-4 w-4" />;
+      case "supervisor":
+        return <ShieldCheck className="h-4 w-4" />;
       case "atendente":
         return <User className="h-4 w-4" />;
       case "financeiro":
@@ -159,6 +163,8 @@ const GestaoUsuarios = () => {
     switch (tipo) {
       case "admin":
         return "bg-purple-100 text-purple-800";
+      case "supervisor":
+        return "bg-blue-100 text-blue-800";
       case "atendente":
         return "bg-green-100 text-green-800";
       case "financeiro":
@@ -172,6 +178,8 @@ const GestaoUsuarios = () => {
     switch (tipo) {
       case "admin":
         return "Administrador";
+      case "supervisor":
+        return "Supervisor";
       case "atendente":
         return "Atendente";
       case "financeiro":
@@ -473,7 +481,7 @@ const GestaoUsuarios = () => {
         </div>
 
         {/* Estatísticas */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
@@ -499,6 +507,19 @@ const GestaoUsuarios = () => {
                 {usuarios.filter((u) => (u as any).roles?.includes("admin") || u.role === "admin" || u.tipo === "admin").length}
               </div>
               <p className="text-xs text-muted-foreground">Nível administrador</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Supervisores</CardTitle>
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {usuarios.filter((u) => (u as any).roles?.includes("supervisor") || u.role === "supervisor" || u.tipo === "supervisor").length}
+              </div>
+              <p className="text-xs text-muted-foreground">Nível supervisor</p>
             </CardContent>
           </Card>
 
@@ -769,7 +790,7 @@ const GestaoUsuarios = () => {
                     Selecione uma ou mais permissões. O usuário terá acesso à união das áreas escolhidas.
                   </p>
                   <div className="flex flex-wrap gap-4">
-                    {(["admin", "atendente", "financeiro"] as const).map((r) => (
+                    {(["admin", "supervisor", "atendente", "financeiro"] as const).map((r) => (
                       <div key={r} className="flex items-center space-x-2">
                         <Checkbox
                           id={`role-${r}`}

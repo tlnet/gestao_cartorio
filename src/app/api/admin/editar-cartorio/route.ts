@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/auth-helpers";
+import { registrarLogServidor } from "@/lib/system-log-server";
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -61,6 +62,25 @@ export async function PUT(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    await registrarLogServidor(
+      adminSupabase,
+      {
+        acao: "cartorio.atualizado",
+        categoria: "cartorio",
+        descricao: `Cartório "${(cartorio as any)?.nome ?? id}" atualizado (${Object.keys(updates).join(", ")})`,
+        usuarioId: authResult.id,
+        usuarioNome: authResult.profile?.name ?? null,
+        usuarioEmail: authResult.email,
+        usuarioPerfil: authResult.userRoles.join(", "),
+        cartorioId: id,
+        cartorioNome: (cartorio as any)?.nome ?? null,
+        entidade: "cartorios",
+        entidadeId: id,
+        metadata: { campos_alterados: Object.keys(updates) },
+      },
+      request
+    );
 
     return NextResponse.json({ cartorio }, { status: 200 });
   } catch (err: any) {

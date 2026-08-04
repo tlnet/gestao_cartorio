@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
+import { descreverAlteracoes, registrarLog } from "@/lib/system-log";
 
 export interface Servico {
   id: string;
@@ -112,6 +113,18 @@ export const useServicos = () => {
 
       if (error) throw error;
 
+      registrarLog({
+        acao: "configuracao.servico_criado",
+        categoria: "configuracao",
+        descricao: `Serviço "${servicoData.nome}" criado`,
+        entidade: "servicos",
+        entidadeId: (data as any)?.id ?? null,
+        cartorioId: (userData as any).cartorio_id,
+        metadata: {
+          prazo_execucao: servicoData.prazo_execucao ?? null,
+          preco: servicoData.preco ?? null,
+        },
+      });
       toast.success("Serviço criado com sucesso!");
       await fetchServicos();
       return data;
@@ -134,6 +147,24 @@ export const useServicos = () => {
 
       if (error) throw error;
 
+      const anterior = servicos.find((s) => s.id === id);
+      registrarLog({
+        acao: "configuracao.servico_atualizado",
+        categoria: "configuracao",
+        descricao: `Serviço "${anterior?.nome ?? updates.nome ?? id}" atualizado`,
+        entidade: "servicos",
+        entidadeId: id,
+        cartorioId: anterior?.cartorio_id ?? null,
+        metadata: {
+          alteracoes: descreverAlteracoes(anterior, updates, {
+            nome: "Nome",
+            preco: "Preço",
+            prazo_execucao: "Prazo de execução (dias)",
+            dias_notificacao_antes_vencimento: "Dias de notificação",
+            ativo: "Ativo",
+          }),
+        },
+      });
       toast.success("Serviço atualizado com sucesso!");
       await fetchServicos();
       return data;
@@ -151,6 +182,15 @@ export const useServicos = () => {
 
       if (error) throw error;
 
+      const removido = servicos.find((s) => s.id === id);
+      registrarLog({
+        acao: "configuracao.servico_excluido",
+        categoria: "configuracao",
+        descricao: `Serviço "${removido?.nome ?? id}" excluído`,
+        entidade: "servicos",
+        entidadeId: id,
+        cartorioId: removido?.cartorio_id ?? null,
+      });
       toast.success("Serviço excluído com sucesso!");
       await fetchServicos();
     } catch (err) {

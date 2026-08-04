@@ -61,6 +61,15 @@ import { LoadingAnimation } from "@/components/ui/loading-spinner";
 import { useLevontechConfig } from "@/hooks/use-levontech-config";
 import { useAuth } from "@/contexts/auth-context";
 import { canAlterarStatusProtocolo } from "@/lib/protocolo-permissoes";
+import {
+  hasStatusInicioPrazo,
+  isStatusInicioPrazo,
+  getStatusInicioPrazoNomes,
+} from "@/lib/status-resolve";
+import {
+  calcularPrazoExecucaoPorServicos,
+  descreverAguardandoInicioPrazo,
+} from "@/lib/prazo-protocolo";
 import { useUsuarios } from "@/hooks/use-supabase";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -122,35 +131,20 @@ function startOfDay(date: Date): Date {
   return d;
 }
 
-/** Prazo de execução = data de abertura + maior prazo (dias) entre os serviços. */
-function calcularPrazoExecucaoPorServicos(
-  dataAbertura: Date | undefined | null,
-  servicosNomes: string[],
-  catalogo: { nome: string; prazo_execucao?: number }[]
-): Date | null {
-  if (!dataAbertura || servicosNomes.length === 0) return null;
-
-  let maiorPrazoDias = 0;
-  for (const nome of servicosNomes) {
-    const info = catalogo.find((s) => s.nome === nome);
-    if (info?.prazo_execucao && info.prazo_execucao > maiorPrazoDias) {
-      maiorPrazoDias = info.prazo_execucao;
-    }
-  }
-  if (maiorPrazoDias <= 0) return null;
-
-  const prazo = startOfDay(dataAbertura);
-  prazo.setDate(prazo.getDate() + maiorPrazoDias);
-  return prazo;
-}
-
 interface ProtocoloFormProps {
   onSubmit: (
-    data: ProtocoloFormData & { prazoExecucao?: Date },
+    data: ProtocoloFormData & {
+      prazoExecucao?: Date;
+      /** Data em que a contagem do prazo passa a valer (null = não iniciada) */
+      prazoIniciadoEm?: Date | null;
+    },
     documentosNovos?: DocumentoAnexo[]
   ) => void | Promise<void>;
   onCancel: () => void;
-  initialData?: Partial<ProtocoloFormData> & { id?: string };
+  initialData?: Partial<ProtocoloFormData> & {
+    id?: string;
+    prazo_iniciado_em?: string | null;
+  };
   isEditing?: boolean;
   /** Filtra a lista de responsáveis pelos usuários deste cartório */
   cartorioId?: string;
@@ -183,6 +177,9 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   >([]);
   const [prazoExecucaoPrevisto, setPrazoExecucaoPrevisto] =
     React.useState<Date | null>(null);
+  // Contagem represada: existe status de início configurado e ele ainda não foi aplicado
+  const [prazoAguardandoInicio, setPrazoAguardandoInicio] =
+    React.useState(false);
 
   const { statusPersonalizados } = useStatusPersonalizados();
   const { servicos, loading: servicosLoading, createServico, fetchServicos } = useServicos();
@@ -307,11 +304,52 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     },
   });
 
+  const regraInicioPrazoAtiva = hasStatusInicioPrazo(statusPersonalizados);
+  const statusInicioPrazoNomes = getStatusInicioPrazoNomes(statusPersonalizados);
+
+  /** Data em que a contagem já começou (protocolo em edição). */
+  const prazoIniciadoEmExistente = React.useMemo(() => {
+    const raw = initialData?.prazo_iniciado_em;
+    if (!raw) return null;
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : startOfDay(d);
+  }, [initialData?.prazo_iniciado_em]);
+
+  /**
+   * Base da contagem do prazo. Sem status de início configurado vale a data de
+   * abertura; com a regra ativa, o prazo só passa a contar quando o protocolo
+   * recebe um dos status marcados (e nunca reinicia depois disso).
+   */
+  const resolverBaseContagem = React.useCallback(
+    (status: string | undefined, dataAbertura: Date | undefined | null) => {
+      if (!regraInicioPrazoAtiva) return dataAbertura ?? null;
+      if (prazoIniciadoEmExistente) return prazoIniciadoEmExistente;
+      if (!isStatusInicioPrazo(status ?? "", statusPersonalizados)) return null;
+      // Começa agora; no cadastro, a própria data de abertura é o marco zero.
+      return isEditing ? startOfDay(new Date()) : dataAbertura ?? null;
+    },
+    [
+      regraInicioPrazoAtiva,
+      prazoIniciadoEmExistente,
+      statusPersonalizados,
+      isEditing,
+    ]
+  );
+
   const recalcularPrazos = React.useCallback(
     (servicosParaVerificar: string[]) => {
       const dataAbertura = form.getValues("dataAbertura");
+      const baseContagem = resolverBaseContagem(
+        form.getValues("status"),
+        dataAbertura
+      );
+      setPrazoAguardandoInicio(
+        regraInicioPrazoAtiva &&
+          !baseContagem &&
+          servicosParaVerificar.length > 0
+      );
       const prazoCalculado = calcularPrazoExecucaoPorServicos(
-        dataAbertura,
+        baseContagem,
         servicosParaVerificar,
         servicos
       );
@@ -323,8 +361,8 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
         mensagem: string;
       }> = [];
 
-      if (dataAbertura && prazoCalculado && servicosParaVerificar.length > 0) {
-        const dataAberturaBase = startOfDay(dataAbertura);
+      if (baseContagem && prazoCalculado && servicosParaVerificar.length > 0) {
+        const dataAberturaBase = startOfDay(baseContagem);
         const dataVencimentoProtocolo = startOfDay(prazoCalculado);
 
         servicosParaVerificar.forEach((nomeServico) => {
@@ -368,7 +406,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
 
       setAvisosPrazos(novosAvisos);
     },
-    [form, servicos]
+    [form, servicos, resolverBaseContagem, regraInicioPrazoAtiva]
   );
 
   const adicionarServico = (servico: string) => {
@@ -416,8 +454,9 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   }, [protocoloIdEdicao, buscarDocumentosProtocolo]);
 
   const handleSubmit = async (data: ProtocoloFormData) => {
+    const baseContagem = resolverBaseContagem(data.status, data.dataAbertura);
     const prazoExecucao = calcularPrazoExecucaoPorServicos(
-      data.dataAbertura,
+      baseContagem,
       servicosSelecionados,
       servicos
     );
@@ -426,7 +465,13 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
       ...data,
       servicos: servicosSelecionados,
       prazoExecucao: prazoExecucao ?? undefined,
-    } as ProtocoloFormData & { prazoExecucao?: Date };
+      // Só registra o marco quando a regra está ativa; sem status de início
+      // configurado o prazo segue contando da abertura, como antes.
+      prazoIniciadoEm: regraInicioPrazoAtiva ? baseContagem : null,
+    } as ProtocoloFormData & {
+      prazoExecucao?: Date;
+      prazoIniciadoEm?: Date | null;
+    };
 
     const documentosNovosCriacao = !isEditing ? documentos : undefined;
 
@@ -545,9 +590,10 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   }, []);
 
   const dataAberturaWatch = form.watch("dataAbertura");
+  const statusWatch = form.watch("status");
   React.useEffect(() => {
     recalcularPrazos(servicosSelecionados);
-  }, [dataAberturaWatch, servicosSelecionados, recalcularPrazos]);
+  }, [dataAberturaWatch, statusWatch, servicosSelecionados, recalcularPrazos]);
 
   React.useEffect(() => {
     recalcularPrazos(servicosSelecionados);
@@ -801,7 +847,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                       form.setValue("servicos", novosServicos);
                     
                     // Calcular e preencher prazo de execução se não estiver preenchido
-                    calcularPrazoExecucao(novosServicos);
+                    recalcularPrazos(novosServicos);
                     
                     console.log(`✅ Serviço "${servicoExato}" adicionado ao protocolo`);
                   }
@@ -1266,6 +1312,28 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                         <strong>
                           {prazoExecucaoPrevisto.toLocaleDateString("pt-BR")}
                         </strong>
+                        {prazoIniciadoEmExistente && (
+                          <>
+                            {" "}
+                            (contagem iniciada em{" "}
+                            {prazoIniciadoEmExistente.toLocaleDateString(
+                              "pt-BR"
+                            )}
+                            )
+                          </>
+                        )}
+                      </>
+                    )}
+                    {prazoAguardandoInicio && (
+                      <>
+                        {" "}
+                        <strong>
+                          {descreverAguardandoInicioPrazo(
+                            statusInicioPrazoNomes
+                          )}
+                        </strong>
+                        : a contagem começa quando o protocolo receber esse
+                        status.
                       </>
                     )}
                   </FormDescription>

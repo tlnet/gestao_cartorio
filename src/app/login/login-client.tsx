@@ -15,6 +15,7 @@ import { Loader2, Eye, EyeOff } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { registrarLog } from "@/lib/system-log";
 
 interface LoginFormData {
   email: string;
@@ -490,6 +491,19 @@ export default function LoginClient() {
           found: !!userProfile,
           role: (userProfile as any)?.role ?? null,
         });
+        registrarLog({
+          acao: "auth.login",
+          categoria: "autenticacao",
+          descricao: `Login realizado por ${
+            (userProfile as any)?.name || loginData.email
+          }`,
+          entidade: "usuario",
+          entidadeId: data.user.id,
+          metadata: {
+            perfil:
+              (userProfile as any)?.roles || (userProfile as any)?.role || null,
+          },
+        });
         toast.success("Login realizado com sucesso!");
         console.log("[LOGIN] Redirecionando...");
         redirectAfterLogin(userProfile);
@@ -518,6 +532,14 @@ export default function LoginClient() {
       } else {
         errorMessage = msg || "Erro ao fazer login. Tente novamente.";
       }
+
+      registrarLog({
+        acao: "auth.login_falhou",
+        categoria: "autenticacao",
+        descricao: `Tentativa de login sem sucesso para ${loginData.email}: ${errorMessage}`,
+        usuarioEmail: loginData.email,
+        metadata: { motivo: msg || errorMessage },
+      });
 
       setLoginError(errorMessage);
       toast.error(errorMessage);

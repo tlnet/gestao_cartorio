@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,6 +59,7 @@ import {
   Plus,
   Mail,
   Trash2,
+  UserPlus,
 } from "lucide-react";
 import {
   useChatwoot,
@@ -136,13 +138,25 @@ function formatTime(ms: number) {
   });
 }
 
-function MessageStatusIcon({ status }: { status: string | null }) {
+function MessageStatusIcon({
+  status,
+  error,
+}: {
+  status: string | null;
+  error?: string | null;
+}) {
   if (status === "read")
     return <CheckCheck className="h-3 w-3 text-blue-200" />;
   if (status === "delivered")
     return <CheckCheck className="h-3 w-3 text-blue-100/70" />;
   if (status === "failed")
-    return <AlertCircle className="h-3 w-3 text-red-300" />;
+    return (
+      <AlertCircle
+        className="h-3 w-3 text-red-300"
+        // Sem isto o ícone não diz por que a mensagem falhou.
+        aria-label={error || "Falha no envio"}
+      />
+    );
   return <Check className="h-3 w-3 text-blue-100/70" />;
 }
 
@@ -202,9 +216,17 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         >
           {formatTime(message.createdAt)}
           {message.outgoing && !isNote && (
-            <MessageStatusIcon status={message.status} />
+            <MessageStatusIcon
+              status={message.status}
+              error={message.errorMessage}
+            />
           )}
         </span>
+        {message.status === "failed" && (
+          <p className="mt-1 rounded bg-red-100 px-1.5 py-1 text-[10px] leading-snug text-red-700">
+            Não entregue{message.errorMessage ? `: ${message.errorMessage}` : "."}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -221,6 +243,27 @@ function normalizeLabelTitle(value: string) {
     .toLowerCase()
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9_-]/g, "");
+}
+
+/**
+ * Máscara de telefone aplicada enquanto o usuário digita.
+ *
+ * Até 2 dígitos ficam sem parênteses de propósito: se "(11) " fosse mantido,
+ * o backspace reformataria de volta para "(11) " e travaria o apagamento.
+ * Números iniciados com "+" passam sem máscara — são estrangeiros e não
+ * seguem o formato brasileiro.
+ */
+function formatPhoneInput(value: string): string {
+  const trimmed = value.trimStart();
+  if (trimmed.startsWith("+")) {
+    return `+${trimmed.replace(/\D/g, "").slice(0, 15)}`;
+  }
+
+  const d = trimmed.replace(/\D/g, "").slice(0, 11);
+  if (d.length <= 2) return d;
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
 }
 
 /** Lista de etiquetas com checkbox + criação inline de uma nova etiqueta. */
@@ -479,6 +522,8 @@ const ChatPage = () => {
     contactLabels,
     loadingContactLabels,
     applyContactLabels,
+    startConversation,
+    deleteContact,
     updateContact,
     error,
   } = useChatwoot();
@@ -490,6 +535,18 @@ const ChatPage = () => {
   const [files, setFiles] = useState<File[]>([]);
   const [showContact, setShowContact] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
+  const [newForm, setNewForm] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    message: "",
+  });
+  const [creatingContact, setCreatingContact] = useState(false);
+  const [newError, setNewError] = useState<string | null>(null);
+  const [newNotice, setNewNotice] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletingContact, setDeletingContact] = useState(false);
   const [contactForm, setContactForm] = useState({
     name: "",
     email: "",
@@ -564,6 +621,65 @@ const ChatPage = () => {
     }
   };
 
+  const handleDeleteContact = async () => {
+    const contactId = selectedConversation?.contactId;
+    if (!contactId || deletingContact) return;
+    setDeletingContact(true);
+    try {
+      await deleteContact(contactId);
+      setDeleteOpen(false);
+    } catch {
+      // erro tratado no hook
+    } finally {
+      setDeletingContact(false);
+    }
+  };
+
+  const openNewContact = () => {
+    setNewForm({ name: "", phone: "", email: "", message: "" });
+    setNewError(null);
+    setNewNotice(null);
+    setNewOpen(true);
+  };
+
+  const handleCreateContact = async () => {
+    if (creatingContact) return;
+    if (
+      !newForm.name.trim() ||
+      !newForm.phone.trim() ||
+      !newForm.message.trim()
+    ) {
+      setNewError("Nome, telefone e primeira mensagem são obrigatórios.");
+      return;
+    }
+    setCreatingContact(true);
+    setNewError(null);
+    setNewNotice(null);
+    try {
+      const result = await startConversation({
+        name: newForm.name.trim(),
+        phone: newForm.phone.trim(),
+        message: newForm.message.trim(),
+        email: newForm.email.trim() || undefined,
+      });
+
+      // A mensagem já foi entregue ao WhatsApp; só a conversa no Chatwoot
+      // pode demorar. Manter o diálogo aberto com aviso evita a impressão
+      // de que o envio falhou.
+      if (result && !result.conversationId) {
+        setNewNotice(
+          "Mensagem enviada. A conversa deve aparecer na lista em instantes."
+        );
+        return;
+      }
+      setNewOpen(false);
+    } catch (e: any) {
+      setNewError(e?.message || "Erro ao iniciar conversa.");
+    } finally {
+      setCreatingContact(false);
+    }
+  };
+
   const toggleLabel = (conv: ChatConversation, title: string) => {
     const next = conv.labels.includes(title)
       ? conv.labels.filter((l) => l !== title)
@@ -605,14 +721,24 @@ const ChatPage = () => {
             {/* Lista de conversas */}
             <div className="flex w-80 min-w-0 flex-shrink-0 flex-col overflow-hidden border-r border-gray-200">
               <div className="space-y-2 border-b border-gray-200 p-3">
-                <div className="relative">
-                  <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  <Input
-                    placeholder="Buscar conversa..."
-                    className="pl-8"
-                    value={filter}
-                    onChange={(e) => setFilter(e.target.value)}
-                  />
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <Input
+                      placeholder="Buscar conversa..."
+                      className="pl-8"
+                      value={filter}
+                      onChange={(e) => setFilter(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    size="icon"
+                    className="h-9 w-9 flex-shrink-0 bg-blue-600 hover:bg-blue-700"
+                    title="Novo contato"
+                    onClick={openNewContact}
+                  >
+                    <UserPlus className="h-4 w-4" />
+                  </Button>
                 </div>
 
                 <Tabs
@@ -1076,6 +1202,17 @@ const ChatPage = () => {
                             Editar contato
                           </Button>
 
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-2 w-full border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                            onClick={() => setDeleteOpen(true)}
+                            disabled={!selectedConversation.contactId}
+                          >
+                            <Trash2 className="mr-2 h-3.5 w-3.5" />
+                            Excluir contato
+                          </Button>
+
                           {/* Etiquetas da conversa */}
                           <div className="mt-5">
                             <div className="mb-2 flex items-center justify-between">
@@ -1234,6 +1371,135 @@ const ChatPage = () => {
                   className="bg-blue-600 hover:bg-blue-700"
                 >
                   Salvar
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Excluir contato: apaga também as conversas dele no Chatwoot */}
+          <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Excluir contato</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-2 text-sm text-gray-700">
+                <p>
+                  Excluir <strong>{selectedConversation?.name}</strong>
+                  {selectedConversation?.phone
+                    ? ` (${selectedConversation.phone})`
+                    : ""}
+                  ?
+                </p>
+                <p className="text-xs text-gray-500">
+                  O contato sai do Chatwoot junto com todo o histórico de
+                  conversas e mensagens dele. Não há como desfazer.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setDeleteOpen(false)}
+                  disabled={deletingContact}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteContact}
+                  disabled={deletingContact}
+                >
+                  {deletingContact ? "Excluindo..." : "Excluir"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Novo contato: cria o contato e já abre a conversa dele */}
+          <Dialog open={newOpen} onOpenChange={setNewOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Nova conversa</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="n-name">Nome *</Label>
+                  <Input
+                    id="n-name"
+                    autoFocus
+                    value={newForm.name}
+                    onChange={(e) =>
+                      setNewForm((f) => ({ ...f, name: e.target.value }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="n-phone">Telefone *</Label>
+                  <Input
+                    id="n-phone"
+                    inputMode="tel"
+                    value={newForm.phone}
+                    onChange={(e) =>
+                      setNewForm((f) => ({
+                        ...f,
+                        phone: formatPhoneInput(e.target.value),
+                      }))
+                    }
+                    placeholder="(11) 98765-4321"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleCreateContact();
+                      }
+                    }}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Informe com DDD. Sem o código do país, assumimos +55.
+                  </p>
+                </div>
+                <div>
+                  <Label htmlFor="n-email">E-mail</Label>
+                  <Input
+                    id="n-email"
+                    type="email"
+                    value={newForm.email}
+                    onChange={(e) =>
+                      setNewForm((f) => ({ ...f, email: e.target.value }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="n-message">Primeira mensagem *</Label>
+                  <Textarea
+                    id="n-message"
+                    rows={3}
+                    value={newForm.message}
+                    onChange={(e) =>
+                      setNewForm((f) => ({ ...f, message: e.target.value }))
+                    }
+                    placeholder="Olá! Aqui é do cartório..."
+                  />
+                </div>
+                {newError && (
+                  <p className="text-sm text-red-600">{newError}</p>
+                )}
+                {newNotice && (
+                  <p className="text-sm text-green-700">{newNotice}</p>
+                )}
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setNewOpen(false)}
+                  disabled={creatingContact}
+                >
+                  {newNotice ? "Fechar" : "Cancelar"}
+                </Button>
+                <Button
+                  onClick={handleCreateContact}
+                  disabled={creatingContact || Boolean(newNotice)}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {creatingContact ? "Enviando..." : "Enviar e abrir conversa"}
                 </Button>
               </DialogFooter>
             </DialogContent>

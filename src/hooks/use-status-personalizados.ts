@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
+import { descreverAlteracoes, registrarLog } from "@/lib/system-log";
 
 export interface StatusPersonalizado {
   id: string;
@@ -10,6 +11,8 @@ export interface StatusPersonalizado {
   ordem: number;
   /** Quando true, protocolos com este status são tratados como concluídos */
   is_conclusao?: boolean;
+  /** Quando true, a contagem do prazo do protocolo começa neste status */
+  is_inicio_prazo?: boolean;
   cartorio_id: string;
   created_at: string;
   updated_at: string;
@@ -33,6 +36,13 @@ const descreverErroStatus = (err: any, fallback: string): string => {
     return (
       "A coluna 'is_conclusao' não existe no banco. Execute a migração " +
       "src/lib/add-status-conclusao.sql no SQL Editor do Supabase."
+    );
+  }
+
+  if (err?.code === "42703" && String(err?.message).includes("is_inicio_prazo")) {
+    return (
+      "A coluna 'is_inicio_prazo' não existe no banco. Execute a migração " +
+      "src/lib/add-status-inicio-prazo.sql no SQL Editor do Supabase."
     );
   }
 
@@ -104,6 +114,7 @@ export const useStatusPersonalizados = () => {
     cor: string;
     ordem: number;
     is_conclusao?: boolean;
+    is_inicio_prazo?: boolean;
   }) => {
     try {
       if (!user?.id) {
@@ -138,6 +149,18 @@ export const useStatusPersonalizados = () => {
 
       if (error) throw error;
 
+      registrarLog({
+        acao: "configuracao.status_criado",
+        categoria: "configuracao",
+        descricao: `Status personalizado "${statusData.nome}" criado`,
+        entidade: "status_personalizados",
+        entidadeId: (data as any)?.id ?? null,
+        cartorioId: (userData as any).cartorio_id,
+        metadata: {
+          is_conclusao: statusData.is_conclusao ?? false,
+          is_inicio_prazo: statusData.is_inicio_prazo ?? false,
+        },
+      });
       toast.success("Status personalizado criado com sucesso!");
       await fetchStatusPersonalizados();
       return data;
@@ -162,6 +185,8 @@ export const useStatusPersonalizados = () => {
       if (updates.ordem !== undefined) updateData.ordem = updates.ordem;
       if (updates.is_conclusao !== undefined)
         updateData.is_conclusao = updates.is_conclusao;
+      if (updates.is_inicio_prazo !== undefined)
+        updateData.is_inicio_prazo = updates.is_inicio_prazo;
 
       // Usar método direto após remover triggers problemáticos
       const { data, error } = await supabase
@@ -173,6 +198,26 @@ export const useStatusPersonalizados = () => {
 
       if (error) throw error;
 
+      const anterior = statusPersonalizados.find((s) => s.id === id);
+      registrarLog({
+        acao: "configuracao.status_atualizado",
+        categoria: "configuracao",
+        descricao: `Status personalizado "${
+          anterior?.nome ?? updates.nome ?? id
+        }" atualizado`,
+        entidade: "status_personalizados",
+        entidadeId: id,
+        cartorioId: anterior?.cartorio_id ?? null,
+        metadata: {
+          alteracoes: descreverAlteracoes(anterior, updateData, {
+            nome: "Nome",
+            cor: "Cor",
+            ordem: "Ordem",
+            is_conclusao: "Status de conclusão",
+            is_inicio_prazo: "Status de início de prazo",
+          }),
+        },
+      });
       toast.success("Status personalizado atualizado com sucesso!");
       await fetchStatusPersonalizados();
       return data;
@@ -193,6 +238,15 @@ export const useStatusPersonalizados = () => {
 
       if (error) throw error;
 
+      const removido = statusPersonalizados.find((s) => s.id === id);
+      registrarLog({
+        acao: "configuracao.status_excluido",
+        categoria: "configuracao",
+        descricao: `Status personalizado "${removido?.nome ?? id}" excluído`,
+        entidade: "status_personalizados",
+        entidadeId: id,
+        cartorioId: removido?.cartorio_id ?? null,
+      });
       toast.success("Status personalizado excluído com sucesso!");
       await fetchStatusPersonalizados();
     } catch (err) {

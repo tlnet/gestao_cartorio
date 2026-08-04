@@ -9,6 +9,7 @@ import {
 } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { debugLoading } from "@/lib/debug-loading";
+import { registrarLog } from "@/lib/system-log";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { 
@@ -355,6 +356,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     try {
       setLoading(true);
+
+      // Registra antes de encerrar: depois do signOut não há mais token para
+      // autenticar o log.
+      const { data: sessaoAtual } = await supabase.auth.getSession();
+      const tokenAtual = sessaoAtual.session?.access_token;
+      if (tokenAtual) {
+        registrarLog({
+          acao: "auth.logout",
+          categoria: "autenticacao",
+          descricao: `Logout realizado por ${
+            userProfile?.nome || (userProfile as any)?.name || sessaoAtual.session?.user?.email || "usuário"
+          }`,
+          entidade: "usuario",
+          entidadeId: sessaoAtual.session?.user?.id ?? null,
+          accessToken: tokenAtual,
+        });
+      }
+
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
 
