@@ -538,6 +538,11 @@ const Configuracoes = () => {
         return;
       }
 
+      if (statusForm.nome.trim().length > 100) {
+        toast.error("Nome do status deve ter no máximo 100 caracteres");
+        return;
+      }
+
       await createStatusPersonalizado({
         nome: statusForm.nome,
         cor: statusForm.cor,
@@ -563,6 +568,11 @@ const Configuracoes = () => {
     try {
       if (!statusForm.nome.trim()) {
         toast.error("Nome do status é obrigatório");
+        return;
+      }
+
+      if (statusForm.nome.trim().length > 100) {
+        toast.error("Nome do status deve ter no máximo 100 caracteres");
         return;
       }
 
@@ -1379,6 +1389,7 @@ const Configuracoes = () => {
                         <Input
                           id="nomeStatus"
                           placeholder="Ex: Aguardando Revisão"
+                          maxLength={100}
                           value={statusForm.nome}
                           onChange={(e) =>
                             setStatusForm((prev) => ({
@@ -2808,6 +2819,7 @@ const Configuracoes = () => {
                 <Input
                   id="editNomeStatus"
                   placeholder="Ex: Aguardando Revisão"
+                  maxLength={100}
                   value={statusForm.nome}
                   onChange={(e) =>
                     setStatusForm((prev) => ({ ...prev, nome: e.target.value }))
