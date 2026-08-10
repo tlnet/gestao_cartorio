@@ -106,6 +106,7 @@ export async function PATCH(request: NextRequest) {
       "apresentante",
       "servicos",
       "prazo_execucao",
+      "prazo_verificacao",
       "prazo_iniciado_em",
       "responsavel_servico_id",
       "entidade_id",

@@ -196,6 +196,7 @@ export interface Database {
           status: string;
           observacao: string | null;
           prazo_execucao: string | null;
+          prazo_verificacao: string | null;
           data_conclusao: string | null;
           cartorio_id: string;
           criado_por: string;
@@ -217,6 +218,7 @@ export interface Database {
           status: string;
           observacao?: string | null;
           prazo_execucao?: string | null;
+          prazo_verificacao?: string | null;
           data_conclusao?: string | null;
           cartorio_id: string;
           criado_por: string;
@@ -238,6 +240,7 @@ export interface Database {
           status?: string;
           observacao?: string | null;
           prazo_execucao?: string | null;
+          prazo_verificacao?: string | null;
           data_conclusao?: string | null;
           cartorio_id?: string;
           criado_por?: string;
@@ -332,6 +335,7 @@ export interface Database {
           id: string;
           nome: string;
           prazo_execucao: number;
+          prazo_verificacao: number | null;
           ativo: boolean;
           cartorio_id: string;
           created_at: string;
@@ -341,6 +345,7 @@ export interface Database {
           id?: string;
           nome: string;
           prazo_execucao: number;
+          prazo_verificacao?: number | null;
           ativo?: boolean;
           cartorio_id: string;
           created_at?: string;
@@ -350,6 +355,7 @@ export interface Database {
           id?: string;
           nome?: string;
           prazo_execucao?: number;
+          prazo_verificacao?: number | null;
           ativo?: boolean;
           cartorio_id?: string;
           updated_at?: string;

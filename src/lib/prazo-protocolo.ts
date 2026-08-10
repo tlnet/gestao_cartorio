@@ -12,21 +12,26 @@ export function startOfDay(date: Date): Date {
   return d;
 }
 
-export type ServicoPrazo = { nome: string; prazo_execucao?: number | null };
+export type ServicoPrazo = {
+  nome: string;
+  prazo_execucao?: number | null;
+  prazo_verificacao?: number | null;
+};
 
-/** Prazo de execução = data base da contagem + maior prazo (dias) entre os serviços. */
-export function calcularPrazoExecucaoPorServicos(
+function calcularMaiorPrazoPorCampo(
   dataBase: Date | undefined | null,
   servicosNomes: string[],
-  catalogo: ServicoPrazo[]
+  catalogo: ServicoPrazo[],
+  campo: "prazo_execucao" | "prazo_verificacao"
 ): Date | null {
   if (!dataBase || servicosNomes.length === 0) return null;
 
   let maiorPrazoDias = 0;
   for (const nome of servicosNomes) {
     const info = catalogo.find((s) => s.nome === nome);
-    if (info?.prazo_execucao && info.prazo_execucao > maiorPrazoDias) {
-      maiorPrazoDias = info.prazo_execucao;
+    const dias = info?.[campo];
+    if (dias && dias > maiorPrazoDias) {
+      maiorPrazoDias = dias;
     }
   }
   if (maiorPrazoDias <= 0) return null;
@@ -34,6 +39,40 @@ export function calcularPrazoExecucaoPorServicos(
   const prazo = startOfDay(dataBase);
   prazo.setDate(prazo.getDate() + maiorPrazoDias);
   return prazo;
+}
+
+/**
+ * Prazo de entrega = data base da contagem (status de início do prazo)
+ * + maior prazo_execucao (dias) entre os serviços.
+ */
+export function calcularPrazoExecucaoPorServicos(
+  dataBase: Date | undefined | null,
+  servicosNomes: string[],
+  catalogo: ServicoPrazo[]
+): Date | null {
+  return calcularMaiorPrazoPorCampo(
+    dataBase,
+    servicosNomes,
+    catalogo,
+    "prazo_execucao"
+  );
+}
+
+/**
+ * Prazo de verificação = data de abertura
+ * + maior prazo_verificacao (dias) entre os serviços.
+ */
+export function calcularPrazoVerificacaoPorServicos(
+  dataAbertura: Date | undefined | null,
+  servicosNomes: string[],
+  catalogo: ServicoPrazo[]
+): Date | null {
+  return calcularMaiorPrazoPorCampo(
+    dataAbertura,
+    servicosNomes,
+    catalogo,
+    "prazo_verificacao"
+  );
 }
 
 export type ProtocoloPrazoInput = {

@@ -80,6 +80,8 @@ interface ProtocoloDetailsProps {
     email?: string;
     status: string;
     prazoExecucao: string;
+    /** Data limite para verificação dos documentos */
+    prazoVerificacao?: string;
     /** Data em que a contagem do prazo passou a valer (null = ainda não iniciada) */
     prazoIniciadoEm?: string | null;
     observacao?: string;
@@ -422,8 +424,19 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
       doc.text(formatDateForDisplay(protocolo.dataAbertura), 50, yPosition);
       yPosition += 8;
 
-      // Prazo de execução
-      doc.text("Prazo de Execucao:", 20, yPosition);
+      // Prazo de verificação
+      doc.text("Prazo de Verificacao:", 20, yPosition);
+      doc.text(
+        protocolo.prazoVerificacao
+          ? formatDateForDisplay(protocolo.prazoVerificacao)
+          : "-",
+        55,
+        yPosition
+      );
+      yPosition += 8;
+
+      // Prazo de entrega
+      doc.text("Prazo de Entrega:", 20, yPosition);
       doc.text(
         prazoInfo.aguardandoInicio
           ? removerAcentos(
@@ -753,7 +766,21 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
 
                   <div>
                     <label className="text-sm font-medium text-gray-500">
-                      Prazo Execução
+                      Prazo Verificação
+                    </label>
+                    <p className="text-sm flex items-center gap-1">
+                      <Clock className="h-4 w-4" />
+                      {protocolo.prazoVerificacao
+                        ? formatDateForDisplay(protocolo.prazoVerificacao)
+                        : "-"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">
+                      Prazo Entrega
                     </label>
                     <p className="text-sm flex items-center gap-1">
                       <Clock className="h-4 w-4" />

@@ -9,7 +9,10 @@ export interface Servico {
   nome: string;
   descricao?: string;
   preco?: number;
+  /** Dias para entrega após pagamento (conta do status de início do prazo) */
   prazo_execucao?: number;
+  /** Dias para verificação dos documentos (conta da abertura) */
+  prazo_verificacao?: number | null;
   dias_notificacao_antes_vencimento?: number;
   ativo: boolean;
   cartorio_id: string;
@@ -76,6 +79,7 @@ export const useServicos = () => {
     descricao?: string;
     preco?: number;
     prazo_execucao?: number;
+    prazo_verificacao?: number | null;
     dias_notificacao_antes_vencimento?: number;
     ativo?: boolean;
   }) => {
@@ -122,6 +126,7 @@ export const useServicos = () => {
         cartorioId: (userData as any).cartorio_id,
         metadata: {
           prazo_execucao: servicoData.prazo_execucao ?? null,
+          prazo_verificacao: servicoData.prazo_verificacao ?? null,
           preco: servicoData.preco ?? null,
         },
       });
@@ -159,7 +164,8 @@ export const useServicos = () => {
           alteracoes: descreverAlteracoes(anterior, updates, {
             nome: "Nome",
             preco: "Preço",
-            prazo_execucao: "Prazo de execução (dias)",
+            prazo_execucao: "Prazo para entrega após pagamento (dias)",
+            prazo_verificacao: "Prazo para verificação dos documentos (dias)",
             dias_notificacao_antes_vencimento: "Dias de notificação",
             ativo: "Ativo",
           }),

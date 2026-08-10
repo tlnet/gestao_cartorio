@@ -13,6 +13,8 @@ export interface Protocolo {
   email?: string;
   observacao?: string;
   prazoExecucao?: Date;
+  /** Data limite para verificação dos documentos */
+  prazoVerificacao?: Date;
   /** Data em que a contagem do prazo passou a valer (null enquanto não iniciada) */
   prazoIniciadoEm?: Date | null;
   cartorioId: string;
@@ -336,7 +338,10 @@ export interface StatusPersonalizado {
 export interface Servico {
   id: string;
   nome: string;
-  prazoExecucao: number; // em dias
+  /** Dias para entrega após pagamento */
+  prazoExecucao: number;
+  /** Dias para verificação dos documentos */
+  prazoVerificacao?: number;
   ativo: boolean;
 }
 

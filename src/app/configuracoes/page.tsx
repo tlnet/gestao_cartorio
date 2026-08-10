@@ -76,6 +76,7 @@ import { WhatsappConnection } from "@/components/configuracoes/whatsapp-connecti
 import { useCartorioValidation } from "@/hooks/use-cartorio-validation";
 import { putCartorioUpdate } from "@/lib/admin-cartorio-api";
 import { useEntidades } from "@/hooks/use-entidades";
+import { getStatusInicioPrazoNomes } from "@/lib/status-resolve";
 
 const Configuracoes = () => {
   const [activeTab, setActiveTab] = useState("cartorio");
@@ -405,10 +406,33 @@ const Configuracoes = () => {
     nome: "",
     descricao: "",
     preco: "",
+    prazo_verificacao: "" as string | number,
     prazo_execucao: 3,
     dias_notificacao_antes_vencimento: 1,
     ativo: true,
   });
+
+  const statusInicioPrazoNomes = getStatusInicioPrazoNomes(statusPersonalizados);
+
+  const textoAjudaPrazoEntrega =
+    statusInicioPrazoNomes.length === 0
+      ? 'A contagem começa quando o protocolo recebe um status marcado como "Início do prazo". Configure isso na aba Status Personalizados.'
+      : statusInicioPrazoNomes.length === 1
+        ? `Começa a contar quando o protocolo recebe o status "${statusInicioPrazoNomes[0]}".`
+        : `Começa a contar quando o protocolo recebe um destes status: ${statusInicioPrazoNomes
+            .map((n) => `"${n}"`)
+            .join(", ")}.`;
+
+  const resetServicoForm = () =>
+    setServicoForm({
+      nome: "",
+      descricao: "",
+      preco: "",
+      prazo_verificacao: "",
+      prazo_execucao: 3,
+      dias_notificacao_antes_vencimento: 1,
+      ativo: true,
+    });
 
   const [categoriaForm, setCategoriaForm] = useState({
     nome: "",
@@ -607,7 +631,7 @@ const Configuracoes = () => {
         return;
       }
 
-      // Validação: dias de notificação deve ser menor que prazo de execução
+      // Validação: dias de notificação deve ser menor que prazo de entrega
       if (
         servicoForm.dias_notificacao_antes_vencimento &&
         servicoForm.prazo_execucao &&
@@ -615,7 +639,7 @@ const Configuracoes = () => {
           servicoForm.prazo_execucao
       ) {
         toast.error(
-          "Dias para notificação deve ser menor que o prazo de execução"
+          "Dias para notificação deve ser menor que o prazo de entrega"
         );
         return;
       }
@@ -624,24 +648,25 @@ const Configuracoes = () => {
         ? parseCurrency(servicoForm.preco)
         : undefined;
 
+      const prazoVerificacao =
+        servicoForm.prazo_verificacao === "" ||
+        servicoForm.prazo_verificacao === null ||
+        servicoForm.prazo_verificacao === undefined
+          ? undefined
+          : Number(servicoForm.prazo_verificacao) || undefined;
+
       await createServico({
         nome: servicoForm.nome,
         descricao: servicoForm.descricao || undefined,
         preco: preco,
+        prazo_verificacao: prazoVerificacao,
         prazo_execucao: servicoForm.prazo_execucao,
         dias_notificacao_antes_vencimento:
           servicoForm.dias_notificacao_antes_vencimento,
         ativo: servicoForm.ativo,
       });
 
-      setServicoForm({
-        nome: "",
-        descricao: "",
-        preco: "",
-        prazo_execucao: 3,
-        dias_notificacao_antes_vencimento: 1,
-        ativo: true,
-      });
+      resetServicoForm();
       setShowServicoDialog(false);
     } catch (error) {
       // Erro já tratado no hook
@@ -657,7 +682,7 @@ const Configuracoes = () => {
 
       if (!editingServico) return;
 
-      // Validação: dias de notificação deve ser menor que prazo de execução
+      // Validação: dias de notificação deve ser menor que prazo de entrega
       if (
         servicoForm.dias_notificacao_antes_vencimento &&
         servicoForm.prazo_execucao &&
@@ -665,7 +690,7 @@ const Configuracoes = () => {
           servicoForm.prazo_execucao
       ) {
         toast.error(
-          "Dias para notificação deve ser menor que o prazo de execução"
+          "Dias para notificação deve ser menor que o prazo de entrega"
         );
         return;
       }
@@ -674,10 +699,18 @@ const Configuracoes = () => {
         ? parseCurrency(servicoForm.preco)
         : undefined;
 
+      const prazoVerificacao =
+        servicoForm.prazo_verificacao === "" ||
+        servicoForm.prazo_verificacao === null ||
+        servicoForm.prazo_verificacao === undefined
+          ? null
+          : Number(servicoForm.prazo_verificacao) || null;
+
       await updateServico(editingServico.id, {
         nome: servicoForm.nome,
         descricao: servicoForm.descricao || undefined,
         preco: preco,
+        prazo_verificacao: prazoVerificacao,
         prazo_execucao: servicoForm.prazo_execucao,
         dias_notificacao_antes_vencimento:
           servicoForm.dias_notificacao_antes_vencimento,
@@ -685,14 +718,7 @@ const Configuracoes = () => {
       });
 
       setEditingServico(null);
-      setServicoForm({
-        nome: "",
-        descricao: "",
-        preco: "",
-        prazo_execucao: 3,
-        dias_notificacao_antes_vencimento: 1,
-        ativo: true,
-      });
+      resetServicoForm();
       setShowEditServicoDialog(false);
     } catch (error) {
       // Erro já tratado no hook
@@ -748,6 +774,7 @@ const Configuracoes = () => {
       preco: servico.preco
         ? formatCurrency((servico.preco * 100).toString())
         : "",
+      prazo_verificacao: servico.prazo_verificacao ?? "",
       prazo_execucao: servico.prazo_execucao || 3,
       dias_notificacao_antes_vencimento:
         servico.dias_notificacao_antes_vencimento || 1,
@@ -1685,8 +1712,31 @@ const Configuracoes = () => {
                           />
                         </div>
                         <div>
+                          <Label htmlFor="prazoVerificacaoServico">
+                            Prazo para verificação dos documentos (dias)
+                          </Label>
+                          <Input
+                            id="prazoVerificacaoServico"
+                            type="number"
+                            min="1"
+                            value={servicoForm.prazo_verificacao}
+                            onChange={(e) =>
+                              setServicoForm((prev) => ({
+                                ...prev,
+                                prazo_verificacao:
+                                  e.target.value === ""
+                                    ? ""
+                                    : parseInt(e.target.value) || "",
+                              }))
+                            }
+                          />
+                          <p className="text-sm text-gray-500 mt-1">
+                            Conta a partir da abertura do protocolo.
+                          </p>
+                        </div>
+                        <div>
                           <Label htmlFor="prazoServico">
-                            Prazo de Execução (dias)
+                            Prazo para entrega após pagamento (dias)
                           </Label>
                           <Input
                             id="prazoServico"
@@ -1700,6 +1750,9 @@ const Configuracoes = () => {
                               }))
                             }
                           />
+                          <p className="text-sm text-gray-500 mt-1">
+                            {textoAjudaPrazoEntrega}
+                          </p>
                         </div>
                         <div>
                           <Label htmlFor="diasNotificacaoServico">
@@ -1722,8 +1775,8 @@ const Configuracoes = () => {
                             }
                           />
                           <p className="text-sm text-gray-500 mt-1">
-                            Quantos dias antes do vencimento receber notificação
-                            via WhatsApp
+                            Quantos dias antes do vencimento da entrega receber
+                            notificação via WhatsApp
                           </p>
                         </div>
                         <div className="flex items-center space-x-2">
@@ -1748,7 +1801,8 @@ const Configuracoes = () => {
                 </div>
               </CardTitle>
               <CardDescription>
-                Configure os serviços oferecidos e seus prazos de execução
+                Configure os serviços oferecidos e seus prazos de verificação e
+                entrega
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1758,7 +1812,8 @@ const Configuracoes = () => {
                     <TableHead>Nome</TableHead>
                     <TableHead>Descrição</TableHead>
                     <TableHead>Preço</TableHead>
-                    <TableHead>Prazo (dias)</TableHead>
+                    <TableHead>Verificação (dias)</TableHead>
+                    <TableHead>Entrega (dias)</TableHead>
                     <TableHead>Notificação (dias)</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Ações</TableHead>
@@ -1784,6 +1839,9 @@ const Configuracoes = () => {
                           <Skeleton className="h-4 w-16" />
                         </TableCell>
                         <TableCell>
+                          <Skeleton className="h-4 w-16" />
+                        </TableCell>
+                        <TableCell>
                           <Skeleton className="h-6 w-16" />
                         </TableCell>
                         <TableCell>
@@ -1794,7 +1852,7 @@ const Configuracoes = () => {
                   ) : servicos.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={7}
+                        colSpan={8}
                         className="text-center py-8 text-gray-500"
                       >
                         <div className="flex flex-col items-center gap-2">
@@ -1818,6 +1876,11 @@ const Configuracoes = () => {
                         <TableCell>
                           {servico.preco
                             ? formatCurrency((servico.preco * 100).toString())
+                            : "-"}
+                        </TableCell>
+                        <TableCell>
+                          {servico.prazo_verificacao
+                            ? `${servico.prazo_verificacao} dias`
                             : "-"}
                         </TableCell>
                         <TableCell>
@@ -2957,8 +3020,31 @@ const Configuracoes = () => {
                 />
               </div>
               <div>
+                <Label htmlFor="editPrazoVerificacaoServico">
+                  Prazo para verificação dos documentos (dias)
+                </Label>
+                <Input
+                  id="editPrazoVerificacaoServico"
+                  type="number"
+                  min="1"
+                  value={servicoForm.prazo_verificacao}
+                  onChange={(e) =>
+                    setServicoForm((prev) => ({
+                      ...prev,
+                      prazo_verificacao:
+                        e.target.value === ""
+                          ? ""
+                          : parseInt(e.target.value) || "",
+                    }))
+                  }
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  Conta a partir da abertura do protocolo.
+                </p>
+              </div>
+              <div>
                 <Label htmlFor="editPrazoServico">
-                  Prazo de Execução (dias)
+                  Prazo para entrega após pagamento (dias)
                 </Label>
                 <Input
                   id="editPrazoServico"
@@ -2972,6 +3058,9 @@ const Configuracoes = () => {
                     }))
                   }
                 />
+                <p className="text-sm text-gray-500 mt-1">
+                  {textoAjudaPrazoEntrega}
+                </p>
               </div>
               <div>
                 <Label htmlFor="editDiasNotificacaoServico">
@@ -2992,8 +3081,8 @@ const Configuracoes = () => {
                   }
                 />
                 <p className="text-sm text-gray-500 mt-1">
-                  Quantos dias antes do vencimento receber notificação via
-                  WhatsApp
+                  Quantos dias antes do vencimento da entrega receber notificação
+                  via WhatsApp
                 </p>
               </div>
               <div className="flex items-center space-x-2">

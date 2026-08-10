@@ -68,6 +68,7 @@ import {
 } from "@/lib/status-resolve";
 import {
   calcularPrazoExecucaoPorServicos,
+  calcularPrazoVerificacaoPorServicos,
   descreverAguardandoInicioPrazo,
 } from "@/lib/prazo-protocolo";
 import { useUsuarios } from "@/hooks/use-supabase";
@@ -135,6 +136,7 @@ interface ProtocoloFormProps {
   onSubmit: (
     data: ProtocoloFormData & {
       prazoExecucao?: Date;
+      prazoVerificacao?: Date;
       /** Data em que a contagem do prazo passa a valer (null = não iniciada) */
       prazoIniciadoEm?: Date | null;
     },
@@ -176,6 +178,8 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     }>
   >([]);
   const [prazoExecucaoPrevisto, setPrazoExecucaoPrevisto] =
+    React.useState<Date | null>(null);
+  const [prazoVerificacaoPrevisto, setPrazoVerificacaoPrevisto] =
     React.useState<Date | null>(null);
   // Contagem represada: existe status de início configurado e ele ainda não foi aplicado
   const [prazoAguardandoInicio, setPrazoAguardandoInicio] =
@@ -221,6 +225,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     nome: "",
     descricao: "",
     preco: "",
+    prazo_verificacao: "" as string | number,
     prazo_execucao: 3,
     dias_notificacao_antes_vencimento: 1,
     ativo: true,
@@ -348,12 +353,19 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
           !baseContagem &&
           servicosParaVerificar.length > 0
       );
-      const prazoCalculado = calcularPrazoExecucaoPorServicos(
+      const prazoEntregaCalculado = calcularPrazoExecucaoPorServicos(
         baseContagem,
         servicosParaVerificar,
         servicos
       );
-      setPrazoExecucaoPrevisto(prazoCalculado);
+      setPrazoExecucaoPrevisto(prazoEntregaCalculado);
+
+      const prazoVerificacaoCalculado = calcularPrazoVerificacaoPorServicos(
+        dataAbertura,
+        servicosParaVerificar,
+        servicos
+      );
+      setPrazoVerificacaoPrevisto(prazoVerificacaoCalculado);
 
       const novosAvisos: Array<{
         servico: string;
@@ -361,9 +373,13 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
         mensagem: string;
       }> = [];
 
-      if (baseContagem && prazoCalculado && servicosParaVerificar.length > 0) {
+      if (
+        baseContagem &&
+        prazoEntregaCalculado &&
+        servicosParaVerificar.length > 0
+      ) {
         const dataAberturaBase = startOfDay(baseContagem);
-        const dataVencimentoProtocolo = startOfDay(prazoCalculado);
+        const dataVencimentoProtocolo = startOfDay(prazoEntregaCalculado);
 
         servicosParaVerificar.forEach((nomeServico) => {
           const servicoInfo = servicos.find((s) => s.nome === nomeServico);
@@ -378,7 +394,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
               novosAvisos.push({
                 servico: nomeServico,
                 tipo: "warning",
-                mensagem: `O prazo do serviço "${nomeServico}" (${servicoInfo.prazo_execucao} dias) ultrapassa o prazo de execução previsto (${prazoCalculado.toLocaleDateString("pt-BR")}).`,
+                mensagem: `O prazo de entrega do serviço "${nomeServico}" (${servicoInfo.prazo_execucao} dias) ultrapassa o prazo de entrega previsto (${prazoEntregaCalculado.toLocaleDateString("pt-BR")}).`,
               });
             } else {
               const diasDiferenca = Math.ceil(
@@ -390,13 +406,13 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                 novosAvisos.push({
                   servico: nomeServico,
                   tipo: "info",
-                  mensagem: `O prazo do serviço "${nomeServico}" (${servicoInfo.prazo_execucao} dias) está dentro do prazo previsto. Há ${diasDiferenca} dia(s) de margem.`,
+                  mensagem: `O prazo de entrega do serviço "${nomeServico}" (${servicoInfo.prazo_execucao} dias) está dentro do prazo previsto. Há ${diasDiferenca} dia(s) de margem.`,
                 });
               } else {
                 novosAvisos.push({
                   servico: nomeServico,
                   tipo: "success",
-                  mensagem: `O prazo do serviço "${nomeServico}" (${servicoInfo.prazo_execucao} dias) define o prazo de execução do protocolo.`,
+                  mensagem: `O prazo de entrega do serviço "${nomeServico}" (${servicoInfo.prazo_execucao} dias) define o prazo de entrega do protocolo.`,
                 });
               }
             }
@@ -460,16 +476,23 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
       servicosSelecionados,
       servicos
     );
+    const prazoVerificacao = calcularPrazoVerificacaoPorServicos(
+      data.dataAbertura,
+      servicosSelecionados,
+      servicos
+    );
 
     const payload = {
       ...data,
       servicos: servicosSelecionados,
       prazoExecucao: prazoExecucao ?? undefined,
+      prazoVerificacao: prazoVerificacao ?? undefined,
       // Só registra o marco quando a regra está ativa; sem status de início
       // configurado o prazo segue contando da abertura, como antes.
       prazoIniciadoEm: regraInicioPrazoAtiva ? baseContagem : null,
     } as ProtocoloFormData & {
       prazoExecucao?: Date;
+      prazoVerificacao?: Date;
       prazoIniciadoEm?: Date | null;
     };
 
@@ -928,6 +951,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
       nome: servicoNaoEncontrado,
       descricao: "",
       preco: "",
+      prazo_verificacao: "",
       prazo_execucao: 3,
       dias_notificacao_antes_vencimento: 1,
       ativo: true,
@@ -943,13 +967,13 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
         return;
       }
 
-      // Validação: dias de notificação deve ser menor que prazo de execução
+      // Validação: dias de notificação deve ser menor que prazo de entrega
       if (
         servicoForm.dias_notificacao_antes_vencimento &&
         servicoForm.prazo_execucao &&
         servicoForm.dias_notificacao_antes_vencimento >= servicoForm.prazo_execucao
       ) {
-        toast.error("Dias para notificação deve ser menor que o prazo de execução");
+        toast.error("Dias para notificação deve ser menor que o prazo de entrega");
         return;
       }
 
@@ -969,11 +993,19 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
           })()
         : undefined;
 
+      const prazoVerificacao =
+        servicoForm.prazo_verificacao === "" ||
+        servicoForm.prazo_verificacao === null ||
+        servicoForm.prazo_verificacao === undefined
+          ? undefined
+          : Number(servicoForm.prazo_verificacao) || undefined;
+
       // Criar o serviço
       const novoServico = await createServico({
         nome: servicoForm.nome.trim(),
         descricao: servicoForm.descricao.trim() || undefined,
         preco: preco,
+        prazo_verificacao: prazoVerificacao,
         prazo_execucao: servicoForm.prazo_execucao,
         dias_notificacao_antes_vencimento: servicoForm.dias_notificacao_antes_vencimento,
         ativo: servicoForm.ativo,
@@ -1004,6 +1036,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
         nome: "",
         descricao: "",
         preco: "",
+        prazo_verificacao: "",
         prazo_execucao: 3,
         dias_notificacao_antes_vencimento: 1,
         ativo: true,
@@ -1096,7 +1129,32 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
               />
             </div>
             <div>
-              <Label htmlFor="prazoServico">Prazo de Execução (dias) *</Label>
+              <Label htmlFor="prazoVerificacaoServico">
+                Prazo para verificação dos documentos (dias)
+              </Label>
+              <Input
+                id="prazoVerificacaoServico"
+                type="number"
+                min="1"
+                value={servicoForm.prazo_verificacao}
+                onChange={(e) =>
+                  setServicoForm((prev) => ({
+                    ...prev,
+                    prazo_verificacao:
+                      e.target.value === ""
+                        ? ""
+                        : parseInt(e.target.value) || "",
+                  }))
+                }
+              />
+              <p className="text-sm text-gray-500 mt-1">
+                Conta a partir da abertura do protocolo.
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="prazoServico">
+                Prazo para entrega após pagamento (dias) *
+              </Label>
               <Input
                 id="prazoServico"
                 type="number"
@@ -1109,6 +1167,15 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                   }))
                 }
               />
+              <p className="text-sm text-gray-500 mt-1">
+                {statusInicioPrazoNomes.length === 0
+                  ? 'Começa a contar no status marcado como "Início do prazo".'
+                  : statusInicioPrazoNomes.length === 1
+                    ? `Começa a contar quando o protocolo recebe o status "${statusInicioPrazoNomes[0]}".`
+                    : `Começa a contar em: ${statusInicioPrazoNomes
+                        .map((n) => `"${n}"`)
+                        .join(", ")}.`}
+              </p>
             </div>
             <div>
               <Label htmlFor="diasNotificacaoServico">
@@ -1128,7 +1195,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                 }
               />
               <p className="text-sm text-gray-500 mt-1">
-                Quantos dias antes do vencimento receber notificação via WhatsApp
+                Quantos dias antes do vencimento da entrega receber notificação via WhatsApp
               </p>
             </div>
             <div className="flex items-center space-x-2">
@@ -1303,12 +1370,22 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                     />
                   </FormControl>
                   <FormDescription>
-                    O prazo de execução é calculado automaticamente conforme o
-                    prazo cadastrado de cada serviço.
+                    Os prazos são calculados automaticamente conforme o cadastro
+                    de cada serviço.
+                    {prazoVerificacaoPrevisto && (
+                      <>
+                        {" "}
+                        Verificação prevista:{" "}
+                        <strong>
+                          {prazoVerificacaoPrevisto.toLocaleDateString("pt-BR")}
+                        </strong>
+                        .
+                      </>
+                    )}
                     {prazoExecucaoPrevisto && (
                       <>
                         {" "}
-                        Prazo previsto:{" "}
+                        Entrega prevista:{" "}
                         <strong>
                           {prazoExecucaoPrevisto.toLocaleDateString("pt-BR")}
                         </strong>
@@ -1629,7 +1706,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
               protocoloIdEdicao ? removerDocumentoProtocolo : undefined
             }
             disabled={isSubmittingForm}
-            maxFiles={10}
+            maxFiles={30}
           />
         </div>
 

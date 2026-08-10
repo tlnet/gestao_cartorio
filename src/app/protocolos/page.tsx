@@ -437,6 +437,9 @@ const ProtocolosContent = () => {
         prazo_execucao: data.prazoExecucao
           ? formatDateForDatabase(data.prazoExecucao)
           : null,
+        prazo_verificacao: data.prazoVerificacao
+          ? formatDateForDatabase(data.prazoVerificacao)
+          : null,
         prazo_iniciado_em: data.prazoIniciadoEm
           ? data.prazoIniciadoEm.toISOString()
           : null,
@@ -865,9 +868,9 @@ const ProtocolosContent = () => {
                     <TableHead>Protocolo</TableHead>
                     <TableHead>Solicitante</TableHead>
                     <TableHead>Demanda</TableHead>
-                    <TableHead>Serviço</TableHead>
+                    <TableHead className="max-w-[280px]">Serviço</TableHead>
                     <TableHead>Data Abertura</TableHead>
-                    <TableHead>Prazo</TableHead>
+                    <TableHead className="whitespace-nowrap">Prazo</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Ações</TableHead>
                   </TableRow>
@@ -910,12 +913,17 @@ const ProtocolosContent = () => {
                         </div>
                       </TableCell>
                       <TableCell>{protocolo.demanda}</TableCell>
-                      <TableCell>
+                      <TableCell className="max-w-[280px]">
                         <div className="flex flex-wrap items-center gap-1">
                           {Array.isArray(protocolo.servicos) && protocolo.servicos.length > 0 ? (
                             <>
                               {protocolo.servicos.slice(0, 2).map((servico: string, index: number) => (
-                                <Badge key={index} variant="secondary" className="text-xs">
+                                <Badge
+                                  key={index}
+                                  variant="secondary"
+                                  className="text-xs max-w-full truncate"
+                                  title={servico}
+                                >
                                   {servico}
                                 </Badge>
                               ))}
@@ -946,11 +954,11 @@ const ProtocolosContent = () => {
                       <TableCell>
                         {formatDateForDisplay(protocolo.created_at)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap">
                         {prazoAguardandoInicio(protocolo) ? (
                           <Badge
                             variant="outline"
-                            className="text-xs text-gray-600"
+                            className="text-xs text-gray-600 whitespace-nowrap"
                             title={descreverAguardandoInicioPrazo(
                               resolvePrazoProtocolo(
                                 protocolo,
@@ -958,11 +966,11 @@ const ProtocolosContent = () => {
                               ).statusInicioNomes
                             )}
                           >
-                            <Timer className="mr-1 h-3 w-3" />
+                            <Timer className="mr-1 h-3 w-3 shrink-0" />
                             Não iniciado
                           </Badge>
                         ) : (
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-2 whitespace-nowrap">
                             <span>
                               {formatDateForDisplay(protocolo.prazo_execucao)}
                             </span>
@@ -1106,7 +1114,7 @@ const ProtocolosContent = () => {
                       <TableHead>Protocolo</TableHead>
                       <TableHead>Solicitante</TableHead>
                       <TableHead>Demanda</TableHead>
-                      <TableHead>Serviço</TableHead>
+                      <TableHead className="max-w-[280px]">Serviço</TableHead>
                       <TableHead>Data Abertura</TableHead>
                       <TableHead>Data Conclusão</TableHead>
                       <TableHead>Status</TableHead>
@@ -1156,12 +1164,17 @@ const ProtocolosContent = () => {
                           </div>
                         </TableCell>
                         <TableCell>{protocolo.demanda}</TableCell>
-                        <TableCell>
+                        <TableCell className="max-w-[280px]">
                           <div className="flex flex-wrap items-center gap-1">
                             {Array.isArray(protocolo.servicos) && protocolo.servicos.length > 0 ? (
                               <>
                                 {protocolo.servicos.slice(0, 2).map((servico: string, index: number) => (
-                                  <Badge key={index} variant="secondary" className="text-xs">
+                                  <Badge
+                                    key={index}
+                                    variant="secondary"
+                                    className="text-xs max-w-full truncate"
+                                    title={servico}
+                                  >
                                     {servico}
                                   </Badge>
                                 ))}
@@ -1326,6 +1339,7 @@ const ProtocolosContent = () => {
               cpfCnpj: selectedProtocolo.cpf_cnpj,
               dataAbertura: selectedProtocolo.created_at,
               prazoExecucao: selectedProtocolo.prazo_execucao || "",
+              prazoVerificacao: selectedProtocolo.prazo_verificacao || "",
               prazoIniciadoEm: selectedProtocolo.prazo_iniciado_em || null,
             }}
           />
