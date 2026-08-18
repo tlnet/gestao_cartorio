@@ -10,7 +10,10 @@ import IANotifications from "@/components/notifications/ia-notifications";
 import { useAuth } from "@/contexts/auth-context";
 import { useEntidades } from "@/hooks/use-entidades";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
-import { isStatusConclusao } from "@/lib/status-resolve";
+import {
+  getStatusInicioPrazoNomes,
+  isStatusConclusao,
+} from "@/lib/status-resolve";
 import {
   Card,
   CardContent,
@@ -55,6 +58,12 @@ import {
   formatDateForDisplay,
   formatDateForDatabase,
 } from "@/lib/utils";
+import {
+  avaliarPrazo,
+  descreverAguardandoInicioPrazo,
+  descreverSituacaoPrazo,
+  isPrazoAguardandoInicio,
+} from "@/lib/prazo-protocolo";
 
 const Dashboard = () => {
   const { userProfile, userType } = useAuth();
@@ -114,6 +123,8 @@ const Dashboard = () => {
         if (!p.prazo_execucao) return false;
         // Excluir protocolos concluídos (padrão ou status personalizado de conclusão)
         if (isStatusConclusao(p.status, statusPersonalizados)) return false;
+        // Sem passar pelo status que inicia o prazo não há entrega a vencer
+        if (isPrazoAguardandoInicio(p, statusPersonalizados)) return false;
         const prazo = new Date(p.prazo_execucao);
         const hoje = new Date();
         const diffTime = prazo.getTime() - hoje.getTime();
@@ -286,6 +297,24 @@ const Dashboard = () => {
   };
 
   const loading = protocolosLoading || cartoriosLoading || usuariosLoading;
+
+  /**
+   * O prazo só passa a valer depois do status que inicia a contagem (o de
+   * pagamento). Antes disso a lista mostra "Não iniciado" no lugar da data.
+   */
+  const statusInicioPrazoNomes =
+    getStatusInicioPrazoNomes(statusPersonalizados);
+
+  const prazoAguardandoInicio = (protocolo: any) =>
+    isPrazoAguardandoInicio(
+      {
+        status: protocolo.status,
+        created_at: protocolo.dataAbertura,
+        prazo_iniciado_em: protocolo.prazoIniciadoEm,
+        prazo_execucao: protocolo.prazoExecucao,
+      },
+      statusPersonalizados
+    );
 
   const getStatusColorClass = (status: string) => {
     if (isStatusConclusao(status, statusPersonalizados)) {
@@ -683,7 +712,36 @@ const Dashboard = () => {
                         <div className="text-right">
                           <p className="text-sm text-gray-600">Prazo</p>
                           <p className="text-sm font-medium">
-                            {formatDateForDisplay(protocolo.prazoExecucao)}
+                            {prazoAguardandoInicio(protocolo) ? (
+                              <span
+                                className="text-gray-500"
+                                title={descreverAguardandoInicioPrazo(
+                                  statusInicioPrazoNomes
+                                )}
+                              >
+                                Não iniciado
+                              </span>
+                            ) : (
+                              (() => {
+                                const av = avaliarPrazo(protocolo.prazoExecucao);
+                                return (
+                                  <span
+                                    className={
+                                      av?.situacao === "vencido"
+                                        ? "text-red-600"
+                                        : av?.situacao === "vencendo"
+                                        ? "text-amber-600"
+                                        : undefined
+                                    }
+                                    title={
+                                      av ? descreverSituacaoPrazo(av) : undefined
+                                    }
+                                  >
+                                    {formatDateForDisplay(protocolo.prazoExecucao)}
+                                  </span>
+                                );
+                              })()
+                            )}
                           </p>
                         </div>
                         <Badge

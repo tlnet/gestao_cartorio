@@ -3,10 +3,8 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
-import {
-  hasStatusInicioPrazo,
-  isStatusConclusao,
-} from "@/lib/status-resolve";
+import { isStatusConclusao } from "@/lib/status-resolve";
+import { isPrazoAguardandoInicio } from "@/lib/prazo-protocolo";
 import { debugLoading } from "@/lib/debug-loading";
 import { CATEGORIA_LABELS } from "@/types";
 
@@ -735,13 +733,14 @@ export const useNotifications = () => {
       }
 
       // A consulta exclui apenas o status padrão "Concluído"; aqui descartamos
-      // também os protocolos em status personalizado marcado como de conclusão
-      // e os que ainda não tiveram a contagem do prazo iniciada.
-      const usaStatusInicioPrazo = hasStatusInicioPrazo(statusPersonalizados);
+      // também os protocolos em status personalizado marcado como de conclusão.
+      // O alerta é sempre sobre a entrega, que só passa a existir depois do
+      // status que inicia a contagem (o de pagamento) — antes disso não há
+      // vencimento a avisar.
       const protocolosAbertos = (protocolos as any[]).filter(
         (p) =>
           !isStatusConclusao(p.status, statusPersonalizados) &&
-          !(usaStatusInicioPrazo && !p.prazo_iniciado_em)
+          !isPrazoAguardandoInicio(p, statusPersonalizados)
       );
 
       if (protocolosAbertos.length === 0) {

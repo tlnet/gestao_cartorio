@@ -161,3 +161,56 @@ export function descreverAguardandoInicioPrazo(
     .map((n) => `"${n}"`)
     .join(", ")}`;
 }
+
+/**
+ * A data do prazo só vale depois que o protocolo passou pelo status que inicia
+ * a contagem (o de pagamento). Enquanto isso não acontece o protocolo fica como
+ * "não iniciado", mesmo que já exista uma data gravada em `prazo_execucao`
+ * (protocolos antigos ou prazo preenchido antes da regra entrar em vigor).
+ */
+export function isPrazoAguardandoInicio(
+  protocolo: ProtocoloPrazoInput,
+  statusPersonalizados: StatusPersonalizado[]
+): boolean {
+  return !resolvePrazoProtocolo(protocolo, statusPersonalizados).iniciado;
+}
+
+export type SituacaoPrazo = "vencido" | "vencendo" | "no-prazo";
+
+export type AvaliacaoPrazo = {
+  situacao: SituacaoPrazo;
+  /** Dias até o vencimento; negativo indica dias de atraso. */
+  dias: number;
+};
+
+/**
+ * Situação do prazo de entrega em relação a hoje. Compara dia a dia (ignora
+ * horas) para que "vence hoje" não vire atraso no fim do expediente.
+ */
+export function avaliarPrazo(
+  prazo: string | Date | null | undefined,
+  diasAlerta = 2
+): AvaliacaoPrazo | null {
+  if (!prazo) return null;
+  const d = prazo instanceof Date ? prazo : parseLocalDate(prazo);
+  if (Number.isNaN(d.getTime())) return null;
+
+  const dias = Math.round(
+    (startOfDay(d).getTime() - startOfDay(new Date()).getTime()) / 86400000
+  );
+
+  if (dias < 0) return { situacao: "vencido", dias };
+  if (dias <= diasAlerta) return { situacao: "vencendo", dias };
+  return { situacao: "no-prazo", dias };
+}
+
+/** Texto do tooltip para a situação do prazo. */
+export function descreverSituacaoPrazo(av: AvaliacaoPrazo): string {
+  if (av.situacao === "vencido") {
+    const atraso = Math.abs(av.dias);
+    return atraso === 1 ? "Atrasado há 1 dia" : `Atrasado há ${atraso} dias`;
+  }
+  if (av.dias === 0) return "Vence hoje";
+  if (av.dias === 1) return "Vence amanhã";
+  return `Vence em ${av.dias} dias`;
+}

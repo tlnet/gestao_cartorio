@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { isPrazoAguardandoInicio } from "@/lib/prazo-protocolo";
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,9 +42,7 @@ export async function POST(request: NextRequest) {
         .select("nome, is_inicio_prazo")
         .eq("cartorio_id", cartorio.id);
 
-      const usaStatusInicioPrazo = (statusCartorio || []).some(
-        (s: any) => s.is_inicio_prazo === true
-      );
+      const statusPersonalizados = (statusCartorio || []) as any[];
 
       // Buscar protocolos não concluídos do cartório
       const { data: protocolos, error: protocolosError } = await supabase
@@ -85,9 +84,10 @@ export async function POST(request: NextRequest) {
 
       // Processar cada protocolo
       for (const protocolo of protocolos) {
-        // Prazo condicionado a status: enquanto a contagem não começa, o
+        // O aviso é sobre a entrega, que só passa a existir depois do status
+        // que inicia a contagem (o de pagamento). Enquanto isso não acontece o
         // protocolo não tem vencimento a notificar.
-        if (usaStatusInicioPrazo && !protocolo.prazo_iniciado_em) {
+        if (isPrazoAguardandoInicio(protocolo, statusPersonalizados)) {
           continue;
         }
 

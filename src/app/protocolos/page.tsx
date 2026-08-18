@@ -27,7 +27,10 @@ import {
 } from "@/lib/utils";
 import { isStatusConclusao } from "@/lib/status-resolve";
 import {
+  avaliarPrazo,
   descreverAguardandoInicioPrazo,
+  descreverSituacaoPrazo,
+  isPrazoAguardandoInicio,
   resolvePrazoProtocolo,
 } from "@/lib/prazo-protocolo";
 import {
@@ -81,6 +84,7 @@ import {
   X,
   MessageCircle,
   Timer,
+  AlertTriangle,
 } from "lucide-react";
 
 const ProtocolosContent = () => {
@@ -213,20 +217,15 @@ const ProtocolosContent = () => {
 
   /**
    * Prazo represado: o cartório usa status de início de prazo e este protocolo
-   * ainda não recebeu nenhum deles — a contagem não vale.
+   * ainda não recebeu nenhum deles — a contagem não vale. Vale também quando já
+   * existe data gravada em `prazo_execucao`: sem passar pelo status que inicia
+   * o prazo (o de pagamento) a data não é exibida.
    */
   const prazoAguardandoInicio = (protocolo: any) =>
-    !protocolo.prazo_execucao &&
-    !resolvePrazoProtocolo(protocolo, statusPersonalizados).iniciado;
+    isPrazoAguardandoInicio(protocolo, statusPersonalizados);
 
-  const isPrazoVencendo = (prazo: string) => {
-    if (!prazo) return false;
-    const hoje = new Date();
-    const dataPrazo = new Date(prazo);
-    const diffTime = dataPrazo.getTime() - hoje.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays <= 2 && diffDays >= 0;
-  };
+  const isPrazoVencendo = (prazo: string) =>
+    avaliarPrazo(prazo)?.situacao === "vencendo";
 
   // Função para destacar termos de busca
   const highlightSearchTerm = (text: string, searchTerm: string) => {
@@ -800,6 +799,7 @@ const ProtocolosContent = () => {
                     protocolosVisiveis.filter(
                       (p) =>
                         p.prazo_execucao &&
+                        !prazoAguardandoInicio(p) &&
                         isPrazoVencendo(p.prazo_execucao) &&
                         !isProtocoloConcluido(p)
                     ).length
@@ -870,7 +870,9 @@ const ProtocolosContent = () => {
                     <TableHead>Demanda</TableHead>
                     <TableHead className="max-w-[280px]">Serviço</TableHead>
                     <TableHead>Data Abertura</TableHead>
-                    <TableHead className="whitespace-nowrap">Prazo</TableHead>
+                    <TableHead className="whitespace-nowrap text-center">
+                      Prazo
+                    </TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Ações</TableHead>
                   </TableRow>
@@ -954,7 +956,7 @@ const ProtocolosContent = () => {
                       <TableCell>
                         {formatDateForDisplay(protocolo.created_at)}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">
+                      <TableCell className="whitespace-nowrap text-center">
                         {prazoAguardandoInicio(protocolo) ? (
                           <Badge
                             variant="outline"
@@ -970,15 +972,35 @@ const ProtocolosContent = () => {
                             Não iniciado
                           </Badge>
                         ) : (
-                          <div className="flex items-center space-x-2 whitespace-nowrap">
-                            <span>
-                              {formatDateForDisplay(protocolo.prazo_execucao)}
-                            </span>
-                            {protocolo.prazo_execucao &&
-                              isPrazoVencendo(protocolo.prazo_execucao) && (
-                                <Clock className="h-4 w-4 text-red-500" />
-                              )}
-                          </div>
+                          (() => {
+                            const av = avaliarPrazo(protocolo.prazo_execucao);
+                            const vencido = av?.situacao === "vencido";
+                            const vencendo = av?.situacao === "vencendo";
+                            return (
+                              <div
+                                className="flex items-center justify-center gap-1.5 whitespace-nowrap"
+                                title={av ? descreverSituacaoPrazo(av) : undefined}
+                              >
+                                <span
+                                  className={
+                                    vencido
+                                      ? "font-medium text-red-600"
+                                      : vencendo
+                                      ? "font-medium text-amber-600"
+                                      : undefined
+                                  }
+                                >
+                                  {formatDateForDisplay(protocolo.prazo_execucao)}
+                                </span>
+                                {vencido && (
+                                  <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
+                                )}
+                                {vencendo && (
+                                  <Clock className="h-4 w-4 shrink-0 text-amber-500" />
+                                )}
+                              </div>
+                            );
+                          })()
                         )}
                       </TableCell>
                       <TableCell>

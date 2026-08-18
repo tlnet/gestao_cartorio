@@ -122,7 +122,7 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
     );
     return {
       statusInicioNomes: info.statusInicioNomes,
-      aguardandoInicio: !protocolo.prazoExecucao && !info.iniciado,
+      aguardandoInicio: !info.iniciado,
       iniciadoEm: protocolo.prazoIniciadoEm || null,
     };
   }, [
