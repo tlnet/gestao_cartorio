@@ -229,7 +229,7 @@ export function DocumentUpload({
         totalMarcados: novosMarcados.length,
       });
 
-      toast.success("Documento será removido ao salvar a conta");
+      toast.success("Documento será removido ao salvar");
 
       console.log("🔍 DEBUG: Fechando diálogo");
       setShowConfirmDialog(false);
@@ -259,7 +259,8 @@ export function DocumentUpload({
 
     try {
       // Remover do banco se há callback
-      if (onRemoveDocument && contaId) {
+      const parentId = entityId || contaId;
+      if (onRemoveDocument && parentId) {
         for (const documentoId of documentosMarcadosParaRemocao) {
           await onRemoveDocument(documentoId);
         }
@@ -616,7 +617,7 @@ export function DocumentUpload({
         open={showConfirmDialog}
         onOpenChange={setShowConfirmDialog}
         title="Confirmar Remoção"
-        description={`Tem certeza que deseja remover o documento "${documentoParaRemover?.nome}"? Esta ação será executada ao salvar a conta.`}
+        description={`Tem certeza que deseja remover o documento "${documentoParaRemover?.nome}"? Esta ação será executada ao salvar.`}
         confirmText="Remover"
         cancelText="Cancelar"
         onConfirm={confirmRemoveDocument}

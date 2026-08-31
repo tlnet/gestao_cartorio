@@ -631,6 +631,7 @@ const Relatorios = () => {
 
           return {
             Protocolo: protocolo.protocolo,
+            Demanda: protocolo.demanda || "N/A",
             Solicitante: protocolo.solicitante,
             "CPF/CNPJ": protocolo.cpf_cnpj,
             Email: protocolo.email,
@@ -1122,6 +1123,7 @@ const Relatorios = () => {
 
                   return [
                     protocolo.protocolo,
+                    removerAcentos(protocolo.demanda || "N/A"),
                     removerAcentos(protocolo.solicitante),
                     Array.isArray(protocolo.servicos)
                       ? protocolo.servicos
@@ -1151,6 +1153,7 @@ const Relatorios = () => {
                 head: [
                   [
                     "Protocolo",
+                    "Demanda",
                     "Solicitante",
                     "Servicos",
                     "Status",
@@ -1170,13 +1173,14 @@ const Relatorios = () => {
                   fillColor: [248, 249, 250],
                 },
                 columnStyles: {
-                  0: { cellWidth: 25 },
-                  1: { cellWidth: 35 },
-                  2: { cellWidth: 40 },
-                  3: { cellWidth: 20 },
-                  4: { cellWidth: 20 },
-                  5: { cellWidth: 20 },
-                  6: { cellWidth: 25 },
+                  0: { cellWidth: 22 },
+                  1: { cellWidth: 32 },
+                  2: { cellWidth: 28 },
+                  3: { cellWidth: 28 },
+                  4: { cellWidth: 18 },
+                  5: { cellWidth: 18 },
+                  6: { cellWidth: 18 },
+                  7: { cellWidth: 22 },
                 },
                 margin: { left: 20, right: 20 },
               });

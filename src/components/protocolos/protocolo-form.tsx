@@ -235,7 +235,14 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   const [documentosExistentes, setDocumentosExistentes] = React.useState<
     DocumentoAnexo[]
   >([]);
+  const [documentosMarcadosParaRemocao, setDocumentosMarcadosParaRemocao] =
+    React.useState<string[]>([]);
+  const documentosMarcadosRef = React.useRef<string[]>([]);
   const [isSubmittingForm, setIsSubmittingForm] = React.useState(false);
+
+  React.useEffect(() => {
+    documentosMarcadosRef.current = documentosMarcadosParaRemocao;
+  }, [documentosMarcadosParaRemocao]);
 
   const protocoloIdEdicao = initialData?.id;
   const {
@@ -445,6 +452,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     if (!protocoloIdEdicao) {
       setDocumentos([]);
       setDocumentosExistentes([]);
+      setDocumentosMarcadosParaRemocao([]);
       return;
     }
 
@@ -460,7 +468,14 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
         tamanho: d.tamanhoArquivo,
         dataUpload: d.dataUpload,
       }));
-      setDocumentos(anexos);
+      const marcados = new Set(documentosMarcadosRef.current);
+      setDocumentos((prev) => {
+        const fromDb = anexos.filter((d) => !marcados.has(d.id));
+        const localOnly = prev.filter(
+          (p) => !anexos.some((a) => a.id === p.id)
+        );
+        return [...fromDb, ...localOnly];
+      });
       setDocumentosExistentes(anexos);
     })();
 
@@ -468,6 +483,35 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
       cancelled = true;
     };
   }, [protocoloIdEdicao, buscarDocumentosProtocolo]);
+
+  const executeRemocaoDocumentos = async () => {
+    if (documentosMarcadosParaRemocao.length === 0) return;
+
+    for (const documentoId of documentosMarcadosParaRemocao) {
+      const removido = await removerDocumentoProtocolo(documentoId);
+      if (!removido) {
+        throw new Error("Falha ao remover documento do protocolo");
+      }
+    }
+
+    for (const documento of documentosExistentes.filter((doc) =>
+      documentosMarcadosParaRemocao.includes(doc.id)
+    )) {
+      try {
+        const url = new URL(documento.url);
+        const pathParts = url.pathname.split("/");
+        const filePath = pathParts.slice(-3).join("/");
+        await supabase.storage.from("documentos").remove([filePath]);
+      } catch (error) {
+        console.error("Erro ao remover arquivo do storage:", error);
+      }
+    }
+
+    setDocumentosExistentes((prev) =>
+      prev.filter((doc) => !documentosMarcadosParaRemocao.includes(doc.id))
+    );
+    setDocumentosMarcadosParaRemocao([]);
+  };
 
   const handleSubmit = async (data: ProtocoloFormData) => {
     const baseContagem = resolverBaseContagem(data.status, data.dataAbertura);
@@ -500,6 +544,10 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
 
     setIsSubmittingForm(true);
     try {
+      if (isEditing && documentosMarcadosParaRemocao.length > 0) {
+        await executeRemocaoDocumentos();
+      }
+
       await onSubmit(payload, documentosNovosCriacao);
 
       if (isEditing && protocoloIdEdicao && documentos.length > 0) {
@@ -1705,8 +1753,9 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
             onRemoveDocument={
               protocoloIdEdicao ? removerDocumentoProtocolo : undefined
             }
+            onDocumentosMarcadosChange={setDocumentosMarcadosParaRemocao}
             disabled={isSubmittingForm}
-            maxFiles={30}
+            maxFiles={50}
           />
         </div>
 
