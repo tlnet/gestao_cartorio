@@ -214,3 +214,17 @@ export function descreverSituacaoPrazo(av: AvaliacaoPrazo): string {
   if (av.dias === 1) return "Vence amanhã";
   return `Vence em ${av.dias} dias`;
 }
+
+export function cadastroServicoTemPrazosIncompletos(
+  servico: ServicoPrazo
+): boolean {
+  return !servico.prazo_execucao || !servico.prazo_verificacao;
+}
+
+export function descreverPrazosIncompletosServico(servico: ServicoPrazo): string {
+  const faltando: string[] = [];
+  if (!servico.prazo_verificacao) faltando.push("verificação");
+  if (!servico.prazo_execucao) faltando.push("entrega");
+  if (faltando.length === 0) return "";
+  return `Preencha o prazo de ${faltando.join(" e ")} deste serviço`;
+}

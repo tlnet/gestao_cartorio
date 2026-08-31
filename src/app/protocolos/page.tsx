@@ -28,11 +28,9 @@ import {
 import { isStatusConclusao } from "@/lib/status-resolve";
 import {
   avaliarPrazo,
-  descreverAguardandoInicioPrazo,
-  descreverSituacaoPrazo,
   isPrazoAguardandoInicio,
-  resolvePrazoProtocolo,
 } from "@/lib/prazo-protocolo";
+import { PrazoProtocoloCell } from "@/components/protocolos/prazo-protocolo-cell";
 import {
   Card,
   CardContent,
@@ -83,8 +81,6 @@ import {
   Trash2,
   X,
   MessageCircle,
-  Timer,
-  AlertTriangle,
 } from "lucide-react";
 
 const ProtocolosContent = () => {
@@ -846,7 +842,7 @@ const ProtocolosContent = () => {
               </div>
             ) : (
               <Table>
-                <TableHeader>
+                <TableHeader className="[&_th]:py-3">
                   <TableRow>
                     {canDeleteProtocolos && deleteModeOpen && (
                       <TableHead className="w-10">
@@ -870,14 +866,14 @@ const ProtocolosContent = () => {
                     <TableHead>Demanda</TableHead>
                     <TableHead className="max-w-[280px]">Serviço</TableHead>
                     <TableHead>Data Abertura</TableHead>
-                    <TableHead className="whitespace-nowrap text-center">
+                    <TableHead className="min-w-[16rem] text-center">
                       Prazo
                     </TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Ações</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
+                <TableBody className="[&_td]:px-3 [&_td]:py-4">
                   {protocolosEmAberto.map((protocolo) => (
                     <TableRow key={protocolo.id}>
                       {canDeleteProtocolos && deleteModeOpen && (
@@ -956,52 +952,13 @@ const ProtocolosContent = () => {
                       <TableCell>
                         {formatDateForDisplay(protocolo.created_at)}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-center">
-                        {prazoAguardandoInicio(protocolo) ? (
-                          <Badge
-                            variant="outline"
-                            className="text-xs text-gray-600 whitespace-nowrap"
-                            title={descreverAguardandoInicioPrazo(
-                              resolvePrazoProtocolo(
-                                protocolo,
-                                statusPersonalizados
-                              ).statusInicioNomes
-                            )}
-                          >
-                            <Timer className="mr-1 h-3 w-3 shrink-0" />
-                            Não iniciado
-                          </Badge>
-                        ) : (
-                          (() => {
-                            const av = avaliarPrazo(protocolo.prazo_execucao);
-                            const vencido = av?.situacao === "vencido";
-                            const vencendo = av?.situacao === "vencendo";
-                            return (
-                              <div
-                                className="flex items-center justify-center gap-1.5 whitespace-nowrap"
-                                title={av ? descreverSituacaoPrazo(av) : undefined}
-                              >
-                                <span
-                                  className={
-                                    vencido
-                                      ? "font-medium text-red-600"
-                                      : vencendo
-                                      ? "font-medium text-amber-600"
-                                      : undefined
-                                  }
-                                >
-                                  {formatDateForDisplay(protocolo.prazo_execucao)}
-                                </span>
-                                {vencido && (
-                                  <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
-                                )}
-                                {vencendo && (
-                                  <Clock className="h-4 w-4 shrink-0 text-amber-500" />
-                                )}
-                              </div>
-                            );
-                          })()
-                        )}
+                      <TableCell className="text-center">
+                        <div className="flex justify-center">
+                          <PrazoProtocoloCell
+                            protocolo={protocolo}
+                            statusPersonalizados={statusPersonalizados}
+                          />
+                        </div>
                       </TableCell>
                       <TableCell>
                         <StatusSelector
@@ -1114,7 +1071,7 @@ const ProtocolosContent = () => {
                 </div>
               ) : (
                 <Table>
-                  <TableHeader>
+                  <TableHeader className="[&_th]:py-3">
                     <TableRow>
                       {canDeleteProtocolos && deleteModeOpen && (
                         <TableHead className="w-10">
@@ -1143,7 +1100,7 @@ const ProtocolosContent = () => {
                       <TableHead>Ações</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody>
+                  <TableBody className="[&_td]:px-3 [&_td]:py-4">
                     {protocolosConcluidos.map((protocolo) => (
                       <TableRow key={protocolo.id} className="bg-green-50/50">
                         {canDeleteProtocolos && deleteModeOpen && (

@@ -10,8 +10,8 @@ import IANotifications from "@/components/notifications/ia-notifications";
 import { useAuth } from "@/contexts/auth-context";
 import { useEntidades } from "@/hooks/use-entidades";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
+import { PrazoProtocoloCell } from "@/components/protocolos/prazo-protocolo-cell";
 import {
-  getStatusInicioPrazoNomes,
   isStatusConclusao,
 } from "@/lib/status-resolve";
 import {
@@ -55,13 +55,10 @@ import {
 } from "lucide-react";
 import {
   parseLocalDate,
-  formatDateForDisplay,
   formatDateForDatabase,
 } from "@/lib/utils";
 import {
   avaliarPrazo,
-  descreverAguardandoInicioPrazo,
-  descreverSituacaoPrazo,
   isPrazoAguardandoInicio,
 } from "@/lib/prazo-protocolo";
 
@@ -242,6 +239,7 @@ const Dashboard = () => {
       status: protocolo.status,
       dataAbertura: protocolo.created_at,
       prazoExecucao: protocolo.prazo_execucao,
+      prazoVerificacao: protocolo.prazo_verificacao,
       prazoIniciadoEm: protocolo.prazo_iniciado_em ?? null,
       observacao: protocolo.observacao || "Sem observações",
       apresentante: protocolo.apresentante || "",
@@ -297,24 +295,6 @@ const Dashboard = () => {
   };
 
   const loading = protocolosLoading || cartoriosLoading || usuariosLoading;
-
-  /**
-   * O prazo só passa a valer depois do status que inicia a contagem (o de
-   * pagamento). Antes disso a lista mostra "Não iniciado" no lugar da data.
-   */
-  const statusInicioPrazoNomes =
-    getStatusInicioPrazoNomes(statusPersonalizados);
-
-  const prazoAguardandoInicio = (protocolo: any) =>
-    isPrazoAguardandoInicio(
-      {
-        status: protocolo.status,
-        created_at: protocolo.dataAbertura,
-        prazo_iniciado_em: protocolo.prazoIniciadoEm,
-        prazo_execucao: protocolo.prazoExecucao,
-      },
-      statusPersonalizados
-    );
 
   const getStatusColorClass = (status: string) => {
     if (isStatusConclusao(status, statusPersonalizados)) {
@@ -711,38 +691,11 @@ const Dashboard = () => {
                       <div className="flex items-center space-x-4">
                         <div className="text-right">
                           <p className="text-sm text-gray-600">Prazo</p>
-                          <p className="text-sm font-medium">
-                            {prazoAguardandoInicio(protocolo) ? (
-                              <span
-                                className="text-gray-500"
-                                title={descreverAguardandoInicioPrazo(
-                                  statusInicioPrazoNomes
-                                )}
-                              >
-                                Não iniciado
-                              </span>
-                            ) : (
-                              (() => {
-                                const av = avaliarPrazo(protocolo.prazoExecucao);
-                                return (
-                                  <span
-                                    className={
-                                      av?.situacao === "vencido"
-                                        ? "text-red-600"
-                                        : av?.situacao === "vencendo"
-                                        ? "text-amber-600"
-                                        : undefined
-                                    }
-                                    title={
-                                      av ? descreverSituacaoPrazo(av) : undefined
-                                    }
-                                  >
-                                    {formatDateForDisplay(protocolo.prazoExecucao)}
-                                  </span>
-                                );
-                              })()
-                            )}
-                          </p>
+                          <PrazoProtocoloCell
+                            protocolo={protocolo}
+                            statusPersonalizados={statusPersonalizados}
+                            compact
+                          />
                         </div>
                         <Badge
                           className={getStatusColorClass(protocolo.status)}

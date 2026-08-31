@@ -77,6 +77,10 @@ import { useCartorioValidation } from "@/hooks/use-cartorio-validation";
 import { putCartorioUpdate } from "@/lib/admin-cartorio-api";
 import { useEntidades } from "@/hooks/use-entidades";
 import { getStatusInicioPrazoNomes } from "@/lib/status-resolve";
+import {
+  cadastroServicoTemPrazosIncompletos,
+  descreverPrazosIncompletosServico,
+} from "@/lib/prazo-protocolo";
 
 const Configuracoes = () => {
   const [activeTab, setActiveTab] = useState("cartorio");
@@ -1868,7 +1872,18 @@ const Configuracoes = () => {
                     servicos.map((servico) => (
                       <TableRow key={servico.id}>
                         <TableCell className="font-medium">
-                          {servico.nome}
+                          <div className="flex items-center gap-2">
+                            {cadastroServicoTemPrazosIncompletos(servico) && (
+                              <span
+                                className="h-2 w-2 shrink-0 rounded-full bg-amber-500"
+                                title={descreverPrazosIncompletosServico(servico)}
+                                aria-label={descreverPrazosIncompletosServico(
+                                  servico
+                                )}
+                              />
+                            )}
+                            <span>{servico.nome}</span>
+                          </div>
                         </TableCell>
                         <TableCell className="max-w-xs truncate">
                           {servico.descricao || "-"}
@@ -1878,12 +1893,22 @@ const Configuracoes = () => {
                             ? formatCurrency((servico.preco * 100).toString())
                             : "-"}
                         </TableCell>
-                        <TableCell>
+                        <TableCell
+                          className={
+                            !servico.prazo_verificacao
+                              ? "text-amber-700"
+                              : undefined
+                          }
+                        >
                           {servico.prazo_verificacao
                             ? `${servico.prazo_verificacao} dias`
                             : "-"}
                         </TableCell>
-                        <TableCell>
+                        <TableCell
+                          className={
+                            !servico.prazo_execucao ? "text-amber-700" : undefined
+                          }
+                        >
                           {servico.prazo_execucao
                             ? `${servico.prazo_execucao} dias`
                             : "-"}
