@@ -60,6 +60,7 @@ import {
   Mail,
   Trash2,
   UserPlus,
+  ArrowLeft,
 } from "lucide-react";
 import {
   useChatwoot,
@@ -68,6 +69,7 @@ import {
   type ChatLabel,
   type ConversationStatus,
 } from "@/hooks/use-chatwoot";
+import { useIsChatStacked } from "@/hooks/use-mobile";
 
 function getInitials(name: string) {
   const parts = name.trim().split(" ").filter(Boolean);
@@ -508,6 +510,7 @@ const ChatPage = () => {
     changeStatusFilter,
     selectedId,
     selectConversation,
+    clearSelection,
     messages,
     loadingMessages,
     sendMessage,
@@ -554,10 +557,23 @@ const ChatPage = () => {
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isStacked = useIsChatStacked();
+
+  const showListPanel = !isStacked || !selectedId;
+  const showThreadPanel = !isStacked || !!selectedId;
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!messages.length) return;
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "nearest",
+    });
   }, [messages]);
+
+  useEffect(() => {
+    setShowContact(false);
+  }, [selectedId]);
 
   const selectedConversation = conversations.find((c) => c.id === selectedId);
 
@@ -716,10 +732,20 @@ const ChatPage = () => {
   return (
     <ProtectedRoute>
       <RequirePermission requiredPage="/chat">
-        <MainLayout title="Chat" subtitle="Atendimento integrado ao Chatwoot">
-          <Card className="flex h-[calc(100vh-12rem)] overflow-hidden p-0">
+        <MainLayout
+          title="Chat"
+          subtitle="Atendimento integrado ao Chatwoot"
+          fullHeight
+        >
+          <Card className="relative flex min-h-0 flex-1 overflow-hidden p-0">
             {/* Lista de conversas */}
-            <div className="flex w-80 min-w-0 flex-shrink-0 flex-col overflow-hidden border-r border-gray-200">
+            <div
+              className={cn(
+                "flex h-full min-w-0 flex-shrink-0 flex-col overflow-hidden border-r border-gray-200",
+                isStacked ? "w-full" : "w-80",
+                !showListPanel && "hidden"
+              )}
+            >
               <div className="space-y-2 border-b border-gray-200 p-3">
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
@@ -792,8 +818,8 @@ const ChatPage = () => {
                 )}
               </div>
 
-              <ScrollArea className="flex-1">
-                {loadingConversations ? (
+              <ScrollArea className="min-h-0 flex-1">
+                {loadingConversations && conversations.length === 0 ? (
                   <div className="space-y-2 p-3">
                     {Array.from({ length: 6 }).map((_, i) => (
                       <Skeleton key={i} className="h-16 w-full" />
@@ -894,7 +920,12 @@ const ChatPage = () => {
             </div>
 
             {/* Painel da conversa */}
-            <div className="flex flex-1 flex-col bg-gray-50">
+            <div
+              className={cn(
+                "flex h-full min-w-0 flex-1 flex-col bg-gray-50",
+                !showThreadPanel && "hidden"
+              )}
+            >
               {!selectedId ? (
                 <div className="flex flex-1 flex-col items-center justify-center text-gray-400">
                   <MessageSquare className="mb-3 h-12 w-12" />
@@ -904,7 +935,18 @@ const ChatPage = () => {
                 <>
                   {/* Cabeçalho */}
                   <div className="flex items-center gap-3 border-b border-gray-200 bg-white p-3">
-                    <Avatar className="h-9 w-9">
+                    {isStacked && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={clearSelection}
+                        title="Voltar para conversas"
+                        className="flex-shrink-0"
+                      >
+                        <ArrowLeft className="h-5 w-5 text-gray-600" />
+                      </Button>
+                    )}
+                    <Avatar className="h-9 w-9 flex-shrink-0">
                       <AvatarImage
                         src={selectedConversation?.thumbnail || undefined}
                       />
@@ -1020,10 +1062,10 @@ const ChatPage = () => {
                     </DropdownMenu>
                   </div>
 
-                  <div className="flex flex-1 overflow-hidden">
+                  <div className="relative flex min-w-0 flex-1 overflow-hidden">
                     {/* Thread */}
-                    <div className="flex flex-1 flex-col">
-                      <ScrollArea className="flex-1 p-4">
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <ScrollArea className="min-h-0 flex-1 p-4">
                         {loadingMessages ? (
                           <div className="space-y-3">
                             {Array.from({ length: 5 }).map((_, i) => (
@@ -1160,8 +1202,27 @@ const ChatPage = () => {
 
                     {/* Painel de detalhes do contato */}
                     {showContact && selectedConversation && (
-                      <div className="w-72 flex-shrink-0 border-l border-gray-200 bg-white">
+                      <div
+                        className={cn(
+                          "flex-shrink-0 border-l border-gray-200 bg-white",
+                          isStacked
+                            ? "absolute inset-y-0 right-0 z-10 w-full max-w-sm shadow-xl"
+                            : "w-72"
+                        )}
+                      >
                         <ScrollArea className="h-full p-4">
+                          {isStacked && (
+                            <div className="mb-3 flex justify-end">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setShowContact(false)}
+                                title="Fechar detalhes"
+                              >
+                                <X className="h-5 w-5 text-gray-500" />
+                              </Button>
+                            </div>
+                          )}
                           <div className="flex flex-col items-center text-center">
                             <Avatar className="h-16 w-16">
                               <AvatarImage

@@ -171,14 +171,17 @@ export function useChatwoot() {
       status?: ConversationStatus;
       page?: number;
       append?: boolean;
+      /** Atualiza a lista sem exibir skeletons (ex.: polling Realtime). */
+      silent?: boolean;
     }) => {
       if (!accessToken) return;
       const status = opts?.status ?? statusFilterRef.current;
       const targetPage = opts?.page ?? 1;
       const append = opts?.append ?? false;
+      const silent = opts?.silent ?? false;
 
       if (append) setLoadingMore(true);
-      else setLoadingConversations(true);
+      else if (!silent) setLoadingConversations(true);
       setError(null);
 
       try {
@@ -278,6 +281,11 @@ export function useChatwoot() {
     },
     [loadMessages, accessToken, authHeaders]
   );
+
+  const clearSelection = useCallback(() => {
+    setSelectedId(null);
+    setMessages([]);
+  }, []);
 
   const sendMessage = useCallback(
     async (
@@ -747,8 +755,12 @@ export function useChatwoot() {
             );
           }
 
-          // Atualiza a lista do filtro atual (1ª página).
-          loadConversations({ status: statusFilterRef.current, page: 1 });
+          // Atualiza a lista do filtro atual (1ª página) sem piscar skeletons.
+          loadConversations({
+            status: statusFilterRef.current,
+            page: 1,
+            silent: true,
+          });
         }
       )
       .subscribe();
@@ -768,6 +780,7 @@ export function useChatwoot() {
     changeStatusFilter,
     selectedId,
     selectConversation,
+    clearSelection,
     messages,
     loadingMessages,
     sendMessage,

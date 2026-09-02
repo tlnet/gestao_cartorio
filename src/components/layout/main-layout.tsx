@@ -13,6 +13,8 @@ interface MainLayoutProps {
   title: string;
   subtitle?: string;
   userType?: "admin_geral" | "admin" | "supervisor" | "atendente" | "financeiro";
+  /** Conteúdo ocupa toda a altura restante abaixo do header (ex.: chat). */
+  fullHeight?: boolean;
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({
@@ -20,6 +22,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({
   title,
   subtitle,
   userType = "atendente",
+  fullHeight = false,
 }) => {
   const pathname = usePathname();
   const router = useRouter();
@@ -48,11 +51,22 @@ const MainLayout: React.FC<MainLayoutProps> = ({
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header title={title} subtitle={subtitle} />
 
-        <main className="flex-1 overflow-y-auto p-6">
-          <PageTransition delay={100}>{children}</PageTransition>
+        <main
+          className={
+            fullHeight
+              ? "flex min-h-0 flex-1 flex-col overflow-hidden p-6"
+              : "flex-1 overflow-y-auto p-6"
+          }
+        >
+          <PageTransition
+            delay={100}
+            className={fullHeight ? "flex min-h-0 flex-1 flex-col" : undefined}
+          >
+            {children}
+          </PageTransition>
         </main>
       </div>
     </div>
