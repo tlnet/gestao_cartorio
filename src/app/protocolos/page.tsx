@@ -25,7 +25,11 @@ import {
   formatDateForDisplay,
   formatDateForDatabase,
 } from "@/lib/utils";
-import { isStatusConclusao } from "@/lib/status-resolve";
+import {
+  isStatusConclusao,
+  isStatusEncerramentoExterno,
+  isStatusEncerrado,
+} from "@/lib/status-resolve";
 import {
   avaliarPrazo,
   isPrazoAguardandoInicio,
@@ -81,6 +85,7 @@ import {
   Trash2,
   X,
   MessageCircle,
+  Undo2,
 } from "lucide-react";
 
 const ProtocolosContent = () => {
@@ -123,6 +128,9 @@ const ProtocolosContent = () => {
   const [editingProtocolo, setEditingProtocolo] = useState<any>(null);
   const [localProtocolos, setLocalProtocolos] = useState<any[]>([]);
   const [showConcluidos, setShowConcluidos] = useState(false);
+  const [showEncerramentosExternos, setShowEncerramentosExternos] =
+    useState(false);
+  const [showEmAberto, setShowEmAberto] = useState(true);
   const [showServicosModal, setShowServicosModal] = useState(false);
   const [servicosModalData, setServicosModalData] = useState<{
     protocolo: string;
@@ -243,6 +251,17 @@ const ProtocolosContent = () => {
     return isStatusConclusao(protocolo.status, statusPersonalizados);
   };
 
+  const isProtocoloEncerramentoExterno = (protocolo: any) => {
+    return isStatusEncerramentoExterno(
+      protocolo.status,
+      statusPersonalizados
+    );
+  };
+
+  const isProtocoloEncerrado = (protocolo: any) => {
+    return isStatusEncerrado(protocolo.status, statusPersonalizados);
+  };
+
   // Função para filtrar protocolos por busca
   const filtrarPorBusca = (protocolo: any) => {
     if (busca === "") return true;
@@ -338,15 +357,20 @@ const ProtocolosContent = () => {
   // Protocolos visíveis após o filtro de responsável
   const protocolosVisiveis = localProtocolos.filter(filtrarPorResponsavel);
 
-  // Separar protocolos em concluídos e em aberto
+  // Separar protocolos em concluídos, encerramentos externos e em aberto
   const protocolosConcluidos = protocolosVisiveis.filter(
     (protocolo) => isProtocoloConcluido(protocolo) && filtrarPorBusca(protocolo)
   );
 
-  // Protocolos em aberto são todos os que NÃO estão concluídos
+  const protocolosEncerramentoExterno = protocolosVisiveis.filter(
+    (protocolo) =>
+      isProtocoloEncerramentoExterno(protocolo) && filtrarPorBusca(protocolo)
+  );
+
+  // Protocolos em aberto: nem conclusão da serventia nem encerramento externo
   const protocolosEmAberto = protocolosVisiveis.filter(
     (protocolo) =>
-      !isProtocoloConcluido(protocolo) &&
+      !isProtocoloEncerrado(protocolo) &&
       filtrarPorBusca(protocolo) &&
       filtrarPorStatus(protocolo)
   );
@@ -354,12 +378,14 @@ const ProtocolosContent = () => {
   // Estatísticas
   const totalProtocolos = protocolosVisiveis.length;
   const totalConcluidos = protocolosConcluidos.length;
+  const totalEncerramentosExternos = protocolosEncerramentoExterno.length;
   const totalEmAberto = protocolosEmAberto.length;
   const idsDeletaveis = Array.from(
     new Set(
       [
-        ...protocolosEmAberto,
+        ...(showEmAberto ? protocolosEmAberto : []),
         ...(showConcluidos ? protocolosConcluidos : []),
+        ...(showEncerramentosExternos ? protocolosEncerramentoExterno : []),
       ].map((p) => p.id)
     )
   );
@@ -403,10 +429,12 @@ const ProtocolosContent = () => {
 
       console.log("Cartório encontrado:", userData.cartorio_id);
 
-      // Conclusão pelo formulário: registra a data ao concluir e limpa ao reabrir
-      const concluiAgora = isStatusConclusao(data.status, statusPersonalizados);
-      const jaEstavaConcluido = editingProtocolo
-        ? isStatusConclusao(editingProtocolo.status, statusPersonalizados)
+      // Fechamento operacional (conclusão da serventia ou encerramento externo):
+      // registra data_conclusao ao fechar e limpa ao reabrir. A taxa de
+      // conclusão da serventia continua usando só isStatusConclusao.
+      const fechaAgora = isStatusEncerrado(data.status, statusPersonalizados);
+      const jaEstavaFechado = editingProtocolo
+        ? isStatusEncerrado(editingProtocolo.status, statusPersonalizados)
         : false;
 
       // Mapear campos do formulário para o banco de dados
@@ -443,10 +471,10 @@ const ProtocolosContent = () => {
               created_at: `${formatDateForDatabase(data.dataAbertura)}T12:00:00.000Z`,
             }
           : {}),
-        ...(concluiAgora && !jaEstavaConcluido
+        ...(fechaAgora && !jaEstavaFechado
           ? { data_conclusao: new Date().toISOString() }
           : {}),
-        ...(!concluiAgora && jaEstavaConcluido ? { data_conclusao: null } : {}),
+        ...(!fechaAgora && jaEstavaFechado ? { data_conclusao: null } : {}),
         cartorio_id: userData.cartorio_id,
         criado_por: user.id,
       };
@@ -727,7 +755,7 @@ const ProtocolosContent = () => {
         )}
 
         {/* Estatísticas */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <FadeInUp delay={100}>
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -775,7 +803,26 @@ const ProtocolosContent = () => {
                   {totalConcluidos}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Processos finalizados
+                  Conclusão da serventia
+                </p>
+              </CardContent>
+            </Card>
+          </FadeInUp>
+
+          <FadeInUp delay={350}>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Enc. externos
+                </CardTitle>
+                <Undo2 className="h-4 w-4 text-amber-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-amber-600">
+                  {totalEncerramentosExternos}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Não dependem da serventia
                 </p>
               </CardContent>
             </Card>
@@ -797,7 +844,7 @@ const ProtocolosContent = () => {
                         p.prazo_execucao &&
                         !prazoAguardandoInicio(p) &&
                         isPrazoVencendo(p.prazo_execucao) &&
-                        !isProtocoloConcluido(p)
+                        !isProtocoloEncerrado(p)
                     ).length
                   }
                 </div>
@@ -810,14 +857,35 @@ const ProtocolosContent = () => {
         {/* Seção de Protocolos em Aberto */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-blue-600" />
-              Protocolos em Aberto ({totalEmAberto})
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-blue-600" />
+                <CardTitle>Protocolos em Aberto ({totalEmAberto})</CardTitle>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowEmAberto(!showEmAberto)}
+                className="flex items-center gap-2"
+              >
+                {showEmAberto ? (
+                  <>
+                    <ChevronUp className="h-4 w-4" />
+                    Ocultar
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4" />
+                    Mostrar
+                  </>
+                )}
+              </Button>
+            </div>
             <CardDescription>
               Protocolos que ainda estão sendo processados
             </CardDescription>
           </CardHeader>
+          {showEmAberto && (
           <CardContent>
             {totalEmAberto === 0 ? (
               <div className="text-center py-12">
@@ -1023,6 +1091,257 @@ const ProtocolosContent = () => {
               </Table>
             )}
           </CardContent>
+          )}
+        </Card>
+
+        {/* Seção de Encerramentos externos */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Undo2 className="h-5 w-5 text-amber-600" />
+                <CardTitle>
+                  Encerramentos externos ({totalEncerramentosExternos})
+                </CardTitle>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  setShowEncerramentosExternos(!showEncerramentosExternos)
+                }
+                className="flex items-center gap-2"
+              >
+                {showEncerramentosExternos ? (
+                  <>
+                    <ChevronUp className="h-4 w-4" />
+                    Ocultar
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4" />
+                    Mostrar
+                  </>
+                )}
+              </Button>
+            </div>
+            <CardDescription>
+              Encerramentos que não dependem da serventia (ex.: Nota Devolutiva,
+              Retirada pelo Cliente) e não contam na taxa de conclusão
+            </CardDescription>
+          </CardHeader>
+          {showEncerramentosExternos && (
+            <CardContent>
+              {totalEncerramentosExternos === 0 ? (
+                <div className="text-center py-12">
+                  <Undo2 className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    Nenhum encerramento externo
+                  </h3>
+                  <p className="text-gray-500">
+                    Protocolos com status de encerramento externo aparecerão
+                    aqui.
+                  </p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader className="[&_th]:py-3">
+                    <TableRow>
+                      {canDeleteProtocolos && deleteModeOpen && (
+                        <TableHead className="w-10">
+                          <Checkbox
+                            checked={allDeletaveisSelecionados}
+                            disabled={idsDeletaveis.length === 0}
+                            onCheckedChange={(checked) => {
+                              const nextChecked = checked === true;
+                              if (nextChecked) {
+                                setSelectedProtocoloIds(new Set(idsDeletaveis));
+                              } else {
+                                setSelectedProtocoloIds(new Set());
+                              }
+                            }}
+                            aria-label="Selecionar protocolos para exclusão"
+                          />
+                        </TableHead>
+                      )}
+                      <TableHead>Protocolo</TableHead>
+                      <TableHead>Solicitante</TableHead>
+                      <TableHead>Demanda</TableHead>
+                      <TableHead className="max-w-[280px]">Serviço</TableHead>
+                      <TableHead>Data Abertura</TableHead>
+                      <TableHead>Data Encerramento</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="[&_td]:px-3 [&_td]:py-4">
+                    {protocolosEncerramentoExterno.map((protocolo) => (
+                      <TableRow key={protocolo.id} className="bg-amber-50/50">
+                        {canDeleteProtocolos && deleteModeOpen && (
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedProtocoloIds.has(protocolo.id)}
+                              onCheckedChange={(checked) => {
+                                const isChecked = checked === true;
+                                setSelectedProtocoloIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (!isChecked) next.delete(protocolo.id);
+                                  else next.add(protocolo.id);
+                                  return next;
+                                });
+                              }}
+                              aria-label="Selecionar protocolo para exclusão"
+                            />
+                          </TableCell>
+                        )}
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleViewDetails(protocolo)}
+                              className="text-left text-primary hover:underline cursor-pointer font-medium"
+                            >
+                              {protocolo.protocolo}
+                            </button>
+                            <Undo2 className="h-4 w-4 text-amber-600 shrink-0" />
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">
+                              {protocolo.solicitante}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {protocolo.cpf_cnpj}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>{protocolo.demanda}</TableCell>
+                        <TableCell className="max-w-[280px]">
+                          <div className="flex flex-wrap items-center gap-1">
+                            {Array.isArray(protocolo.servicos) &&
+                            protocolo.servicos.length > 0 ? (
+                              <>
+                                {protocolo.servicos
+                                  .slice(0, 2)
+                                  .map((servico: string, index: number) => (
+                                    <Badge
+                                      key={index}
+                                      variant="secondary"
+                                      className="text-xs max-w-full truncate"
+                                      title={servico}
+                                    >
+                                      {servico}
+                                    </Badge>
+                                  ))}
+                                {protocolo.servicos.length > 2 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-5 px-1.5"
+                                    onClick={() => {
+                                      setServicosModalData({
+                                        protocolo: protocolo.protocolo,
+                                        servicos: protocolo.servicos,
+                                      });
+                                      setShowServicosModal(true);
+                                    }}
+                                  >
+                                    <MoreHorizontal className="h-3 w-3 text-gray-500" />
+                                    <span className="text-xs text-gray-500 ml-0.5">
+                                      +{protocolo.servicos.length - 2}
+                                    </span>
+                                  </Button>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-sm text-gray-400">-</span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {formatDateForDisplay(protocolo.created_at)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span className="text-amber-700 font-medium">
+                              {protocolo.data_conclusao
+                                ? formatDateForDisplay(protocolo.data_conclusao)
+                                : formatDateForDisplay(protocolo.updated_at)}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <StatusSelector
+                              protocoloId={protocolo.id}
+                              currentStatus={protocolo.status}
+                              responsavelServicoId={
+                                protocolo.responsavel_servico_id
+                              }
+                              servicos={protocolo.servicos}
+                              prazoIniciadoEm={protocolo.prazo_iniciado_em}
+                              cartorioId={protocolo.cartorio_id}
+                              updateProtocoloFn={updateProtocolo}
+                              onStatusChange={(newStatus) => {
+                                handleStatusChange(protocolo.id, newStatus);
+                              }}
+                            />
+                            <Badge className="bg-amber-100 text-amber-800 border-amber-200">
+                              Externo
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex space-x-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleViewDetails(protocolo)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditProtocolo(protocolo)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Notificar cliente"
+                              onClick={() =>
+                                setNotificarDialog({ open: true, protocolo })
+                              }
+                            >
+                              <MessageCircle className="h-4 w-4 text-green-600" />
+                            </Button>
+                            {canDeleteProtocolos && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-600 hover:text-red-700"
+                                onClick={() =>
+                                  setDeleteDialog({
+                                    open: true,
+                                    ids: [protocolo.id],
+                                  })
+                                }
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          )}
         </Card>
 
         {/* Seção de Protocolos Concluídos */}
@@ -1053,7 +1372,7 @@ const ProtocolosContent = () => {
               </Button>
             </div>
             <CardDescription>
-              Protocolos que foram finalizados com sucesso
+              Protocolos que foram finalizados pela serventia
             </CardDescription>
           </CardHeader>
           {showConcluidos && (

@@ -13,6 +13,7 @@ import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
 import { PrazoProtocoloCell } from "@/components/protocolos/prazo-protocolo-cell";
 import {
   isStatusConclusao,
+  isStatusEncerrado,
 } from "@/lib/status-resolve";
 import {
   Card,
@@ -118,8 +119,8 @@ const Dashboard = () => {
 
       const processosVencendoPrazo = protocolos.filter((p) => {
         if (!p.prazo_execucao) return false;
-        // Excluir protocolos concluídos (padrão ou status personalizado de conclusão)
-        if (isStatusConclusao(p.status, statusPersonalizados)) return false;
+        // Excluir protocolos encerrados (conclusão ou encerramento externo)
+        if (isStatusEncerrado(p.status, statusPersonalizados)) return false;
         // Sem passar pelo status que inicia o prazo não há entrega a vencer
         if (isPrazoAguardandoInicio(p, statusPersonalizados)) return false;
         const prazo = new Date(p.prazo_execucao);

@@ -64,6 +64,34 @@ export function isStatusConclusao(
 }
 
 /**
+ * Indica se o status encerra o protocolo sem contar como conclusão da
+ * serventia (ex.: Nota Devolutiva, Retirada pelo Cliente).
+ */
+export function isStatusEncerramentoExterno(
+  status: string,
+  list: StatusPersonalizado[]
+): boolean {
+  if (!status?.trim()) return false;
+  return (
+    findStatusPersonalizadoMatch(status, list)?.is_encerramento_externo === true
+  );
+}
+
+/**
+ * Protocolo fora de "Em aberto": conclusão da serventia ou encerramento
+ * externo (não depende da serventia).
+ */
+export function isStatusEncerrado(
+  status: string,
+  list: StatusPersonalizado[]
+): boolean {
+  return (
+    isStatusConclusao(status, list) ||
+    isStatusEncerramentoExterno(status, list)
+  );
+}
+
+/**
  * Indica se o status dá início à contagem do prazo do protocolo.
  *
  * Só personalizados marcados com `is_inicio_prazo` na tela de configurações

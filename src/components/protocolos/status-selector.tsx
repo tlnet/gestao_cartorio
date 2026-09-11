@@ -14,7 +14,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
 import {
   buildStatusSelectOptions,
-  isStatusConclusao,
+  isStatusEncerrado,
   isStatusInicioPrazo,
   normalizeStatusKey,
   resolveStatusDotColor,
@@ -104,9 +104,9 @@ const StatusSelector: React.FC<StatusSelectorProps> = ({
         observacao: `Status alterado de "${currentStatus}" para "${newStatus}"`,
       };
 
-      if (isStatusConclusao(newStatus, statusPersonalizados)) {
+      if (isStatusEncerrado(newStatus, statusPersonalizados)) {
         updateData.data_conclusao = new Date().toISOString();
-      } else if (isStatusConclusao(currentStatus ?? "", statusPersonalizados)) {
+      } else if (isStatusEncerrado(currentStatus ?? "", statusPersonalizados)) {
         updateData.data_conclusao = null;
       }
 

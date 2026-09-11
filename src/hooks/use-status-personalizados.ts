@@ -11,6 +11,11 @@ export interface StatusPersonalizado {
   ordem: number;
   /** Quando true, protocolos com este status são tratados como concluídos */
   is_conclusao?: boolean;
+  /**
+   * Quando true, protocolos saem de Em aberto para Encerramentos externos
+   * e NÃO contam na taxa de conclusão da serventia.
+   */
+  is_encerramento_externo?: boolean;
   /** Quando true, a contagem do prazo do protocolo começa neste status */
   is_inicio_prazo?: boolean;
   cartorio_id: string;
@@ -43,6 +48,16 @@ const descreverErroStatus = (err: any, fallback: string): string => {
     return (
       "A coluna 'is_inicio_prazo' não existe no banco. Execute a migração " +
       "src/lib/add-status-inicio-prazo.sql no SQL Editor do Supabase."
+    );
+  }
+
+  if (
+    err?.code === "42703" &&
+    String(err?.message).includes("is_encerramento_externo")
+  ) {
+    return (
+      "A coluna 'is_encerramento_externo' não existe no banco. Execute a migração " +
+      "src/lib/add-status-encerramento-externo.sql no SQL Editor do Supabase."
     );
   }
 
@@ -114,6 +129,7 @@ export const useStatusPersonalizados = () => {
     cor: string;
     ordem: number;
     is_conclusao?: boolean;
+    is_encerramento_externo?: boolean;
     is_inicio_prazo?: boolean;
   }) => {
     try {
@@ -158,6 +174,7 @@ export const useStatusPersonalizados = () => {
         cartorioId: (userData as any).cartorio_id,
         metadata: {
           is_conclusao: statusData.is_conclusao ?? false,
+          is_encerramento_externo: statusData.is_encerramento_externo ?? false,
           is_inicio_prazo: statusData.is_inicio_prazo ?? false,
         },
       });
@@ -185,6 +202,8 @@ export const useStatusPersonalizados = () => {
       if (updates.ordem !== undefined) updateData.ordem = updates.ordem;
       if (updates.is_conclusao !== undefined)
         updateData.is_conclusao = updates.is_conclusao;
+      if (updates.is_encerramento_externo !== undefined)
+        updateData.is_encerramento_externo = updates.is_encerramento_externo;
       if (updates.is_inicio_prazo !== undefined)
         updateData.is_inicio_prazo = updates.is_inicio_prazo;
 
@@ -214,6 +233,7 @@ export const useStatusPersonalizados = () => {
             cor: "Cor",
             ordem: "Ordem",
             is_conclusao: "Status de conclusão",
+            is_encerramento_externo: "Encerramento externo",
             is_inicio_prazo: "Status de início de prazo",
           }),
         },

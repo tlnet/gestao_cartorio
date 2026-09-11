@@ -5,7 +5,7 @@ import MainLayout from "@/components/layout/main-layout";
 import { useProtocolos, useUsuarios } from "@/hooks/use-supabase";
 import { useServicos } from "@/hooks/use-servicos";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
-import { isStatusConclusao } from "@/lib/status-resolve";
+import { isStatusConclusao, isStatusEncerramentoExterno } from "@/lib/status-resolve";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
@@ -67,6 +67,7 @@ import {
   CheckCircle,
   FileText,
   BarChart3,
+  Undo2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -87,10 +88,11 @@ const Relatorios = () => {
   const { statusPersonalizados, loading: statusLoading } =
     useStatusPersonalizados();
 
-  // Conclui pelo status padrão "Concluído" ou por status personalizado marcado
-  // como de conclusão nas configurações
+  // Conclusão da serventia vs encerramento externo (não depende da serventia)
   const isConcluido = (status: string) =>
     isStatusConclusao(status, statusPersonalizados);
+  const isEncerramentoExterno = (status: string) =>
+    isStatusEncerramentoExterno(status, statusPersonalizados);
 
   const [dataInicio, setDataInicio] = useState<Date>();
   const [dataFim, setDataFim] = useState<Date>();
@@ -99,9 +101,11 @@ const Relatorios = () => {
   const [metricas, setMetricas] = useState({
     totalProtocolos: 0,
     protocolosConcluidos: 0,
+    protocolosEncerramentoExterno: 0,
     protocolosAndamento: 0,
     tempoMedioProcessamento: 0,
     taxaConclusao: 0,
+    taxaEncerramentoExterno: 0,
   });
   const [dadosTempoReal, setDadosTempoReal] = useState<any[]>([]);
   const [distribuicaoServicos, setDistribuicaoServicos] = useState<any[]>([]);
@@ -134,6 +138,8 @@ const Relatorios = () => {
     if (filtroStatus !== "todos") {
       protocolosFiltrados = protocolosFiltrados.filter((p) => {
         if (filtroStatus === "concluido") return isConcluido(p.status);
+        if (filtroStatus === "encerramento_externo")
+          return isEncerramentoExterno(p.status);
         if (filtroStatus === "andamento") return p.status === "Em Andamento";
         if (filtroStatus === "aguardando")
           return p.status === "Aguardando Análise";
@@ -166,11 +172,20 @@ const Relatorios = () => {
     const protocolosConcluidos = protocolosParaCalcular.filter(
       (p) => isConcluido(p.status)
     ).length;
+    const protocolosEncerramentoExterno = protocolosParaCalcular.filter(
+      (p) => isEncerramentoExterno(p.status)
+    ).length;
     const protocolosAndamento = protocolosParaCalcular.filter(
       (p) => p.status === "Em Andamento"
     ).length;
+    // Encerramentos externos saem do denominador da taxa de conclusão
+    const baseConclusao = totalProtocolos - protocolosEncerramentoExterno;
     const taxaConclusao =
-      totalProtocolos > 0 ? (protocolosConcluidos / totalProtocolos) * 100 : 0;
+      baseConclusao > 0 ? (protocolosConcluidos / baseConclusao) * 100 : 0;
+    const taxaEncerramentoExterno =
+      totalProtocolos > 0
+        ? (protocolosEncerramentoExterno / totalProtocolos) * 100
+        : 0;
 
     // Calcular tempo médio de processamento
     const protocolosComPrazo = protocolosParaCalcular.filter(
@@ -192,9 +207,11 @@ const Relatorios = () => {
     setMetricas({
       totalProtocolos,
       protocolosConcluidos,
+      protocolosEncerramentoExterno,
       protocolosAndamento,
       tempoMedioProcessamento: Math.round(tempoMedio * 10) / 10,
       taxaConclusao: Math.round(taxaConclusao * 10) / 10,
+      taxaEncerramentoExterno: Math.round(taxaEncerramentoExterno * 10) / 10,
     });
   };
 
@@ -312,9 +329,13 @@ const Relatorios = () => {
         const protocolosConcluidos = protocolosUsuario.filter(
           (p) => isConcluido(p.status)
         ).length;
+        const protocolosExternos = protocolosUsuario.filter((p) =>
+          isEncerramentoExterno(p.status)
+        ).length;
+        const baseConclusao = protocolosUsuario.length - protocolosExternos;
         const taxa =
-          protocolosUsuario.length > 0
-            ? (protocolosConcluidos / protocolosUsuario.length) * 100
+          baseConclusao > 0
+            ? (protocolosConcluidos / baseConclusao) * 100
             : 0;
 
         return {
@@ -379,6 +400,8 @@ const Relatorios = () => {
 
   const statusOptions = [
     { value: "todos", label: "Todos os Status" },
+    { value: "concluido", label: "Concluídos (serventia)" },
+    { value: "encerramento_externo", label: "Encerramentos externos" },
     ...statusPersonalizados.map((status) => ({
       value: status.nome,
       label: status.nome,
@@ -398,6 +421,9 @@ const Relatorios = () => {
     const protocolosConcluidos = protocolosParaAnalise.filter(
       (p) => isConcluido(p.status)
     );
+    const protocolosEncerramentoExterno = protocolosParaAnalise.filter(
+      (p) => isEncerramentoExterno(p.status)
+    );
     const protocolosEmAndamento = protocolosParaAnalise.filter(
       (p) => p.status === "Em Andamento"
     );
@@ -407,6 +433,8 @@ const Relatorios = () => {
     const protocolosPendentes = protocolosParaAnalise.filter(
       (p) => p.status === "Pendente"
     );
+    const baseConclusao =
+      protocolosParaAnalise.length - protocolosEncerramentoExterno.length;
 
     // Análise de Tempo de Processamento
     const temposProcessamento = protocolosConcluidos
@@ -466,25 +494,37 @@ const Relatorios = () => {
         year: "numeric",
       });
       if (!acc[mes]) {
-        acc[mes] = { total: 0, concluidos: 0, emAndamento: 0 };
+        acc[mes] = {
+          total: 0,
+          concluidos: 0,
+          externos: 0,
+          emAndamento: 0,
+        };
       }
       acc[mes].total++;
       if (isConcluido(p.status)) acc[mes].concluidos++;
+      if (isEncerramentoExterno(p.status)) acc[mes].externos++;
       if (p.status === "Em Andamento") acc[mes].emAndamento++;
       return acc;
     }, {});
 
     const performancePorMes = Object.entries(protocolosPorMes).map(
-      ([mes, dados]: [string, any]) => ({
-        mes,
-        total: dados.total,
-        concluidos: dados.concluidos,
-        emAndamento: dados.emAndamento,
-        taxaConclusao:
-          dados.total > 0
-            ? Math.round((dados.concluidos / dados.total) * 100)
-            : 0,
-      })
+      ([mes, dados]: [string, any]) => {
+        const base = dados.total - dados.externos;
+        return {
+          mes,
+          total: dados.total,
+          concluidos: dados.concluidos,
+          externos: dados.externos,
+          emAndamento: dados.emAndamento,
+          taxaConclusao:
+            base > 0 ? Math.round((dados.concluidos / base) * 100) : 0,
+          taxaEncerramentoExterno:
+            dados.total > 0
+              ? Math.round((dados.externos / dados.total) * 100)
+              : 0,
+        };
+      }
     );
 
     // Análise de Prazo vs Realidade
@@ -516,10 +556,14 @@ const Relatorios = () => {
     const protocolosConcluidos30Dias = ultimos30Dias.filter(
       (p) => isConcluido(p.status)
     );
+    const protocolosExternos30Dias = ultimos30Dias.filter((p) =>
+      isEncerramentoExterno(p.status)
+    );
+    const base30Dias = ultimos30Dias.length - protocolosExternos30Dias.length;
     const tendenciaConclusao =
-      ultimos30Dias.length > 0
+      base30Dias > 0
         ? Math.round(
-            (protocolosConcluidos30Dias.length / ultimos30Dias.length) * 100
+            (protocolosConcluidos30Dias.length / base30Dias) * 100
           )
         : 0;
 
@@ -527,13 +571,19 @@ const Relatorios = () => {
       resumo: {
         totalProtocolos: protocolosParaAnalise.length,
         protocolosConcluidos: protocolosConcluidos.length,
+        protocolosEncerramentoExterno: protocolosEncerramentoExterno.length,
         protocolosEmAndamento: protocolosEmAndamento.length,
         protocolosAguardando: protocolosAguardando.length,
         protocolosPendentes: protocolosPendentes.length,
         taxaConclusao:
+          baseConclusao > 0
+            ? Math.round((protocolosConcluidos.length / baseConclusao) * 100)
+            : 0,
+        taxaEncerramentoExterno:
           protocolosParaAnalise.length > 0
             ? Math.round(
-                (protocolosConcluidos.length / protocolosParaAnalise.length) *
+                (protocolosEncerramentoExterno.length /
+                  protocolosParaAnalise.length) *
                   100
               )
             : 0,
@@ -677,6 +727,10 @@ const Relatorios = () => {
             Valor: analiseCompleta?.resumo.protocolosConcluidos || 0,
           },
           {
+            Métrica: "Encerramentos Externos",
+            Valor: analiseCompleta?.resumo.protocolosEncerramentoExterno || 0,
+          },
+          {
             Métrica: "Protocolos em Andamento",
             Valor: analiseCompleta?.resumo.protocolosEmAndamento || 0,
           },
@@ -691,6 +745,10 @@ const Relatorios = () => {
           {
             Métrica: "Taxa de Conclusão (%)",
             Valor: analiseCompleta?.resumo.taxaConclusao || 0,
+          },
+          {
+            Métrica: "Taxa Encerramento Externo (%)",
+            Valor: analiseCompleta?.resumo.taxaEncerramentoExterno || 0,
           },
         ];
         const wsResumo = XLSX.utils.json_to_sheet(resumoData);
@@ -780,8 +838,10 @@ const Relatorios = () => {
             Período: mes.mes,
             Total: mes.total,
             Concluídos: mes.concluidos,
+            "Encerramentos Externos": mes.externos ?? 0,
             "Em Andamento": mes.emAndamento,
             "Taxa de Conclusão (%)": mes.taxaConclusao,
+            "Taxa Encerramento Externo (%)": mes.taxaEncerramentoExterno ?? 0,
           })) || [];
 
         const wsPerformanceMes = XLSX.utils.json_to_sheet(
@@ -976,6 +1036,8 @@ const Relatorios = () => {
               const statusLabel =
                 filtroStatus === "concluido"
                   ? "Concluidos"
+                  : filtroStatus === "encerramento_externo"
+                  ? "Encerramentos externos"
                   : filtroStatus === "andamento"
                   ? "Em Andamento"
                   : filtroStatus === "aguardando"
@@ -1016,6 +1078,9 @@ const Relatorios = () => {
               `Concluidos: ${
                 analiseCompleta?.resumo.protocolosConcluidos || 0
               }`,
+              `Encerramentos externos: ${
+                analiseCompleta?.resumo.protocolosEncerramentoExterno || 0
+              }`,
               `Em Andamento: ${
                 analiseCompleta?.resumo.protocolosEmAndamento || 0
               }`,
@@ -1025,6 +1090,9 @@ const Relatorios = () => {
               `Pendentes: ${analiseCompleta?.resumo.protocolosPendentes || 0}`,
               `Taxa de Conclusao: ${
                 analiseCompleta?.resumo.taxaConclusao || 0
+              }%`,
+              `Taxa Encerramento Externo: ${
+                analiseCompleta?.resumo.taxaEncerramentoExterno || 0
               }%`,
             ];
 
@@ -1371,7 +1439,7 @@ const Relatorios = () => {
                     <h3 className="text-lg font-semibold mb-4 text-gray-800">
                       📊 Resumo Executivo
                     </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                       <div className="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500">
                         <div className="text-2xl font-bold text-blue-600">
                           {analiseCompleta.resumo.totalProtocolos}
@@ -1385,6 +1453,14 @@ const Relatorios = () => {
                           {analiseCompleta.resumo.protocolosConcluidos}
                         </div>
                         <div className="text-sm text-green-800">Concluídos</div>
+                      </div>
+                      <div className="bg-amber-50 p-4 rounded-lg border-l-4 border-amber-500">
+                        <div className="text-2xl font-bold text-amber-600">
+                          {analiseCompleta.resumo.protocolosEncerramentoExterno}
+                        </div>
+                        <div className="text-sm text-amber-800">
+                          Enc. externos ({analiseCompleta.resumo.taxaEncerramentoExterno}%)
+                        </div>
                       </div>
                       <div className="bg-yellow-50 p-4 rounded-lg border-l-4 border-yellow-500">
                         <div className="text-2xl font-bold text-yellow-600">
@@ -1532,6 +1608,9 @@ const Relatorios = () => {
                               Concluídos
                             </th>
                             <th className="border p-3 text-center">
+                              Enc. externos
+                            </th>
+                            <th className="border p-3 text-center">
                               Em Andamento
                             </th>
                             <th className="border p-3 text-center">
@@ -1551,6 +1630,9 @@ const Relatorios = () => {
                                 </td>
                                 <td className="border p-3 text-center text-green-600 font-semibold">
                                   {mes.concluidos}
+                                </td>
+                                <td className="border p-3 text-center text-amber-600 font-semibold">
+                                  {mes.externos ?? 0}
                                 </td>
                                 <td className="border p-3 text-center text-yellow-600 font-semibold">
                                   {mes.emAndamento}
@@ -1631,7 +1713,7 @@ const Relatorios = () => {
         )}
 
         {/* Métricas Principais */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
@@ -1660,6 +1742,23 @@ const Relatorios = () => {
               </div>
               <p className="text-xs text-muted-foreground">
                 {metricas.taxaConclusao}% de taxa de conclusão
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Enc. externos
+              </CardTitle>
+              <Undo2 className="h-4 w-4 text-amber-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-amber-600">
+                {metricas.protocolosEncerramentoExterno.toLocaleString()}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {metricas.taxaEncerramentoExterno}% do total (fora da conclusão)
               </p>
             </CardContent>
           </Card>

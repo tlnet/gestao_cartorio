@@ -56,6 +56,7 @@ import {
   AlertCircle,
   Tag,
   Timer,
+  Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useN8NConfig } from "@/hooks/use-n8n-config";
@@ -403,6 +404,7 @@ const Configuracoes = () => {
     cor: "#3b82f6",
     ordem: 1,
     is_conclusao: false,
+    is_encerramento_externo: false,
     is_inicio_prazo: false,
   });
 
@@ -576,6 +578,7 @@ const Configuracoes = () => {
         cor: statusForm.cor,
         ordem: statusForm.ordem,
         is_conclusao: statusForm.is_conclusao,
+        is_encerramento_externo: statusForm.is_encerramento_externo,
         is_inicio_prazo: statusForm.is_inicio_prazo,
       });
 
@@ -584,6 +587,7 @@ const Configuracoes = () => {
         cor: "#3b82f6",
         ordem: statusPersonalizados.length + 1,
         is_conclusao: false,
+        is_encerramento_externo: false,
         is_inicio_prazo: false,
       });
       setShowStatusDialog(false);
@@ -611,6 +615,7 @@ const Configuracoes = () => {
         cor: statusForm.cor,
         ordem: statusForm.ordem,
         is_conclusao: statusForm.is_conclusao,
+        is_encerramento_externo: statusForm.is_encerramento_externo,
         is_inicio_prazo: statusForm.is_inicio_prazo,
       });
 
@@ -620,6 +625,7 @@ const Configuracoes = () => {
         cor: "#3b82f6",
         ordem: 1,
         is_conclusao: false,
+        is_encerramento_externo: false,
         is_inicio_prazo: false,
       });
       setShowEditStatusDialog(false);
@@ -765,6 +771,7 @@ const Configuracoes = () => {
       cor: status.cor,
       ordem: status.ordem,
       is_conclusao: status.is_conclusao === true,
+      is_encerramento_externo: status.is_encerramento_externo === true,
       is_inicio_prazo: status.is_inicio_prazo === true,
     });
     setShowEditStatusDialog(true);
@@ -1468,6 +1475,9 @@ const Configuracoes = () => {
                               setStatusForm((prev) => ({
                                 ...prev,
                                 is_conclusao: checked,
+                                is_encerramento_externo: checked
+                                  ? false
+                                  : prev.is_encerramento_externo,
                               }))
                             }
                           />
@@ -1479,6 +1489,32 @@ const Configuracoes = () => {
                           Ao ativar, os protocolos que receberem este status são
                           tratados como concluídos e vão para a aba de
                           Concluídos.
+                        </p>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="flex items-center space-x-2">
+                          <Switch
+                            id="encerramentoExternoStatus"
+                            checked={statusForm.is_encerramento_externo}
+                            onCheckedChange={(checked) =>
+                              setStatusForm((prev) => ({
+                                ...prev,
+                                is_encerramento_externo: checked,
+                                is_conclusao: checked
+                                  ? false
+                                  : prev.is_conclusao,
+                              }))
+                            }
+                          />
+                          <Label htmlFor="encerramentoExternoStatus">
+                            Encerramento externo
+                          </Label>
+                        </div>
+                        <p className="text-sm text-gray-500 mt-2">
+                          Ao ativar, os protocolos saem de Em aberto, vão para a
+                          aba de Encerramentos externos e não contam na taxa de
+                          conclusão da serventia (ex.: Nota Devolutiva, Retirada
+                          pelo Cliente).
                         </p>
                       </div>
                       <div className="rounded-lg border p-3">
@@ -1525,6 +1561,7 @@ const Configuracoes = () => {
                     <TableHead>Cor</TableHead>
                     <TableHead>Preview</TableHead>
                     <TableHead>Conclusão</TableHead>
+                    <TableHead>Enc. externo</TableHead>
                     <TableHead>Início do prazo</TableHead>
                     <TableHead>Ações</TableHead>
                   </TableRow>
@@ -1552,6 +1589,9 @@ const Configuracoes = () => {
                           <Skeleton className="h-6 w-16" />
                         </TableCell>
                         <TableCell>
+                          <Skeleton className="h-6 w-16" />
+                        </TableCell>
+                        <TableCell>
                           <Skeleton className="h-8 w-16" />
                         </TableCell>
                       </TableRow>
@@ -1559,7 +1599,7 @@ const Configuracoes = () => {
                   ) : statusPersonalizados.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={7}
+                        colSpan={8}
                         className="text-center py-8 text-gray-500"
                       >
                         <div className="flex flex-col items-center gap-2">
@@ -1596,6 +1636,16 @@ const Configuracoes = () => {
                               <Badge className="bg-green-100 text-green-800 border-green-200">
                                 <CheckCircle className="mr-1 h-3 w-3" />
                                 Conclui
+                              </Badge>
+                            ) : (
+                              <span className="text-sm text-gray-400">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {status.is_encerramento_externo ? (
+                              <Badge className="bg-amber-100 text-amber-800 border-amber-200">
+                                <Undo2 className="mr-1 h-3 w-3" />
+                                Externo
                               </Badge>
                             ) : (
                               <span className="text-sm text-gray-400">—</span>
@@ -2559,7 +2609,7 @@ const Configuracoes = () => {
 
               {/* Seção Chatwoot (Chat) */}
               <div className="border-t pt-6 mt-6">
-                <h3 className="text-lg font-medium mb-4">Chat (Chatwoot)</h3>
+                <h3 className="text-lg font-medium mb-4">Chat</h3>
 
                 {chatwootLoading ? (
                   <div className="space-y-4">
@@ -2716,7 +2766,7 @@ const Configuracoes = () => {
 
               {/* Seção WhatsApp (Uazapi) */}
               <div className="border-t pt-6 mt-6">
-                <h3 className="text-lg font-medium mb-4">WhatsApp (Uazapi)</h3>
+                <h3 className="text-lg font-medium mb-4">WhatsApp</h3>
                 <WhatsappConnection />
               </div>
 
@@ -2949,6 +2999,9 @@ const Configuracoes = () => {
                       setStatusForm((prev) => ({
                         ...prev,
                         is_conclusao: checked,
+                        is_encerramento_externo: checked
+                          ? false
+                          : prev.is_encerramento_externo,
                       }))
                     }
                   />
@@ -2959,6 +3012,29 @@ const Configuracoes = () => {
                 <p className="text-sm text-gray-500 mt-2">
                   Ao ativar, os protocolos que receberem este status são
                   tratados como concluídos e vão para a aba de Concluídos.
+                </p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="editEncerramentoExternoStatus"
+                    checked={statusForm.is_encerramento_externo}
+                    onCheckedChange={(checked) =>
+                      setStatusForm((prev) => ({
+                        ...prev,
+                        is_encerramento_externo: checked,
+                        is_conclusao: checked ? false : prev.is_conclusao,
+                      }))
+                    }
+                  />
+                  <Label htmlFor="editEncerramentoExternoStatus">
+                    Encerramento externo
+                  </Label>
+                </div>
+                <p className="text-sm text-gray-500 mt-2">
+                  Ao ativar, os protocolos saem de Em aberto, vão para a aba de
+                  Encerramentos externos e não contam na taxa de conclusão da
+                  serventia (ex.: Nota Devolutiva, Retirada pelo Cliente).
                 </p>
               </div>
               <div className="rounded-lg border p-3">

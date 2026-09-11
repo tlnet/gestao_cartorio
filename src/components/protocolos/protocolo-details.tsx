@@ -43,7 +43,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useHistoricoProtocolos } from "@/hooks/use-historico-protocolos";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
-import { isStatusConclusao } from "@/lib/status-resolve";
+import { isStatusConclusao, isStatusEncerramentoExterno } from "@/lib/status-resolve";
 import {
   descreverAguardandoInicioPrazo,
   resolvePrazoProtocolo,
@@ -189,6 +189,9 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
     if (isStatusConclusao(status, statusPersonalizados)) {
       return "bg-green-100 text-green-800";
     }
+    if (isStatusEncerramentoExterno(status, statusPersonalizados)) {
+      return "bg-amber-100 text-amber-800";
+    }
 
     switch (status) {
       case "Em Andamento":
@@ -205,6 +208,9 @@ const ProtocoloDetails: React.FC<ProtocoloDetailsProps> = ({
   const getStatusIcon = (status: string) => {
     if (isStatusConclusao(status, statusPersonalizados)) {
       return "✅";
+    }
+    if (isStatusEncerramentoExterno(status, statusPersonalizados)) {
+      return "↩️";
     }
 
     switch (status) {

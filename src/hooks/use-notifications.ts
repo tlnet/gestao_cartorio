@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
 import { useStatusPersonalizados } from "@/hooks/use-status-personalizados";
-import { isStatusConclusao } from "@/lib/status-resolve";
+import { isStatusEncerrado } from "@/lib/status-resolve";
 import { isPrazoAguardandoInicio } from "@/lib/prazo-protocolo";
 import { debugLoading } from "@/lib/debug-loading";
 import { CATEGORIA_LABELS } from "@/types";
@@ -294,15 +294,15 @@ export const useNotifications = () => {
       return notificacoesPrazo; // Retorna todas em caso de erro
     }
 
-    // Filtrar notificações de protocolos não concluídos
-    const protocolosConcluidos = new Set(
+    // Filtrar notificações de protocolos não encerrados
+    const protocolosEncerrados = new Set(
       protocolos
-        ?.filter((p: any) => isStatusConclusao(p.status, statusPersonalizados))
+        ?.filter((p: any) => isStatusEncerrado(p.status, statusPersonalizados))
         .map((p: any) => p.id) || []
     );
 
     return notificacoesPrazo.filter(
-      (n) => !n.protocolo_id || !protocolosConcluidos.has(n.protocolo_id)
+      (n) => !n.protocolo_id || !protocolosEncerrados.has(n.protocolo_id)
     );
   };
 
@@ -733,13 +733,13 @@ export const useNotifications = () => {
       }
 
       // A consulta exclui apenas o status padrão "Concluído"; aqui descartamos
-      // também os protocolos em status personalizado marcado como de conclusão.
+      // também conclusão personalizada e encerramento externo.
       // O alerta é sempre sobre a entrega, que só passa a existir depois do
       // status que inicia a contagem (o de pagamento) — antes disso não há
       // vencimento a avisar.
       const protocolosAbertos = (protocolos as any[]).filter(
         (p) =>
-          !isStatusConclusao(p.status, statusPersonalizados) &&
+          !isStatusEncerrado(p.status, statusPersonalizados) &&
           !isPrazoAguardandoInicio(p, statusPersonalizados)
       );
 

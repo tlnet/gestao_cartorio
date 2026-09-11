@@ -62,7 +62,7 @@ export function WhatsappConnection() {
           <Smartphone className="h-5 w-5 text-green-600" />
           <div>
             <h3 className="text-sm font-semibold text-gray-900">
-              WhatsApp (Uazapi)
+              WhatsApp
             </h3>
             <p className="text-xs text-gray-500">
               Conecte seu WhatsApp por QR Code para enviar e receber pelo Chat.
