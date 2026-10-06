@@ -130,8 +130,8 @@ export function ProtocoloDocumentosDialog({
           Documentos
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[90vh] w-[95vw] max-w-3xl flex-col overflow-hidden">
+        <DialogHeader className="shrink-0 pr-10">
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
             Documentos do protocolo
@@ -143,59 +143,61 @@ export function ProtocoloDocumentosDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {loading ? (
-          <div className="flex justify-center py-8">
-            <LoadingAnimation size="md" variant="dots" />
-          </div>
-        ) : documentos.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">
-            Nenhum documento vinculado a este protocolo.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {documentos.map((documento) => (
-              <Card key={documento.id} className="p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <span className="text-lg shrink-0">
-                      {getFileIcon(documento.tipoArquivo)}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {documento.nomeArquivo}
-                      </p>
-                      <div className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
-                        <span>{formatFileSize(documento.tamanhoArquivo)}</span>
-                        <span>•</span>
-                        <span>
-                          {documento.dataUpload.toLocaleDateString("pt-BR")}
-                        </span>
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <LoadingAnimation size="md" variant="dots" />
+            </div>
+          ) : documentos.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              Nenhum documento vinculado a este protocolo.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {documentos.map((documento) => (
+                <Card key={documento.id} className="p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <span className="text-lg shrink-0">
+                        {getFileIcon(documento.tipoArquivo)}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {documento.nomeArquivo}
+                        </p>
+                        <div className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+                          <span>{formatFileSize(documento.tamanhoArquivo)}</span>
+                          <span>•</span>
+                          <span>
+                            {documento.dataUpload.toLocaleDateString("pt-BR")}
+                          </span>
+                        </div>
                       </div>
                     </div>
+                    <div className="flex shrink-0 gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => viewDocument(documento)}
+                        title="Visualizar"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => downloadDocument(documento)}
+                        title="Baixar"
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex shrink-0 gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => viewDocument(documento)}
-                      title="Visualizar"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => downloadDocument(documento)}
-                      title="Baixar"
-                    >
-                      <Download className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -1755,7 +1755,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
             }
             onDocumentosMarcadosChange={setDocumentosMarcadosParaRemocao}
             disabled={isSubmittingForm}
-            maxFiles={50}
+            maxFiles={60}
           />
         </div>
 
