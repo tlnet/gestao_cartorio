@@ -80,6 +80,9 @@ import {
 } from "@/components/contas/document-upload";
 import { useDocumentosProtocolo } from "@/hooks/use-documentos-protocolo";
 
+// Protocolos do Levontech/TecnoCart são sequenciais por demanda e podem ter 1–2 dígitos (ex.: "35")
+const MIN_PROTOCOLO_CONSULTA = 1;
+
 const protocoloSchema = z.object({
   demanda: z.string().min(1, "Demanda é obrigatória"),
   protocolo: z.string().min(1, "Número do protocolo é obrigatório"),
@@ -607,7 +610,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     // Debug: Log do que está acontecendo
     const shouldTrigger = !isEditing && 
                           formatted && 
-                          formatted.length >= 3 && 
+                          formatted.length >= MIN_PROTOCOLO_CONSULTA && 
                           !levontechLoading &&
                           levontechConfig?.sistema_levontech === true;
     
@@ -630,7 +633,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
       }, 500);
     } else {
       // Resetar dados se protocolo for apagado ou muito curto
-      if (formatted.length < 3) {
+      if (formatted.length < MIN_PROTOCOLO_CONSULTA) {
         setLevontechData(null);
         setConsultingLevontech(false);
       }
@@ -638,7 +641,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
       // Log do motivo de não disparar
       if (isEditing) {
         console.log("❌ Não disparando: está editando");
-      } else if (!formatted || formatted.length < 3) {
+      } else if (!formatted || formatted.length < MIN_PROTOCOLO_CONSULTA) {
         console.log("❌ Não disparando: protocolo muito curto");
       } else if (levontechLoading) {
         console.log("❌ Não disparando: ainda carregando configuração");
@@ -686,7 +689,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     });
     
     // Só disparar se tiver número de protocolo completo (mínimo de caracteres)
-    if (numeroProtocolo.length < 3) {
+    if (numeroProtocolo.length < MIN_PROTOCOLO_CONSULTA) {
       console.log("❌ Protocolo muito curto, abortando");
       return;
     }
@@ -1344,7 +1347,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
                             <p className="text-xs text-green-600">
                               ✓ Dados consultados com sucesso no Levontech
                             </p>
-                          ) : form.watch("protocolo") && form.watch("protocolo").length >= 3 ? (
+                          ) : form.watch("protocolo") && form.watch("protocolo").length >= MIN_PROTOCOLO_CONSULTA ? (
                             <p className="text-xs text-amber-600">
                               ⓘ Nenhum dado retornado do Levontech. Preencha os campos manualmente.
                             </p>

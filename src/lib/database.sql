@@ -34,7 +34,7 @@ CREATE TABLE usuarios (
 -- Tabela de protocolos
 CREATE TABLE protocolos (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    protocolo VARCHAR(100) UNIQUE NOT NULL,
+    protocolo VARCHAR(100) NOT NULL,
     demanda TEXT NOT NULL,
     solicitante VARCHAR(255) NOT NULL,
     cpf_cnpj VARCHAR(18) NOT NULL,
@@ -104,6 +104,8 @@ CREATE TABLE status_personalizados (
 CREATE INDEX idx_protocolos_cartorio_id ON protocolos(cartorio_id);
 CREATE INDEX idx_protocolos_status ON protocolos(status);
 CREATE INDEX idx_protocolos_created_at ON protocolos(created_at);
+CREATE INDEX idx_protocolos_protocolo ON protocolos(protocolo);
+CREATE UNIQUE INDEX idx_protocolos_cartorio_demanda_protocolo ON protocolos(cartorio_id, demanda, protocolo);
 CREATE INDEX idx_usuarios_cartorio_id ON usuarios(cartorio_id);
 CREATE INDEX idx_usuarios_email ON usuarios(email);
 CREATE INDEX idx_historico_protocolo_id ON historico_protocolos(protocolo_id);

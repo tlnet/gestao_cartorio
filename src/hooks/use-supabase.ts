@@ -671,6 +671,13 @@ export function useProtocolos(cartorioId?: string) {
       console.error("Stack:", error?.stack);
       console.error("=== FIM ERRO GERAL ===");
 
+      if (error?.code === "23505") {
+        toast.error(
+          `Já existe um protocolo ${protocolo.protocolo} cadastrado para a demanda ${protocolo.demanda}.`
+        );
+        throw error;
+      }
+
       const mensagemErro =
         error?.message || "Erro desconhecido ao criar protocolo";
       toast.error("Erro ao criar protocolo: " + mensagemErro);
