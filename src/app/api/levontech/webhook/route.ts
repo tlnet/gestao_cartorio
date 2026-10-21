@@ -166,10 +166,21 @@ export async function POST(request: NextRequest) {
         errorText,
         url: webhookUrl,
       });
-      
+
+      // O n8n devolve o motivo da falha em `error`; a tela exibe esse campo para o usuário
+      let mensagem = `Erro no webhook: ${response.status} ${response.statusText}`;
+      try {
+        const corpo = JSON.parse(errorText);
+        if (typeof corpo?.error === "string" && corpo.error.trim()) {
+          mensagem = corpo.error.trim();
+        }
+      } catch {
+        // Corpo não é JSON: mantém a mensagem genérica
+      }
+
       return NextResponse.json(
-        { 
-          error: `Erro no webhook: ${response.status} ${response.statusText}`, 
+        {
+          error: mensagem,
           details: errorText,
           url: webhookUrl,
         },
