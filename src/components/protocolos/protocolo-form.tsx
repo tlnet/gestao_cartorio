@@ -219,6 +219,11 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   
   // Ref para debounce do webhook
   const webhookTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // Uma consulta Levontech por vez: a TecnoApi quebra com chamadas simultâneas.
+  // Enquanto uma está em andamento, guarda só o último número digitado.
+  const levontechEmAndamentoRef = React.useRef(false);
+  const levontechPendenteRef = React.useRef<string | null>(null);
   
   // Estados para dialogs de serviço não encontrado
   const [showServicoNaoEncontradoDialog, setShowServicoNaoEncontradoDialog] = React.useState(false);
@@ -606,7 +611,10 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
     if (webhookTimeoutRef.current) {
       clearTimeout(webhookTimeoutRef.current);
     }
-    
+
+    // O número mudou: a consulta que esperava a vez não vale mais
+    levontechPendenteRef.current = null;
+
     // Debug: Log do que está acontecendo
     const shouldTrigger = !isEditing && 
                           formatted && 
@@ -629,7 +637,7 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
       console.log("⏳ Agendando webhook Levontech em 500ms...");
       webhookTimeoutRef.current = setTimeout(() => {
         console.log("🚀 Disparando webhook Levontech agora!");
-        dispararWebhookLevontech(formatted);
+        consultarLevontech(formatted);
       }, 500);
     } else {
       // Resetar dados se protocolo for apagado ou muito curto
@@ -677,6 +685,28 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatEmail(e.target.value);
     form.setValue("email", formatted);
+  };
+
+  // Enfileira a consulta: se já houver uma em andamento, a nova espera e
+  // só o último número digitado é consultado em seguida.
+  const consultarLevontech = async (numeroProtocolo: string) => {
+    if (levontechEmAndamentoRef.current) {
+      console.log("⏳ Consulta Levontech em andamento, aguardando a vez:", numeroProtocolo);
+      levontechPendenteRef.current = numeroProtocolo;
+      return;
+    }
+
+    levontechEmAndamentoRef.current = true;
+    try {
+      await dispararWebhookLevontech(numeroProtocolo);
+    } finally {
+      levontechEmAndamentoRef.current = false;
+      const pendente = levontechPendenteRef.current;
+      levontechPendenteRef.current = null;
+      if (pendente !== null) {
+        consultarLevontech(pendente);
+      }
+    }
   };
 
   // Função para disparar webhook Levontech
@@ -753,6 +783,13 @@ const ProtocoloForm: React.FC<ProtocoloFormProps> = ({
         },
         body: JSON.stringify(payload),
       });
+
+      // O usuário mudou o número enquanto esperava: descarta a resposta antiga
+      // para não preencher o formulário com outro protocolo.
+      if (form.getValues("protocolo") !== numeroProtocolo) {
+        console.log("↩️ Resposta Levontech descartada, protocolo mudou:", numeroProtocolo);
+        return;
+      }
 
       if (response.ok) {
         let responseData;
